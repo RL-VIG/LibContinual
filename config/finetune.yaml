@@ -1,0 +1,43 @@
+includes:
+  - headers/data.yaml
+  - headers/device.yaml
+  - headers/model.yaml
+  - headers/optimizer.yaml
+  - backbones/resnet12.yaml
+
+data_root: /data/xiongyakun/cifar10
+image_size: 32
+  
+  
+# data
+init_cls_num: 2
+inc_cls_num: 2
+task_num: 5
+
+epoch: 60
+device_ids: 0
+n_gpu: 1
+val_per_epoch: 1
+
+optimizer:
+  name: SGD
+  kwargs:
+    lr: 0.1
+
+lr_scheduler:
+  name: StepLR
+  kwargs:
+    gamma: 0.5
+    step_size: 10
+
+backbone:
+  name: resnet18
+  kwargs:
+    num_classes: 10
+    args: 
+      dataset: cifar10
+
+classifier:
+  name: RM
+  kwargs:
+  
