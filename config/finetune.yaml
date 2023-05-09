@@ -5,7 +5,7 @@ includes:
   - headers/optimizer.yaml
   - backbones/resnet12.yaml
 
-data_root: /data/xiongyakun/cifar10
+data_root: /home/xiongyakun/cifar10
 image_size: 32
   
   
@@ -14,7 +14,8 @@ init_cls_num: 2
 inc_cls_num: 2
 task_num: 5
 
-epoch: 60
+
+epoch: 1
 device_ids: 0
 n_gpu: 1
 val_per_epoch: 1
@@ -37,7 +38,16 @@ backbone:
     args: 
       dataset: cifar10
 
-classifier:
-  name: RM
+
+buffer:
+  name: LinearBuffer
   kwargs:
-  
+    buffer_size: 500
+    batch_size: 32
+    strategy: random     # random, equal_random, reservoir, herding
+
+classifier:
+  name: Finetune
+  kwargs:
+    num_class: 10
+    feat_dim: 512

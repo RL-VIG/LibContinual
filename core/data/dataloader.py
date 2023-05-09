@@ -32,13 +32,13 @@ def get_dataloader(config, mode, cls_map=None):
     trfms = transforms.Compose(trfms_list)
 
     if cls_map is None:
-        cls_list = os.listdir(data_root)
+        cls_list = os.listdir(os.path.join(data_root, mode))
         perm = np.random.permutation(len(cls_list))
         cls_map = dict()
         for label, ori_label in enumerate(perm):
             cls_map[label] = cls_list[ori_label]
 
-    return ContinualDatasets(task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms)
+    return ContinualDatasets(mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms)
 
 
 

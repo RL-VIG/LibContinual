@@ -81,6 +81,7 @@ def get_instance(module, name, config, **kwargs):
     if config[name]["kwargs"] is not None:
         kwargs.update(config[name]["kwargs"])
 
+    
     return getattr(module, config[name]["name"])(**kwargs)
 
 # https://github.com/ildoonet/pytorch-gradual-warmup-lr/blob/master/warmup_scheduler/scheduler.py

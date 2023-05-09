@@ -12,4 +12,4 @@ lr_scheduler:
     gamma: 1.0
     step_size: 20
 
-  warmup: 3
+warmup: 3
