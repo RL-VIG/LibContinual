@@ -1,7 +1,7 @@
 import pandas as pd
 import os
 import torch
-
+from datetime import datetime
 import numpy as np
 import random
 from torch.optim.lr_scheduler import _LRScheduler
@@ -186,3 +186,16 @@ class GradualWarmupScheduler(_LRScheduler):
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+def fmt_date_str(date=None, fmt="%y-%m-%d-%H-%M-%S"):
+    """Format date to string.
+
+    Args:
+        datetime (datetime, optional): get current time if None. Defaults to None.
+
+    Returns:
+        str: formatted date string
+    """
+    if date is None:
+        date = datetime.now()
+    return date.strftime(fmt)

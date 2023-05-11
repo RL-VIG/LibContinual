@@ -9,6 +9,8 @@ import core.model as arch
 from core.model.buffer import *
 from torch.utils.data import DataLoader
 import numpy as np
+import sys
+from core.utils import Logger, fmt_date_str
 
 
 class Trainer(object):
@@ -29,7 +31,7 @@ class Trainer(object):
         #     self.checkpoints_path, 
         #     self.viz_path
         # ) = self._init_files(config)                     # todo   add file manage
-        self.logger = ""                               # todo   add logger
+        self.logger = self._init_logger(config)                               # todo   add logger
         self.device = self._init_device(config) 
         # self.writer = self._init_writer(self.viz_path)   # todo   add tensorboard
         
@@ -53,6 +55,34 @@ class Trainer(object):
         self.train_meter, self.test_meter = self._init_meter()
 
         self.val_per_epoch = config['val_per_epoch']
+
+    def _init_logger(self, config, mode='train'):
+        '''
+        Init logger.
+
+        Args:
+            config (dict): Parsed config file.
+
+        Returns:
+            logger (Logger)
+        '''
+
+        save_path = config['save_path']
+        log_path = os.path.join(save_path, "log")
+        if not os.path.isdir(log_path):
+            os.mkdir(log_path)
+        log_prefix = config['classifier']['name'] + "-" + config['backbone']['name'] + "-" + mode
+        log_file = os.path.join(log_path, "{}-{}.log".format(log_prefix, fmt_date_str()))
+
+        # if not os.path.isfile(log_file):
+        #     os.mkdir(log_file)
+
+        logger = Logger(log_file)
+
+        # hack sys.stdout
+        sys.stdout = logger
+
+        return logger
 
     def _init_device(self, config):
         """"
