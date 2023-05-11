@@ -65,7 +65,7 @@ class Trainer(object):
             device: a device.
         """
         init_seed(config['seed'], config['deterministic'])
-        os.environ["CUDA_VISIBLE_DEVICES"] = str(config['device_ids'])
+        # os.environ["CUDA_VISIBLE_DEVICES"] = str(config['device_ids'])
 
         device = torch.device("cuda:{}".format(config['device_ids']))
 
@@ -142,12 +142,13 @@ class Trainer(object):
             tuple: A tuple of the model and model's type.
         """
         backbone = get_instance(arch, "backbone", config)
-        dic = {"backbone": backbone}
+        dic = {"backbone": backbone, "device": self.device}
 
         model = get_instance(arch, "classifier", config, **dic)
         print(model)
         print("Trainable params in the model: {}".format(count_parameters(model)))
 
+        model = model.to(self.device)
         return model
     
     def _init_dataloader(self, config):
