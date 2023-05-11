@@ -191,6 +191,11 @@ class Trainer(object):
             if hasattr(self.model, 'before_task'):
                 self.model.before_task(task_idx)
             
+            (
+                _, __,
+                self.optimizer,
+                self.scheduler,
+            ) = self._init_optim(self.config)
 
             dataloader = self.train_loader.get_loader(task_idx)
 
@@ -226,6 +231,8 @@ class Trainer(object):
                     " Per-Task Acc:{}".format(test_acc['per_task_acc'])
                     )
             
+                self.scheduler.step()
+
             self.buffer.update(self.train_loader.get_loader(task_idx).dataset, task_idx)
 
 
@@ -277,7 +284,7 @@ class Trainer(object):
                     output, acc = self.model.inference(batch)
                     meter[t].update("acc1", acc)
 
-                per_task_acc.append(meter[t].avg("acc1"))
+                per_task_acc.append(round(meter[t].avg("acc1"), 2))
         
         return {"avg_acc" : np.mean(per_task_acc), "per_task_acc" : per_task_acc}
     
