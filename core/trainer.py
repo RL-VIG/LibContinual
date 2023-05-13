@@ -24,14 +24,14 @@ class Trainer(object):
         self.rank = rank
         self.config = config
         self.config['rank'] = rank
-        self.distribute = self.config['n_gpu'] > 1
+        self.distribute = self.config['n_gpu'] > 1  # 暂时不考虑分布式训练
         # (
         #     self.result_path, 
         #     self.log_path, 
         #     self.checkpoints_path, 
         #     self.viz_path
         # ) = self._init_files(config)                     # todo   add file manage
-        self.logger = self._init_logger(config)                               # todo   add logger
+        self.logger = self._init_logger(config)           
         self.device = self._init_device(config) 
         # self.writer = self._init_writer(self.viz_path)   # todo   add tensorboard
         
@@ -219,7 +219,7 @@ class Trainer(object):
         for task_idx in range(self.task_num):
             print("================Task {} Start!================".format(task_idx))
             if hasattr(self.model, 'before_task'):
-                self.model.before_task(task_idx)
+                self.model.before_task(task_idx, self.buffer, self.train_loader.get_loader(task_idx), self.test_loader.get_loader(task_idx))
             
             (
                 _, __,
@@ -262,6 +262,9 @@ class Trainer(object):
                     )
             
                 self.scheduler.step()
+
+            if hasattr(self.model, 'after_task'):
+                self.model.after_task(task_idx, self.buffer, self.train_loader.get_loader(task_idx), self.test_loader.get_loader(task_idx))
 
             self.buffer.update(self.train_loader.get_loader(task_idx).dataset, task_idx)
 

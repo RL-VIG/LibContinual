@@ -28,6 +28,9 @@ class LinearBuffer:
         images, labels = images[perm[:self.buffer_size]], labels[perm[:self.buffer_size]]
 
         self.images, self.labels = images.tolist(), labels.tolist()
+
+    def is_empty(self):
+        return len(self.labels) == 0
         
     
 

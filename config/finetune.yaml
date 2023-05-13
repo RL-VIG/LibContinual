@@ -8,14 +8,14 @@ includes:
 data_root: /home/xiongyakun/cifar10
 image_size: 32
   
-  
+save_path: ./
 # data
 init_cls_num: 2
 inc_cls_num: 2
 task_num: 5
 
 
-epoch: 1
+epoch: 3
 device_ids: 5
 n_gpu: 1
 val_per_epoch: 1

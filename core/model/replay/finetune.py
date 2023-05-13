@@ -39,3 +39,9 @@ class Finetune(nn.Module):
 
     def forward(self, x):
         return self.classifier(self.backbone(x)['features'])  
+    
+    def before_task(self, task_idx, buffer, train_loader, test_loaders):
+        pass
+
+    def after_task(self, task_idx, buffer, train_loader, test_loaders):
+        pass
