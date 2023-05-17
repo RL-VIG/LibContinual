@@ -5,6 +5,7 @@ from time import time
 from tqdm import tqdm
 from core.data import get_dataloader
 from core.utils import init_seed, AverageMeter, get_instance, GradualWarmupScheduler, count_parameters
+from core.model.buffer import *
 import core.model as arch
 from core.model.buffer import *
 from torch.utils.data import DataLoader
@@ -227,6 +228,8 @@ class Trainer(object):
                 self.scheduler,
             ) = self._init_optim(self.config)
 
+            self.buffer.total_classes += self.init_cls_num if task_idx == 0 else self.inc_cls_num
+
             dataloader = self.train_loader.get_loader(task_idx)
 
             if isinstance(self.buffer, LinearBuffer) and task_idx != 0:
@@ -236,7 +239,7 @@ class Trainer(object):
                 dataloader = DataLoader(
                     datasets,
                     shuffle = True,
-                    batch_size = 32,
+                    batch_size = self.config['batch_size'],
                     drop_last = True
                 )
             
@@ -247,8 +250,8 @@ class Trainer(object):
             for epoch_idx in range(self.init_epoch if task_idx == 0 else self.inc_epoch):
                 print("learning rate: {}".format(self.scheduler.get_last_lr()))
                 print("================ Train on the train set ================")
-                train_acc = self._train(epoch_idx, dataloader)
-                print(" * Average Acc: {:.3f} ".format(train_acc.avg("acc1")))
+                train_meter = self._train(epoch_idx, dataloader)
+                print("Epoch [{}/{}] |\tLoss: {:.3f} \tAverage Acc: {:.3f} ".format(epoch_idx, self.init_epoch if task_idx == 0 else self.inc_epoch, train_meter.avg['loss'], train_meter.avg("acc1")))
 
                 if (epoch_idx+1) % self.val_per_epoch == 0:
                     print("================ Test on the test set ================")
@@ -266,7 +269,11 @@ class Trainer(object):
             if hasattr(self.model, 'after_task'):
                 self.model.after_task(task_idx, self.buffer, self.train_loader.get_loader(task_idx), self.test_loader.get_loader(task_idx))
 
-            self.buffer.update(self.train_loader.get_loader(task_idx).dataset, task_idx)
+
+            if self.buffer.strategy == 'herding':
+                hearding_update(self.train_loader.get_loader(task_idx).dataset, self.buffer, self.model.backbone, self.device)
+            elif self.buffer.strategy == 'random':
+                random_update(self.train_loader.get_loader(task_idx).dataset, self.buffer)
 
 
 
