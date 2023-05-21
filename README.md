@@ -1,3 +1,7 @@
+# 临时数据集
+cifar10 & cifar100：
+https://box.nju.edu.cn/d/167ca1e2252c4d078bf7/
+
 # LibContinual
 A framework of Continual Learning
 
