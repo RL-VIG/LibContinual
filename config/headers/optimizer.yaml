@@ -1,0 +1,15 @@
+# optimizer info
+optimzer:
+  name: SGD
+  kwargs:
+    lr: 0.1
+  
+
+# lr_scheduler info
+lr_scheduler:
+  name: StepLR
+  kwargs:
+    gamma: 1.0
+    step_size: 20
+
+warmup: 3

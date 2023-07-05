@@ -1,0 +1,53 @@
+includes:
+  - headers/data.yaml
+  - headers/device.yaml
+  - headers/model.yaml
+  - headers/optimizer.yaml
+  - backbones/resnet12.yaml
+
+data_root: /home/xiongyakun/cifar10
+image_size: 32
+  
+save_path: ./
+# data
+init_cls_num: 2
+inc_cls_num: 2
+task_num: 5
+
+
+epoch: 3
+device_ids: 5
+n_gpu: 1
+val_per_epoch: 1
+
+optimizer:
+  name: SGD
+  kwargs:
+    lr: 0.1
+
+lr_scheduler:
+  name: StepLR
+  kwargs:
+    gamma: 0.5
+    step_size: 10
+
+backbone:
+  name: resnet18
+  kwargs:
+    num_classes: 10
+    args: 
+      dataset: cifar10
+
+
+buffer:
+  name: LinearBuffer
+  kwargs:
+    buffer_size: 500
+    batch_size: 32
+    strategy: random     # random, equal_random, reservoir, herding
+
+classifier:
+  name: Finetune
+  kwargs:
+    num_class: 10
+    feat_dim: 512

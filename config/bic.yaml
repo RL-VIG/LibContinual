@@ -1,0 +1,57 @@
+includes:
+  - headers/data.yaml
+  - headers/device.yaml
+  - headers/model.yaml
+  - headers/optimizer.yaml
+  - backbones/CifarResnet.yaml
+
+data_root: /home/path/to/cifar100
+image_size: 224
+save_path: ./home/save/path
+
+# data
+init_cls_num: 10
+inc_cls_num: 10
+task_num: 10
+
+epoch: 250
+device_ids: 0
+n_gpu: 1
+val_per_epoch: 1
+numworks: 1
+split_ratio: 0.1
+
+optimizer:
+  name: SGD
+  kwargs:
+    lr: 0.1
+    weight_decay: 2e-4
+    milestones: [60, 100, 140]
+
+lr_scheduler:
+  name: StepLR
+  kwargs:
+    gamma: 0.5
+    step_size: 10
+
+# done
+backbone:
+  name: CifarResnet
+  kwargs:
+    num_classes: 100
+    args: 
+      dataset: cifar100
+
+buffer:
+  name: LinearBuffer
+  kwargs:
+    buffer_size: 2000
+    batch_size: 128
+    strategy: random     # random, equal_random, reservoir, herding
+    memory_size: 
+
+classifier:
+  name: bic
+  kwargs:
+    num_class: 100
+    feat_dim: 256

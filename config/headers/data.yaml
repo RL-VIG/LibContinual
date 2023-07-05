@@ -1,0 +1,5 @@
+data_root: xxxxxx
+image_size: 32
+pin_memory: False
+augment: True
+workers: 8
