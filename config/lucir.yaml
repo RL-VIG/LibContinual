@@ -1,0 +1,63 @@
+includes:
+  - headers/data.yaml
+  - headers/device.yaml
+  - headers/model.yaml
+  - headers/optimizer.yaml
+  - backbones/resnet12.yaml
+
+data_root: /home/xiongyakun/cifar100
+image_size: 32
+  
+save_path: ./
+# data
+init_cls_num: 50
+inc_cls_num: 10
+task_num: 6
+
+
+epoch: 10
+device_ids: 7
+n_gpu: 1
+val_per_epoch: 2
+
+
+batch_size: 128
+
+
+optimizer:
+  name: SGD
+  kwargs:
+    lr: 0.1
+
+lr_scheduler:
+  name: StepLR
+  kwargs:
+    gamma: 0.5
+    step_size: 10
+
+backbone:
+  name: resnet18
+  kwargs:
+    num_classes: 10
+    args: 
+      dataset: cifar10
+
+
+buffer:
+  name: LinearBuffer
+  kwargs:
+    buffer_size: 500
+    batch_size: 32
+    strategy: random     # random, equal_random, reservoir, herding
+
+classifier:
+  name: LUCIR
+  kwargs:
+    num_class: 100
+    feat_dim: 512
+    init_cls_num: 50
+    inc_cls_num: 10
+    dist: 0.5
+    lamda: 10
+    K: 2
+    lw_mr: 1
