@@ -26,6 +26,7 @@ optimizer:
   kwargs:
     lr: 0.1
     weight_decay: 2e-4
+    momentum: 0.9
     milestones: [60, 100, 140]
 
 lr_scheduler:
