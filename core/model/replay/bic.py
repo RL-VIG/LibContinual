@@ -21,300 +21,218 @@ from torchvision import transforms
 from torch.utils.data import DataLoader
 
 
-
-
-
-class bic(nn.Module):
-    def __init__(self, backbone, feat_dim, num_class, **kwargs):
+class Model(nn.Module):
+    # A model consists with a backbone and a classifier
+    def __init__(self, backbone, feat_dim, num_class):
         super().__init__()
-        # print("==============\n")
-        # print(kwargs)
         self.backbone = backbone
         self.feat_dim = feat_dim
         self.num_class = num_class
         self.classifier = nn.Linear(feat_dim, num_class)
-        self.loss_fn = nn.CrossEntropyLoss(reduction='mean')
-        self.deivce = kwargs['device']
-        self.max_size = kwargs['buffer_size']
-        self.batch_size = kwargs['batch_size']
-        self.numworks = kwargs['numworks']
-        self.lr = kwargs['lr']
-        self.epoches = kwargs['epoch']
-        self.gamma = kwargs['gamma']
-        self.step_size = kwargs['step_size']
-
-        self.bias_layer1 = BiasLayer().cuda()
-        self.bias_layer2 = BiasLayer().cuda()
-        self.bias_layer3 = BiasLayer().cuda()
-        self.bias_layer4 = BiasLayer().cuda()
-        self.bias_layer5 = BiasLayer().cuda()
-        self.bias_layers=[self.bias_layer1, self.bias_layer2, self.bias_layer3, self.bias_layer4, self.bias_layer5]
-        self.input_transform= Compose([
-                                transforms.RandomHorizontalFlip(),
-                                transforms.RandomCrop(32,padding=4),
-                                ToTensor(),
-                                Normalize([0.5071,0.4866,0.4409],[0.2673,0.2564,0.2762])])
-        self.input_transform_eval= Compose([
-                                ToTensor(),
-                                Normalize([0.5071,0.4866,0.4409],[0.2673,0.2564,0.2762])])
-        total_params = sum(p.numel() for p in self.backbone.parameters() if p.requires_grad)
-        print("Solver total trainable parameters : ", total_params)
-
-
-
-
-
+        
+    def forward(self, x):
+        return self.get_logits(x)
     
+    def get_logits(self, x):
+        logits = self.classifier(self.backbone(x)['features'])
+        return logits
+
+class bic(nn.Module):
+    def __init__(self, backbone, feat_dim, num_class, **kwargs):
+        super().__init__()
+
+        # device setting
+        self.device = kwargs['device']
+        
+        # current task index
+        self.cur_task_id = 0
+
+        # current task class indexes
+        self.cur_cls_indexes = None
+        
+        # Build model structure
+        self.network = Model(backbone, feat_dim, num_class)
+        
+        # Store old network
+        self.old_network = None
+        
+        # the previous class num before this task
+        self.prev_cls_num = 0
+
+        # the total class num containing this task
+        self.accu_cls_num = 0
+
+        # T
+        self.T = 2
+
+        # Load epoch
+        self.epochs = kwargs['epoch']
+
+        # Load optimizer parameters
+        self.lr = kwargs['lr']
+        self.gamma = kwargs['gamma']
+        self.weight_decay = kwargs['weight_decay']
+        self.momentum = kwargs['momentum']
+        self.milestones = kwargs['milestones']
+        
+        self.init_cls_num = kwargs['init_cls_num']
+        self.inc_cls_num  = kwargs['inc_cls_num']
+        self.task_num     = kwargs['task_num']
+
+        # class prototype vector
+        self.class_means = None
+
+
+
     def observe(self, data):
+        # get data and labels
         x, y = data['image'], data['label']
-        x = x.to(self.deivce)
-        y = y.to(self.deivce)
-        # print(x.shape)
-        logit = self.classifier(self.backbone(x)['features'])    
-        loss = self.loss_fn(logit, y)
+        x = x.to(self.device)
+        y = y.to(self.device)
+        
+        # compute logits and loss
+        logits, loss = self.criterion(x, y)
 
-        pred = torch.argmax(logit, dim=1)
-
+        pred = torch.argmax(logits, dim=1)
         acc = torch.sum(pred == y).item()
+
         return pred, acc / x.size(0), loss
 
     def inference(self, data):
         x, y = data['image'], data['label']
-        x = x.to(self.deivce)
-        y = y.to(self.deivce)
+        x = x.to(self.device)
+        y = y.to(self.device)
         
-        logit = self.classifier(self.backbone(x)['features'])  
-        pred = torch.argmax(logit, dim=1)
+        logits = self.network(x)
+        pred = torch.argmax(logits, dim=1)
 
         acc = torch.sum(pred == y).item()
         return pred, acc / x.size(0)
-
+ 
     def forward(self, x):
-        return self.classifier(self.backbone(x)['features'])  
+        return self.network(x)[:, self.accu_cls_num]
     
-    def before_task(self, task_idx, buffer, train_loader, test_loaders):
-        pass
+    def before_task(self, task_idx, buffer, train_loader, test_loader):
+        self._stage1_training(train_loader, test_loader)
+        if self.cur_task_id == 0:
+            self.accu_cls_num = self.init_cls_num
+        else:
+            self.accu_cls_num += self.inc_cls_num
+            self._stage2_bias_correction(train_loader, test_loader)
+        
+        self.cur_cls_indexes = np.arange(self.prev_cls_num, self.accu_cls_num)
 
     def after_task(self, task_idx, buffer, train_loader, test_loaders):
-        pass
+        # freeze old network as KD teacher
+        self.old_network = deepcopy(self.network)
+        self.old_network.eval()
+        self.prev_cls_num = self.accu_cls_num
+        
+        # update buffer
+        buffer.reduce_old_data(self.cur_task_id, self.accu_cls_num)
+        val_transform = test_loaders[0].dataset.trfms
+        buffer.update(self.network, train_loader, val_transform, 
+                      self.cur_task_id, self.accu_cls_num, self.cur_cls_indexes,
+                      self.device)
+        
+        # compute class mean vector via samples in buffer
+        self.class_means = self.calc_class_mean(buffer,
+                                               train_loader,
+                                               val_transform,
+                                               self.device).to(self.device)
 
+        self.cur_task_id += 1
+        self.lamda = self.prev_cls_num / self.accu_cls_num
 
+    def criterion(self, x, y):
+        # CE loss
+        cur_logits = self.network(x)[:, :self.accu_cls_num]
+        loss = F.cross_entropy(cur_logits, y)
+        
+        # For non-first tasks, using KD loss  
+        if self.cur_task_id > 0:
+            old_logits = self.old_network(x)
+            old_target = F.sigmoid(old_logits)
+            loss += F.binary_cross_entropy_with_logits(cur_logits[:, self.prev_cls_num],
+                                                       old_target[:, self.prev_cls_num])
+        
+        return cur_logits, loss
 
+    def _run(self, train_loader, test_loader, optimizer, scheduler, stage):
+        for epoch in range(1, self.epochs + 1):
+            self.network.train()
+            losses = 0.0
+            for i, (image, label) in enumerate(train_loader):
+                image, label = image.to(self.device), label.to(self.device)
+                logits = self.network(image)
 
-    def test(self, testdata):
-        print("test data number : ",len(testdata))
-        self.backbone.eval()
-        count = 0
-        correct = 0
-        wrong = 0
-        for i, (image, label) in enumerate(testdata):
-            image = image.cuda()
-            label = label.view(-1).cuda()
-            p = self.backbone(image)
-            p = self.bias_forward(p)
-            pred = p[:,:self.seen_cls].argmax(dim=-1)
-            correct += sum(pred == label).item()
-            wrong += sum(pred != label).item()
-        acc = correct / (wrong + correct)
-        print("Test Acc: {}".format(acc*100))
-        self.backbone.train()
-        print("---------------------------------------------")
-        return acc
+                if stage == "training":
+                    clf_loss = F.cross_entropy(logits, label)
+                    if self.old_network is not None:
+                        old_logits = self.old_network(image).detach()
 
+                        hat_pai_k = F.softmax(old_logits / self.T, dim=1)
+                        log_pai_k = F.log_softmax(logits[:, : self.prev_cls_num] / self.T, dim=1)
+                        distill_loss = -torch.mean(torch.sum(hat_pai_k * log_pai_k, dim=1))
 
-    def eval(self, criterion, evaldata):
-        self.backbone.eval()
-        losses = []
-        correct = 0
-        wrong = 0
-        for i, (image, label) in enumerate(evaldata):
-            image = image.cuda()
-            label = label.view(-1).cuda()
-            p = self.backbone(image)
-            p = self.bias_forward(p)
-            loss = criterion(p, label)
-            losses.append(loss.item())
-            pred = p[:,:self.seen_cls].argmax(dim=-1)
-            correct += sum(pred == label).item()
-            wrong += sum(pred != label).item()
-        print("Validation Loss: {}".format(np.mean(losses)))
-        print("Validation Acc: {}".format(100*correct/(correct+wrong)))
-        self.backbone.train()
-        return
-
-
-
-    def get_lr(self, optimizer):
-        for param_group in optimizer.param_groups:
-            return param_group['lr']
-
-    def train(self, batch_size, epoches, lr, max_size):
-        total_cls = self.total_cls
-        criterion = nn.CrossEntropyLoss()
-        exemplar = Exemplar(max_size, total_cls)
-        previous_model = None
-        dataset = self.dataset
-        test_xs = []
-        test_ys = []
-        train_xs = []
-        train_ys = []
-        test_accs = []
-
-        for inc_i in range(dataset.batch_num):
-            print(f"Incremental num : {inc_i}")
-            train, val, test = dataset.getNextClasses(inc_i)
-            print(len(train), len(val), len(test))
-            train_x, train_y = zip(*train)
-            val_x, val_y = zip(*val)
-            test_x, test_y = zip(*test)
-            test_xs.extend(test_x)
-            test_ys.extend(test_y)
-            train_xs, train_ys = exemplar.get_exemplar_train()
-            train_xs.extend(train_x)
-            train_xs.extend(val_x)
-            train_ys.extend(train_y)
-            train_ys.extend(val_y)
-
-            train_data = DataLoader(BatchData(train_xs, train_ys, self.input_transform),
-                        batch_size=batch_size, shuffle=True, drop_last=True)
-            val_data = DataLoader(BatchData(val_x, val_y, self.input_transform_eval),
-                        batch_size=batch_size, shuffle=False)
-            test_data = DataLoader(BatchData(test_xs, test_ys, self.input_transform_eval),
-                        batch_size=batch_size, shuffle=False)
-            optimizer = optim.SGD(self.backbone.parameters(), lr=lr, momentum=0.9,  weight_decay=2e-4)
-            # scheduler = LambdaLR(optimizer, lr_lambda=adjust_cifar100)
-            scheduler = StepLR(optimizer, step_size=self.step_size, gamma=0.1)
-
-
-            # bias_optimizer = optim.SGD(self.bias_layers[inc_i].parameters(), lr=lr, momentum=0.9)
-            bias_optimizer = optim.Adam(self.bias_layers[inc_i].parameters(), lr=0.001)
-            # bias_scheduler = StepLR(bias_optimizer, step_size=70, gamma=0.1)
-            exemplar.update(total_cls//dataset.batch_num, (train_x, train_y), (val_x, val_y))
-
-            self.seen_cls = exemplar.get_cur_cls()
-            print("seen cls number : ", self.seen_cls)
-            val_xs, val_ys = exemplar.get_exemplar_val()
-            val_bias_data = DataLoader(BatchData(val_xs, val_ys, self.input_transform),
-                        batch_size=100, shuffle=True, drop_last=False)
-            test_acc = []
-
-
-            for epoch in range(epoches):
-                print("---"*50)
-                print("Epoch", epoch)
-                scheduler.step()
-                cur_lr = self.get_lr(optimizer)
-                print("Current Learning Rate : ", cur_lr)
-                self.backbone.train()
-                for _ in range(len(self.bias_layers)):
-                    self.bias_layers[_].eval()
-                if inc_i > 0:
-                    self.stage1_distill(train_data, criterion, optimizer)
+                        loss = distill_loss * self.lamda + clf_loss * (1 - self.lamda)
+                    else:
+                        loss = clf_loss
+                elif stage == "bias_correction":
+                    loss = F.cross_entropy(torch.softmax(logits, dim=1), label)
                 else:
-                    self.stage1(train_data, criterion, optimizer)
-                acc = self.test(test_data)
-            if inc_i > 0:
-                for epoch in range(epoches):
-                    # bias_scheduler.step()
-                    self.backbone.eval()
-                    for _ in range(len(self.bias_layers)):
-                        self.bias_layers[_].train()
-                    self.stage2(val_bias_data, criterion, bias_optimizer)
-                    if epoch % 50 == 0:
-                        acc = self.test(test_data)
-                        test_acc.append(acc)
-            for i, layer in enumerate(self.bias_layers):
-                layer.printParam(i)
-            self.previous_model = deepcopy(self.backbone)
-            acc = self.test(test_data)
-            test_acc.append(acc)
-            test_accs.append(max(test_acc))
-            print(test_accs)
+                    raise NotImplementedError()
 
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                losses += loss.item()
 
-    def bias_forward(self, input):
-        in1 = input[:, :20]
-        in2 = input[:, 20:40]
-        in3 = input[:, 40:60]
-        in4 = input[:, 60:80]
-        in5 = input[:, 80:100]
-        out1 = self.bias_layer1(in1)
-        out2 = self.bias_layer2(in2)
-        out3 = self.bias_layer3(in3)
-        out4 = self.bias_layer4(in4)
-        out5 = self.bias_layer5(in5)
-        return torch.cat([out1, out2, out3, out4, out5], dim = 1)
+            scheduler.step()
+            _, train_acc = self.inference(train_loader)
+            _, test_acc = self.inference(test_loader)
 
+            print("stage : {}, => Task {}, Epoch {}/{} => Loss {:.3f}, train_acc : {:.3f}, test_acc : {:.3f}".format(
+                stage, self.cur_task_id, epoch, self.epochs, losses / len(train_loader), train_acc, test_acc))
 
-    def stage1(self, train_data, criterion, optimizer):
-        print("Training ... ")
-        losses = []
-        for i, (image, label) in enumerate(tqdm(train_data)):
-            image = image.cuda()
-            label = label.view(-1).cuda()
-            p = self.backbone(image)
-            p = self.bias_forward(p)
-            loss = criterion(p[:,:self.seen_cls], label)
-            optimizer.zero_grad()
-            loss.backward(retain_graph=True)
-            optimizer.step()
-            losses.append(loss.item())
-        print("stage1 loss :", np.mean(losses))
+    def _stage1_training(self, train_loader, test_loader):
+        """
+        if self.cur_task_id == 0:
+            loaded_dict = torch.load('./dict_0.pkl')
+            self.network.load_state_dict(loaded_dict['model_state_dict'])
+            self.network.to(self.device)
+            return
+        """
 
-    def stage1_distill(self, train_data, criterion, optimizer):
-        print("Training ... ")
-        distill_losses = []
-        ce_losses = []
-        T = 2
-        alpha = (self.seen_cls - 20)/ self.seen_cls
-        print("classification proportion 1-alpha = ", 1-alpha)
-        for i, (image, label) in enumerate(tqdm(train_data)):
-            image = image.cuda()
-            label = label.view(-1).cuda()
-            p = self.backbone(image)
-            p = self.bias_forward(p)
-            with torch.no_grad():
-                pre_p = self.previous_model(image)
-                pre_p = self.bias_forward(pre_p)
-                pre_p = F.softmax(pre_p[:,:self.seen_cls-20]/T, dim=1)
-            logp = F.log_softmax(p[:,:self.seen_cls-20]/T, dim=1)
-            loss_soft_target = -torch.mean(torch.sum(pre_p * logp, dim=1))
-            loss_hard_target = nn.CrossEntropyLoss()(p[:,:self.seen_cls], label)
-            loss = loss_soft_target * T * T + (1-alpha) * loss_hard_target
-            optimizer.zero_grad()
-            loss.backward(retain_graph=True)
-            optimizer.step()
-            distill_losses.append(loss_soft_target.item())
-            ce_losses.append(loss_hard_target.item())
-        print("stage1 distill loss :", np.mean(distill_losses), "ce loss :", np.mean(ce_losses))
+        ignored_params = list(map(id, self.network.bias_layers.parameters()))
+        base_params = filter(lambda p: id(p) not in ignored_params, self.network.parameters())
+        network_params = [
+            {"params": base_params, "lr": self.lr, "weight_decay": self.weight_decay},
+            {
+                "params": self.network.bias_layers.parameters(),
+                "lr": 0,
+                "weight_decay": 0,
+            },]
+        optimizer = optim.SGD(network_params, lr=self.lr, momentum=self.momentum, weight_decay=self.weight_decay)
+        scheduler = optim.lr_scheduler.MultiStepLR(optimizer=optimizer, milestones=self.milestones, gamma=self.gamma)
+        
+        self.network.to(self.device)
+        if self.old_network is not None:
+            self.old_network.to(self.device)
 
+        self._run(train_loader, test_loader, optimizer, scheduler, stage="training")
 
-    def stage1(self, train_data, criterion, optimizer):
-        print("Training ... ")
-        losses = []
-        for i, (image, label) in enumerate(tqdm(train_data)):
-            image = image.cuda()
-            label = label.view(-1).cuda()
-            p = self.backbone(image)
-            p = self.bias_forward(p)
-            loss = criterion(p[:,:self.seen_cls], label)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            losses.append(loss.item())
-        print("stage1 loss :", np.mean(losses))
-
-    def stage2(self, val_bias_data, criterion, optimizer):
-        print("Evaluating ... ")
-        losses = []
-        for i, (image, label) in enumerate(tqdm(val_bias_data)):
-            image = image.cuda()
-            label = label.view(-1).cuda()
-            p = self.backbone(image)
-            p = self.bias_forward(p)
-            loss = criterion(p[:,:self.seen_cls], label)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            losses.append(loss.item())
-        print("stage2 loss :", np.mean(losses))
+    def _stage2_bias_correction(self, train_loader, test_loader):
+        if isinstance(self.network, nn.DataParallel):
+            self.network = self.network.module
+        network_params = [
+            {
+                "params": self.network.bias_layers[-1].parameters(),
+                "lr": self.lr,
+                "weight_decay": self.weight_decay,
+            }]
+        optimizer = optim.SGD(network_params, lr=self.lr, momentum=self.momentum, weight_decay=self.weight_decay)
+        scheduler = optim.lr_scheduler.MultiStepLR(optimizer=optimizer, milestones=self.milestones, gamma=self.gamma)
+        
+        self.network.to(self.device)
+        self._run(train_loader, test_loader, optimizer, scheduler, stage="bias_correction" )
