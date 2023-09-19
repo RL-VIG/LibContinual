@@ -51,7 +51,7 @@ buffer:
     strategy: random     # random, equal_random, reservoir, herding
 
 classifier:
-  name: LUCIR
+  name: LWF
   kwargs:
     num_class: 100
     feat_dim: 512
