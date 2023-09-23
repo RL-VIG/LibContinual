@@ -72,7 +72,7 @@ class Trainer(object):
         log_path = os.path.join(save_path, "log")
         if not os.path.isdir(log_path):
             os.mkdir(log_path)
-        log_prefix = config['classifier']['name'] + "-" + config['backbone']['name'] + "-" + mode
+        log_prefix = config['classifier']['name'] + "-" + config['backbone']['name'] + "-" + f"epoch{config['epoch']}" #mode
         log_file = os.path.join(log_path, "{}-{}.log".format(log_prefix, fmt_date_str()))
 
         # if not os.path.isfile(log_file):
@@ -251,9 +251,9 @@ class Trainer(object):
                 print("learning rate: {}".format(self.scheduler.get_last_lr()))
                 print("================ Train on the train set ================")
                 train_meter = self._train(epoch_idx, dataloader)
-                print("Epoch [{}/{}] |\tLoss: {:.3f} \tAverage Acc: {:.3f} ".format(epoch_idx, self.init_epoch if task_idx == 0 else self.inc_epoch, train_meter.avg['loss'], train_meter.avg("acc1")))
+                print("Epoch [{}/{}] |\tLoss: {:.3f} \tAverage Acc: {:.3f} ".format(epoch_idx, self.init_epoch if task_idx == 0 else self.inc_epoch, train_meter.avg('loss'), train_meter.avg("acc1")))
 
-                if (epoch_idx+1) % self.val_per_epoch == 0:
+                if (epoch_idx+1) % self.val_per_epoch == 0 or (epoch_idx+1)==self.inc_epoch:
                     print("================ Test on the test set ================")
                     test_acc = self._validate(task_idx)
                     best_acc = max(test_acc["avg_acc"], best_acc)

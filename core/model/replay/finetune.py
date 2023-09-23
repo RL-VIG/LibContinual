@@ -11,13 +11,12 @@ class Finetune(nn.Module):
         self.num_class = num_class
         self.classifier = nn.Linear(feat_dim, num_class)
         self.loss_fn = nn.CrossEntropyLoss(reduction='mean')
-        self.deivce = kwargs['device']
+        self.device = kwargs['device']
     
     def observe(self, data):
         x, y = data['image'], data['label']
-        x = x.to(self.deivce)
-        y = y.to(self.deivce)
-        # print(x.shape)
+        x = x.to(self.device)
+        y = y.to(self.device)
         logit = self.classifier(self.backbone(x)['features'])    
         loss = self.loss_fn(logit, y)
 
@@ -28,8 +27,8 @@ class Finetune(nn.Module):
 
     def inference(self, data):
         x, y = data['image'], data['label']
-        x = x.to(self.deivce)
-        y = y.to(self.deivce)
+        x = x.to(self.device)
+        y = y.to(self.device)
         
         logit = self.classifier(self.backbone(x)['features'])  
         pred = torch.argmax(logit, dim=1)
