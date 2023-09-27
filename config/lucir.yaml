@@ -5,7 +5,7 @@ includes:
   - headers/optimizer.yaml
   - backbones/resnet12.yaml
 
-data_root: E:/experiment/dataset/cifar100
+data_root: /data/fanzhichen/continual/cifar100
 image_size: 32
   
 save_path: ./
