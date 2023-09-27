@@ -15,9 +15,7 @@ def main(rank, config):
     print("Time cost : ",time.time()-begin)
 
 if __name__ == "__main__":
-    # config = Config("./config/finetune.yaml").get_config_dict()
     config = Config("./config/lucir.yaml").get_config_dict()
-    # config = Config("./config/lwf.yaml").get_config_dict()
 
     if config["n_gpu"] > 1:
         pass
