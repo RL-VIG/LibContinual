@@ -26,7 +26,6 @@ class WA(nn.Module):
 
             logit = self.classifier(self.backbone(x)['features'])
             loss = self.loss_fn(logit, y)
-
             pred = torch.argmax(logit, dim=1)
 
             acc = torch.sum(pred == y).item()
@@ -66,7 +65,7 @@ class WA(nn.Module):
     def forward(self, x):
         return self.classifier(self.backbone(x)['features'])
 
-    def before_task(self, buffer, train_loader, test_loaders):
+    def before_task(self, task_idx, buffer, train_loader, test_loaders):
         # 可选，如果算法在每个任务开始前后有额外的操作，在这两个函数内完成
         self.total_classes = buffer.total_classes
         classifier = nn.Linear(self.feat_dim, self.total_classes)
@@ -78,9 +77,8 @@ class WA(nn.Module):
         del self.classifier
         self.classifier = classifier
 
-    def after_task(self, buffer, train_loader, test_loaders):
+    def after_task(self, task_idx, buffer, train_loader, test_loaders):
         # 可选，如果算法在每个任务开始前后有额外的操作，在这两个函数内完成
-        task_idx = self.task_idx
         if task_idx > 0:
             increment = self.total_classes - self.known_classes
             weights = self.classifier.weight.data
