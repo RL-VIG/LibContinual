@@ -2,7 +2,7 @@ includes:
   - headers/data.yaml
   - headers/device.yaml
   - headers/model.yaml
-  - headers/optimizer.yaml
+  # - headers/optimizer.yaml
   - backbones/resnet12.yaml
 
 data_root: /data/fanzhichen/continual/cifar100
@@ -10,15 +10,15 @@ image_size: 32
   
 save_path: ./
 # data
-init_cls_num: 10
+init_cls_num: 50
 inc_cls_num: 10
-task_num: 10
+task_num: 6
 
 
-epoch: 100
-device_ids: 0
+epoch: 160 # 160
+device_ids: 1
 n_gpu: 1
-val_per_epoch: 10
+val_per_epoch: 1
 
 
 batch_size: 128
@@ -30,13 +30,13 @@ optimizer:
     lr: 0.1
 
 lr_scheduler:
-  name: StepLR
+  name: MultiStepLR
   kwargs:
-    gamma: 0.5
-    step_size: 10
+    gamma: 0.1
+    milestones: [80, 120]
 
 backbone:
-  name: resnet18
+  name: resnet32
   kwargs:
     num_classes: 100
     args: 
@@ -46,18 +46,18 @@ backbone:
 buffer:
   name: LinearBuffer
   kwargs:
-    buffer_size: 500
-    batch_size: 32
-    strategy: random     # random, equal_random, reservoir, herding
+    buffer_size: 2000
+    batch_size: 128
+    strategy: herding     # random, equal_random, reservoir, herding
 
 classifier:
   name: LUCIR
   kwargs:
     num_class: 100
     feat_dim: 512
-    init_cls_num: 10
+    init_cls_num: 50
     inc_cls_num: 10
     dist: 0.5
-    lamda: 10
+    lamda: 5
     K: 2
     lw_mr: 1
