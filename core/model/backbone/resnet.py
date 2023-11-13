@@ -14,10 +14,6 @@ from torch.nn.parameter import Parameter
 import torch.nn.functional as F
 
 
-# __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
-#            'resnet152', 'cifarresnet', 'CifarResNet']
-
-
 model_urls = {
     'resnet18': 'https://download.pytorch.org/models/resnet18-5c106cde.pth',
     'resnet34': 'https://download.pytorch.org/models/resnet34-333f7ec4.pth',
@@ -260,6 +256,11 @@ def _resnet(arch, block, layers, pretrained, progress, **kwargs):
         state_dict = load_state_dict_from_url(model_urls[arch],
                                               progress=progress)
         model.load_state_dict(state_dict)
+
+    if 'cosine_fc' in kwargs['args'].keys() and kwargs['args']['cosine_fc']:
+        in_features = model.fc.in_features
+        out_features = model.fc.out_features
+        model.fc = CosineLinear(in_features, out_features)
     return model
 
 
@@ -471,7 +472,8 @@ class SplitCosineLinear(nn.Module):
 
 
 
-
+# modifiled resnet source code from: 
+# https://github.com/hshustc/CVPR19_Incremental_Learning
 
 class modified_BasicBlock(nn.Module):
     expansion = 1
@@ -520,7 +522,8 @@ class modified_ResNet(nn.Module):
         self.layer3 = self._make_layer(block, 64, layers[2], stride=2, last_phase=True)
         self.avgpool = nn.AvgPool2d(8, stride=1)
         # self.fc = modified_linear.CosineLinear(64 * block.expansion, num_classes)
-        self.fc = CosineLinear(64 * block.expansion, num_classes)
+        self.fc = nn.Linear(64 * block.expansion, num_classes)
+        # self.fc = CosineLinear(64 * block.expansion, num_classes)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -569,9 +572,18 @@ class modified_ResNet(nn.Module):
 def resnet20(pretrained=False, **kwargs):
     n = 3
     model = modified_ResNet(modified_BasicBlock, [n, n, n], num_classes=50)
+    if 'cosine_fc' in kwargs['args'].keys() and kwargs['args']['cosine_fc']:
+        in_features = model.fc.in_features
+        out_features = model.fc.out_features
+        model.fc = CosineLinear(in_features, out_features)
     return model
 
 def resnet32(pretrained=False, **kwargs):
     n = 5
     model = modified_ResNet(modified_BasicBlock, [n, n, n], num_classes=50)
+    print(kwargs)
+    if 'cosine_fc' in kwargs['args'].keys() and kwargs['args']['cosine_fc']:
+        in_features = model.fc.in_features
+        out_features = model.fc.out_features
+        model.fc = CosineLinear(in_features, out_features)
     return model
