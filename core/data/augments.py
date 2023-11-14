@@ -86,7 +86,12 @@ def get_augment_method(
     #         ]
     #     else:
     #         raise RuntimeError
-    trfms_list = []
+    if mode == 'test':
+        trfms_list = []
+    else:
+        trfms_list = []
+        trfms_list.append(transforms.RandomCrop(32, padding=4))
+        trfms_list.append(transforms.RandomHorizontalFlip())
     return trfms_list
 
 def get_default_image_size_trfms(image_size):
