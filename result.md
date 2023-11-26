@@ -47,6 +47,9 @@ DER | (20, 20) | - | - | -
 
 # 8. EWC (todo)
 链接： https://arxiv.org/abs/1612.00796
+method| 设定 | Buffer | 复现精度 | 论文精度
+------ | ----- | ----- | ----- | ------
+EWC | (50, 50) | - | 57.3% | 58.5%
 
 # 9. DER (todo)
 链接：https://arxiv.org/pdf/2103.16788.pdf
