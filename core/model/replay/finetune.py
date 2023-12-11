@@ -47,5 +47,8 @@ class Finetune(nn.Module):
         pass
     
     def get_parameters(self, config):
-        return self.backbone.parameters()
+        train_parameters = []
+        train_parameters.append({"params": self.backbone.parameters()})
+        train_parameters.append({"params": self.classifier.parameters()})
+        return train_parameters
 
