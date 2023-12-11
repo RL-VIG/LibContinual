@@ -12,6 +12,7 @@ class Finetune(nn.Module):
         self.classifier = nn.Linear(feat_dim, num_class)
         self.loss_fn = nn.CrossEntropyLoss(reduction='mean')
         self.device = kwargs['device']
+        self.kwargs = kwargs
     
     def observe(self, data):
         x, y = data['image'], data['label']
@@ -44,3 +45,7 @@ class Finetune(nn.Module):
 
     def after_task(self, task_idx, buffer, train_loader, test_loaders):
         pass
+    
+    def get_parameters(self, config):
+        return self.backbone.parameters()
+
