@@ -19,6 +19,22 @@ class EWC(Finetune):
         # self.classifier = CosineLinear(feat_dim, kwargs['init_cls_num'])
         self.fisher = None
         self.lamda = self.kwargs['lamda']
+        
+        self.test_fc_a = nn.Linear(10, 10, bias=False)
+        self.test_fc_b = nn.Linear(5, 5, bias=False)
+        
+    def get_parameters(self,  config):
+
+        # # case1
+        # train_parameters = []
+        # train_parameters.append({"params": self.test_fc_a.parameters(), "lr": 0.1, "weigth_decay": 0.00005})
+        # train_parameters.append({"params": self.test_fc_b.parameters(), "lr": 0.01})
+        
+        # case2
+        train_parameters = []
+        train_parameters.append({"params": self.backbone.parameters()})
+        return train_parameters
+        
 
 
     def before_task(self, task_idx, buffer, train_loader, test_loaders):
@@ -43,11 +59,7 @@ class EWC(Finetune):
             loss = F.cross_entropy(logit, y)
         else:
             old_classes = self.backbone.fc.out_features - self.kwargs['inc_cls_num']
-            # print("old_classes:", old_classes)
-            # print("labels:", y)
             loss = F.cross_entropy(logit[:, old_classes:], y - old_classes)
-            # print("loss:", loss)
-            # print("=======")
             loss += self.lamda * self.compute_ewc()
             
         pred = torch.argmax(logit, dim=1)

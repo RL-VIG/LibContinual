@@ -12,6 +12,8 @@ from torch.utils.data import DataLoader
 import numpy as np
 import sys
 from core.utils import Logger, fmt_date_str
+from torch.optim.lr_scheduler import MultiStepLR
+import torch.optim as optim
 
 
 class Trainer(object):
@@ -46,6 +48,8 @@ class Trainer(object):
         ) = self._init_dataloader(config)
         
         self.buffer = self._init_buffer(config)
+
+        self.task_idx = 0 
         (
             self.init_epoch,
             self.inc_epoch,
@@ -140,16 +144,45 @@ class Trainer(object):
         Returns:
             tuple: A tuple of optimizer, scheduler.
         """
-        params_dict_list = {"params": self.model.parameters()}
+        # params_dict_list = {"params": self.model.parameters()}
+        params = self.model.parameters()
     
+
+        if config['classifier']['name'] == 'LUCIR':
+            params = self.model._init_optim(config, self.task_idx)
+        # if config['classifier']['name'] == 'LUCIR' and self.task_idx > 0:
+        #     #fix the embedding of old classes
+        #     ignored_params = list(map(id, self.model.backbone.fc.fc1.parameters()))
+        #     base_params = filter(lambda p: id(p) not in ignored_params, \
+        #             self.model.backbone.parameters())
+        #     tg_params =[{'params': base_params, 'lr': 0.1, 'weight_decay': 5e-4}, \
+        #                 {'params': self.model.backbone.fc.fc1.parameters(), 'lr': 0, 'weight_decay': 0}]
+        # elif config['classifier']['name'] == 'LUCIR':
+        #     tg_params = self.model.backbone.parameters()
+
+        # for My
+        # optimizer = get_instance(
+        #     torch.optim, "optimizer", config, params=self.model.reg_params
+        # )
         optimizer = get_instance(
-            torch.optim, "optimizer", config, params=self.model.parameters()
+            torch.optim, "optimizer", config, params=self.model.get_parameters(config)
         )
-        scheduler = GradualWarmupScheduler(
-            optimizer, self.config
-        )  # if config['warmup']==0, scheduler will be a normal lr_scheduler, jump into this class for details
-        print(optimizer)
         
+        # optimizer = get_instance(
+        #     torch.optim, "optimizer", config, params=params
+        # )
+        scheduler = get_instance(
+            torch.optim.lr_scheduler, "lr_scheduler", config, optimizer=optimizer, gamma=config['lr_scheduler']['kwargs']['gamma']
+        )
+        # scheduler = GradualWarmupScheduler(
+        #     optimizer, self.config
+        # )  # if config['warmup']==0, scheduler will be a normal lr_scheduler, jump into this class for details
+        
+        # For LUCIR
+        # optimizer = optim.SGD(tg_params, lr=0.1, momentum=0.9, weight_decay=5e-4)
+        # scheduler = MultiStepLR(optimizer, milestones=config['lr_scheduler']['kwargs']['milestones'], 
+        #                             gamma=config['lr_scheduler']['kwargs']['gamma'])
+
 
         if 'init_epoch' in config.keys():
             init_epoch = config['init_epoch']
@@ -176,7 +209,7 @@ class Trainer(object):
         dic = {"backbone": backbone, "device": self.device}
 
         model = get_instance(arch, "classifier", config, **dic)
-        print(model)
+        print(backbone)
         print("Trainable params in the model: {}".format(count_parameters(model)))
 
         model = model.to(self.device)
@@ -218,6 +251,7 @@ class Trainer(object):
         """
         experiment_begin = time()
         for task_idx in range(self.task_num):
+            self.task_idx = task_idx
             print("================Task {} Start!================".format(task_idx))
             self.buffer.total_classes += self.init_cls_num if task_idx == 0 else self.inc_cls_num
             if hasattr(self.model, 'before_task'):
@@ -248,6 +282,7 @@ class Trainer(object):
 
             best_acc = 0.
             for epoch_idx in range(self.init_epoch if task_idx == 0 else self.inc_epoch):
+
                 print("learning rate: {}".format(self.scheduler.get_last_lr()))
                 print("================ Train on the train set ================")
                 train_meter = self._train(epoch_idx, dataloader)
@@ -270,10 +305,12 @@ class Trainer(object):
                 self.model.after_task(task_idx, self.buffer, self.train_loader.get_loader(task_idx), self.test_loader.get_loader(task_idx))
 
 
-            if self.buffer.strategy == 'herding':
-                hearding_update(self.train_loader.get_loader(task_idx).dataset, self.buffer, self.model.backbone, self.device)
-            elif self.buffer.strategy == 'random':
-                random_update(self.train_loader.get_loader(task_idx).dataset, self.buffer)
+            if self.buffer.buffer_size > 0:
+                if self.buffer.strategy == 'herding':
+                    # hearding_update(self.train_loader.get_loader(task_idx).dataset, self.buffer, self.model.backbone, self.device)
+                    hearding_update(self.train_loader.get_loader(task_idx).dataset, self.buffer, nn.Sequential(*list(self.model.backbone.children())[:-1]), self.device)
+                elif self.buffer.strategy == 'random':
+                    random_update(self.train_loader.get_loader(task_idx).dataset, self.buffer)
 
 
 
@@ -291,7 +328,8 @@ class Trainer(object):
         meter = self.train_meter
         meter.reset()
         
-
+        sum = 0.
+        
         with tqdm(total=len(dataloader)) as pbar:
             for batch_idx, batch in enumerate(dataloader):
                 output, acc, loss = self.model.observe(batch)
@@ -304,8 +342,12 @@ class Trainer(object):
                 pbar.update(1)
                 
                 meter.update("acc1", acc)
+                
+                sum += batch['image'].size(0)
 
-
+        if epoch_idx == 0:
+            print("task {},   sample {}".format(self.task_idx, sum))
+            
         return meter
 
 
