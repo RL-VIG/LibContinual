@@ -14,7 +14,7 @@ import sys
 from core.utils import Logger, fmt_date_str
 from torch.optim.lr_scheduler import MultiStepLR
 import torch.optim as optim
-
+from copy import deepcopy
 
 class Trainer(object):
     """
@@ -266,8 +266,9 @@ class Trainer(object):
 
             dataloader = self.train_loader.get_loader(task_idx)
 
+            
             if isinstance(self.buffer, LinearBuffer) and task_idx != 0:
-                datasets = dataloader.dataset
+                datasets = deepcopy(dataloader.dataset)
                 datasets.images.extend(self.buffer.images)
                 datasets.labels.extend(self.buffer.labels)
                 dataloader = DataLoader(
