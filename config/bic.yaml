@@ -10,34 +10,36 @@ image_size: 32
 save_path: ./
 
 # data
-init_cls_num: 10
-inc_cls_num: 10
-task_num: 10
+init_cls_num: 20
+inc_cls_num: 20
+task_num: 5
 
-epoch: 250
+epoch: 80
 device_ids: 0
 n_gpu: 1
-val_per_epoch: 1
-numworks: 1
-split_ratio: 0.1
+val_per_epoch: 5
+stage2_epoch: 100
+
+batch_size: 128
 
 optimizer:
   name: SGD
   kwargs:
     lr: 0.1
-    weight_decay: 2e-4
     momentum: 0.9
-    milestones: [60, 100, 140]
+    weight_decay: 2e-4
 
 lr_scheduler:
-  name: StepLR
+  name: MultiStepLR
   kwargs:
-    gamma: 0.5
-    step_size: 10
+    gamma: 0.1
+    milestones: [25, 50]
+
+
 
 # done
 backbone:
-  name: cifarresnet
+  name: resnet18
   kwargs:
     num_classes: 100
     args: 
@@ -48,11 +50,24 @@ buffer:
   kwargs:
     buffer_size: 2000
     batch_size: 128
-    strategy: random     # random, equal_random, reservoir, herding
-    memory_size: 
+    strategy: herding      # random, equal_random, reservoir, herding 
 
 classifier:
   name: bic
   kwargs:
     num_class: 100
-    feat_dim: 256
+    feat_dim: 512
+    #feat_dim: 64
+    init_cls_num: 20
+    inc_cls_num: 20
+    task_num: 5 #10
+
+    optimizer:
+      name: SGD
+      kwargs:
+        lr: 0.1
+        weight_decay: 2e-4
+        momentum: 0.9
+
+
+   

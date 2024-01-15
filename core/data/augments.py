@@ -92,6 +92,7 @@ def get_augment_method(
         trfms_list = []
         trfms_list.append(transforms.RandomCrop(32, padding=4))
         trfms_list.append(transforms.RandomHorizontalFlip())
+        trfms_list.append(transforms.ColorJitter(brightness=63 / 255))
     return trfms_list
 
 def get_default_image_size_trfms(image_size):

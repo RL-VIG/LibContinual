@@ -10,10 +10,10 @@ from torch.utils.data import Dataset
 class LinearHerdingBuffer:
     def __init__(self, buffer_size, batch_size):    
         self.buffer_size = buffer_size
-        # self.strategy = strategy
+        self.strategy = None
         self.batch_size = batch_size
         self.images, self.labels = [], []
-
+        self.total_classes = 0
 
     def is_empty(self):
         return len(self.labels) == 0
@@ -25,11 +25,9 @@ class LinearHerdingBuffer:
         self.images = []
         self.labels = []
     
-    
     def get_all_data(self):
         # return images and labels in the format of np.array
         return np.array(self.images), np.array(self.labels)
-    
     
     def add_data(self, data:List[str], targets:List[str]):
         # add data and its labels to the buffer
@@ -113,12 +111,14 @@ class LinearHerdingBuffer:
         # compute feature for all training sample for all train samples
         extracted_features = []
         extracted_targets = []
+        print("!!!!! The origin code is\'feats = model.backbone(image)['features'] \', change to \'feats = model.extract_vector(image) \' by WA")
         with torch.no_grad():
             model.eval()
             for data in loader:
                 image = data['image'].to(device)
                 label = data['label'].to(device)
-                feats = model.backbone(image)['features']
+                feats = model.extract_vector(image)
+                # feats = model.backbone(image)['features']
                 feats = feats / feats.norm(dim=1).view(-1, 1)  # Feature normalization
                 extracted_features.append(feats)
                 extracted_targets.append(label)

@@ -1,12 +1,14 @@
+from typing import Iterator
 import torch
 from torch import nn
 from torch.nn import functional as F
 from copy import deepcopy
 import numpy as np
+from torch.nn.parameter import Parameter
 from torch.utils.data import DataLoader, Dataset
 import PIL
 import os
-
+import copy
 
 class Model(nn.Module):
     # A model consists with a backbone and a classifier
@@ -58,7 +60,12 @@ class ICarl(nn.Module):
 
         # class prototype vector
         self.class_means = None
-                
+
+
+    # only the current model is optimized
+    def get_parameters(self, config):
+        return self.network.parameters()
+    
     
     def observe(self, data):
         # get data and labels
@@ -77,6 +84,9 @@ class ICarl(nn.Module):
 
     def inference(self, data):
         
+        # if self.class_means is not None:
+        #     print(len(self.class_means), self.accu_cls_num)
+        
         if self.class_means is not None and len(self.class_means) == self.accu_cls_num:
             # we only test when class mean vector computation is finished.
             return self.NCM_classify(data)
@@ -86,12 +96,12 @@ class ICarl(nn.Module):
             # call this function after func "after_task" called, 
             # and return value of this "inference" function is computed 
             # via model forward logits
-
             x, y = data['image'], data['label']
             x = x.to(self.device)
             y = y.to(self.device)
-            
-            logits = self.network(x)
+
+            # XXX: modify here 输出类别是见过的类别 
+            logits = self.network(x)[:, :self.accu_cls_num]
             pred = torch.argmax(logits, dim=1)
 
             acc = torch.sum(pred == y).item()
@@ -148,7 +158,7 @@ class ICarl(nn.Module):
 
     def after_task(self, task_idx, buffer, train_loader, test_loaders):
         # freeze old network as KD teacher
-        self.old_network = deepcopy(self.network)
+        self.old_network = copy.deepcopy(self.network)
         self.old_network.eval()
         
         self.prev_cls_num = self.accu_cls_num
@@ -167,24 +177,35 @@ class ICarl(nn.Module):
                                                train_loader,
                                                val_transform,
                                                self.device).to(self.device)
-
         self.cur_task_id += 1
         
     
+
+    
+
     def criterion(self, x, y):
-        # CE loss
+        def _KD_loss(pred, soft, T=2):
+            pred = torch.log_softmax(pred / T, dim=1)
+            soft = torch.softmax(soft / T, dim=1)
+            return -1 * torch.mul(soft, pred).sum() / pred.shape[0]
+
         cur_logits = self.network(x)[:, :self.accu_cls_num]
-        loss = F.cross_entropy(cur_logits, y)
-        
-        # For non-first tasks, using KD loss  
+        loss_clf = F.cross_entropy(cur_logits, y)
+
         if self.cur_task_id > 0:
             old_logits = self.old_network(x)
-            old_target = F.sigmoid(old_logits)
-            loss += F.binary_cross_entropy_with_logits(cur_logits[:, self.prev_cls_num],
-                                                       old_target[:, self.prev_cls_num])
-        
+            loss_kd = _KD_loss(
+                cur_logits[:, : self.prev_cls_num],
+                old_logits[:, : self.prev_cls_num],
+            )
+            loss = loss_clf + loss_kd
+        else:
+            loss = loss_clf
+
         return cur_logits, loss
-    
+
+
+
 
     def calc_class_mean(self, buffer, train_loader, val_transform, device):
 

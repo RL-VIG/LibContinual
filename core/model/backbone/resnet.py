@@ -5,6 +5,7 @@ https://github.com/pytorch/vision/blob/master/torchvision/models/resnet.py
 import math
 import torch
 import torch.nn as nn
+import copy
 try:
     from torchvision.models.utils import load_state_dict_from_url
 except:
@@ -196,6 +197,10 @@ class ResNet(nn.Module):
                     nn.init.constant_(m.bn3.weight, 0)
                 elif isinstance(m, BasicBlock):
                     nn.init.constant_(m.bn2.weight, 0)
+                    
+                    
+        self.neck = nn.ModuleList()
+        self.fc = nn.Linear(512, 20)
 
     def _make_layer(self, block, planes, blocks, stride=1, dilate=False):
         norm_layer = self._norm_layer
@@ -241,6 +246,19 @@ class ResNet(nn.Module):
 
     def forward(self, x):
         return self._forward_impl(x)
+    
+    def feature(self, x):
+        x = self.conv1(x)  # [bs, 64, 32, 32]
+
+        x_1 = self.layer1(x)  # [bs, 128, 32, 32]
+        x_2 = self.layer2(x_1)  # [bs, 256, 16, 16]
+        x_3 = self.layer3(x_2)  # [bs, 512, 8, 8]
+        x_4 = self.layer4(x_3)  # [bs, 512, 4, 4]
+
+        pooled = self.avgpool(x_4)  # [bs, 512, 1, 1]
+        features = torch.flatten(pooled, 1)  # [bs, 512]
+        
+        return features
 
     @property
     def last_conv(self):
@@ -320,84 +338,134 @@ def resnet152(pretrained=False, progress=True, **kwargs):
 
 
 
-# class CifarResNet(nn.Module):
-#     """
-#     ResNet optimized for the Cifar Dataset, as specified in
-#     https://arxiv.org/abs/1512.03385.pdf
-#     """
 
-#     def __init__(self, block, depth, channels=3):
-#         super(CifarResNet, self).__init__()
+class ResNetBasicblock(nn.Module):
+    expansion = 1
 
-#         # Model type specifies number of layers for CIFAR-10 and CIFAR-100 model
-#         assert (depth - 2) % 6 == 0, 'depth should be one of 20, 32, 44, 56, 110'
-#         layer_blocks = (depth - 2) // 6
+    def __init__(self, inplanes, planes, stride=1, downsample=None):
+        super(ResNetBasicblock, self).__init__()
 
-#         self.conv_1_3x3 = nn.Conv2d(channels, 16, kernel_size=3, stride=1, padding=1, bias=False)
-#         self.bn_1 = nn.BatchNorm2d(16)
+        self.conv_a = nn.Conv2d(inplanes, planes, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.bn_a = nn.BatchNorm2d(planes)
 
-#         self.inplanes = 16
-#         self.stage_1 = self._make_layer(block, 16, layer_blocks, 1)
-#         self.stage_2 = self._make_layer(block, 32, layer_blocks, 2)
-#         self.stage_3 = self._make_layer(block, 64, layer_blocks, 2)
-#         self.avgpool = nn.AvgPool2d(8)
-#         self.out_dim = 64 * block.expansion
-#         self.fc = nn.Linear(64*block.expansion, 10)
+        self.conv_b = nn.Conv2d(planes, planes, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn_b = nn.BatchNorm2d(planes)
 
-#         for m in self.modules():
-#             if isinstance(m, nn.Conv2d):
-#                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-#                 m.weight.data.normal_(0, math.sqrt(2. / n))
-#                 # m.bias.data.zero_()
-#             elif isinstance(m, nn.BatchNorm2d):
-#                 m.weight.data.fill_(1)
-#                 m.bias.data.zero_()
-#             elif isinstance(m, nn.Linear):
-#                 nn.init.kaiming_normal_(m.weight)
-#                 m.bias.data.zero_()
+        self.downsample = downsample
 
-#     def _make_layer(self, block, planes, blocks, stride=1):
-#         downsample = None
-#         if stride != 1 or self.inplanes != planes * block.expansion:
-#             downsample = nn.Sequential(
-#                 nn.Conv2d(self.inplanes, planes * block.expansion,
-#                           kernel_size=1, stride=stride, bias=False),
-#             )
-#             # downsample = DownsampleA(self.inplanes, planes * block.expansion, stride)
+    def forward(self, x):
+        residual = x
 
-#         layers = []
-#         layers.append(block(self.inplanes, planes, stride, downsample))
-#         self.inplanes = planes * block.expansion
-#         for i in range(1, blocks):
-#             layers.append(block(self.inplanes, planes))
+        basicblock = self.conv_a(x)
+        basicblock = self.bn_a(basicblock)
+        basicblock = F.relu(basicblock, inplace=True)
 
-#         return nn.Sequential(*layers)
+        basicblock = self.conv_b(basicblock)
+        basicblock = self.bn_b(basicblock)
 
-#     def forward(self, x):
-#         x = self.conv_1_3x3(x)  # [bs, 16, 32, 32]
-#         x = F.relu(self.bn_1(x), inplace=True)
+        if self.downsample is not None:
+            residual = self.downsample(x)
 
-#         x_1 = self.stage_1(x)  # [bs, 16, 32, 32]
-#         x_2 = self.stage_2(x_1)  # [bs, 32, 16, 16]
-#         x_3 = self.stage_3(x_2)  # [bs, 64, 8, 8]
-
-#         pooled = self.avgpool(x_3)  # [bs, 64, 1, 1]
-#         features = pooled.view(pooled.size(0), -1)  # [bs, 64]
-
-#         return {
-#             'fmaps': [x_1, x_2, x_3],
-#             'features': features
-#         }
-
-#     @property
-#     def last_conv(self):
-#         return self.stage_3[-1].conv_b
+        return F.relu(residual + basicblock, inplace=True)
 
 
-def cifarresnet(**kwargs):
-    """Constructs a ResNet-32 model for CIFAR-100."""
-    model = CifarResNet(BasicBlock, 32)
-    return model
+class CifarResNet(nn.Module):
+    """
+    ResNet optimized for the Cifar Dataset, as specified in
+    https://arxiv.org/abs/1512.03385.pdf
+    """
+
+    def __init__(self, block, depth, channels=3):
+        super(CifarResNet, self).__init__()
+
+        # Model type specifies number of layers for CIFAR-10 and CIFAR-100 model
+        assert (depth - 2) % 6 == 0, 'depth should be one of 20, 32, 44, 56, 110'
+        layer_blocks = (depth - 2) // 6
+
+        self.conv_1_3x3 = nn.Conv2d(channels, 16, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn_1 = nn.BatchNorm2d(16)
+
+        self.inplanes = 16
+        self.stage_1 = self._make_layer(block, 16, layer_blocks, 1)
+        self.stage_2 = self._make_layer(block, 32, layer_blocks, 2)
+        self.stage_3 = self._make_layer(block, 64, layer_blocks, 2)
+        self.avgpool = nn.AvgPool2d(8)
+        self.out_dim = 64 * block.expansion
+        self.fc = nn.Linear(64*block.expansion, 20)
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, math.sqrt(2. / n))
+                # m.bias.data.zero_()
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+            elif isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight)
+                m.bias.data.zero_()
+                
+                
+        self.neck = nn.ModuleList()
+
+    def _make_layer(self, block, planes, blocks, stride=1):
+        downsample = None
+        if stride != 1 or self.inplanes != planes * block.expansion:
+            downsample = nn.Sequential(
+                nn.Conv2d(self.inplanes, planes * block.expansion,
+                          kernel_size=1, stride=stride, bias=False),
+            )
+            # downsample = DownsampleA(self.inplanes, planes * block.expansion, stride)
+
+        layers = []
+        layers.append(block(self.inplanes, planes, stride, downsample))
+        self.inplanes = planes * block.expansion
+        for i in range(1, blocks):
+            layers.append(block(self.inplanes, planes))
+
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        x = self.conv_1_3x3(x)  # [bs, 16, 32, 32]
+        x = F.relu(self.bn_1(x), inplace=True)
+
+        x_1 = self.stage_1(x)  # [bs, 16, 32, 32]
+        x_2 = self.stage_2(x_1)  # [bs, 32, 16, 16]
+        x_3 = self.stage_3(x_2)  # [bs, 64, 8, 8]
+
+        pooled = self.avgpool(x_3)  # [bs, 64, 1, 1]
+        features = pooled.view(pooled.size(0), -1)  # [bs, 64]
+
+        return {
+            'fmaps': [x_1, x_2, x_3],
+            'features': features
+        }
+        out = self.fc(features)
+        return out
+    
+    
+    def feature(self, x):
+        x = self.conv_1_3x3(x)  # [bs, 16, 32, 32]
+        x = F.relu(self.bn_1(x), inplace=True)
+
+        x_1 = self.stage_1(x)  # [bs, 16, 32, 32]
+        x_2 = self.stage_2(x_1)  # [bs, 32, 16, 16]
+        x_3 = self.stage_3(x_2)  # [bs, 64, 8, 8]
+
+        pooled = self.avgpool(x_3)  # [bs, 64, 1, 1]
+        features = pooled.view(pooled.size(0), -1)  # [bs, 64]
+        
+        return features
+
+    @property
+    def last_conv(self):
+        return self.stage_3[-1].conv_b
+
+
+# def cifarresnet(**kwargs):
+#     """Constructs a ResNet-32 model for CIFAR-100."""
+#     model = CifarResNet(BasicBlock, 32)
+#     return model
 
 class BiasLayer(nn.Module):
     def __init__(self):
@@ -579,11 +647,136 @@ def resnet20(pretrained=False, **kwargs):
     return model
 
 def resnet32(pretrained=False, **kwargs):
-    n = 5
-    model = modified_ResNet(modified_BasicBlock, [n, n, n], num_classes=50)
-    print(kwargs)
-    if 'cosine_fc' in kwargs['args'].keys() and kwargs['args']['cosine_fc']:
-        in_features = model.fc.in_features
-        out_features = model.fc.out_features
-        model.fc = CosineLinear(in_features, out_features)
+    # LUCIR:
+    # n = 5
+    # model = modified_ResNet(modified_BasicBlock, [n, n, n], num_classes=20)
+    # print(kwargs)
+    # if 'cosine_fc' in kwargs['args'].keys() and kwargs['args']['cosine_fc']:
+    #     in_features = model.fc.in_features
+    #     out_features = model.fc.out_features
+    #     model.fc = CosineLinear(in_features, out_features)
+    # return model
+
+
+    # EWC
+    model = CifarResNet(ResNetBasicblock, 32)
     return model
+
+
+
+
+
+
+#########################################################
+# For Wa
+
+def resnet32_wa(pretrained=False, **kwargs):
+    return IncrementalNet()
+
+
+class DownsampleA(nn.Module):
+    def __init__(self, nIn, nOut, stride):
+        super(DownsampleA, self).__init__()
+        assert stride == 2
+        self.avg = nn.AvgPool2d(kernel_size=1, stride=stride)
+
+    def forward(self, x):
+        x = self.avg(x)
+        return torch.cat((x, x.mul(0)), 1)
+
+
+class BaseNet(nn.Module):
+    def __init__(self):
+        super(BaseNet, self).__init__()
+        self.convnet = resnet32()
+        self.classifier = None
+
+    @property
+    def feature_dim(self):
+        return self.convnet.out_dim
+
+    def extract_vector(self, x):
+        return self.convnet(x)["features"]
+
+    def forward(self, x):
+        x = self.convnet(x)
+        out = self.classifier(x["features"])
+        out.update(x)
+
+        return out
+
+    def update_classifier(self, nb_classes):
+        pass
+
+    def generate_classifier(self, in_dim, out_dim):
+        pass
+
+    def copy(self):
+        return copy.deepcopy(self)
+
+    def freeze(self):
+        for param in self.parameters():
+            param.requires_grad = False
+        self.eval()
+
+        return self
+
+class IncrementalNet(BaseNet):
+    def __init__(self):
+        super().__init__()
+
+    def update_classifier(self, nb_classes):
+        classifier = self.generate_classifier(self.feature_dim, nb_classes)
+        if self.classifier is not None:
+            nb_output = self.classifier.out_features
+            weight = copy.deepcopy(self.classifier.weight.data)
+            bias = copy.deepcopy(self.classifier.bias.data)
+            classifier.weight.data[:nb_output] = weight
+            classifier.bias.data[:nb_output] = bias
+
+        del self.classifier
+        self.classifier = classifier
+
+    def weight_align(self, increment):
+        weights = self.classifier.weight.data
+        newnorm = torch.norm(weights[-increment:, :], p=2, dim=1)
+        oldnorm = torch.norm(weights[:-increment, :], p=2, dim=1)
+        meannew = torch.mean(newnorm)
+        meanold = torch.mean(oldnorm)
+        gamma = meanold / meannew
+        self.classifier.weight.data[-increment:, :] *= gamma
+
+    def generate_classifier(self, in_dim, out_dim):
+        classifier = SimpleLinear(in_dim, out_dim)
+
+        return classifier
+
+    def forward(self, x):
+        x = self.convnet(x)
+        out = self.classifier(x["features"])
+        out.update(x)
+        return out
+
+
+class SimpleLinear(nn.Module):
+    '''
+    Reference:
+    https://github.com/pytorch/pytorch/blob/master/torch/nn/modules/linear.py
+    '''
+    def __init__(self, in_features, out_features, bias=True):
+        super(SimpleLinear, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
+        if bias:
+            self.bias = nn.Parameter(torch.Tensor(out_features))
+        else:
+            self.register_parameter('bias', None)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.kaiming_uniform_(self.weight, nonlinearity='linear')
+        nn.init.constant_(self.bias, 0)
+
+    def forward(self, input):
+        return {'logits': F.linear(input, self.weight, self.bias)}

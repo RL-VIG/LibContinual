@@ -45,14 +45,21 @@ method| 设定 | Buffer | 复现精度 | 论文精度
 ------ | ----- | ----- | ----- | ------
 DER | (20, 20) | - | - | -
 
-# 8. EWC (todo)
+# 8. EWC
 链接： https://arxiv.org/abs/1612.00796
 method| 设定 | Buffer | 复现精度 | 论文精度
 ------ | ----- | ----- | ----- | ------
 EWC | (50, 50) | - | 57.3% | 58.5%
 
-# 9. DER (todo)
+# 9. DER (TODO)
 链接：https://arxiv.org/pdf/2103.16788.pdf
 
-# 10. ER-AML(TODOs)
+# 10. ER-AML(TODO)
 链接：https://arxiv.org/pdf/2104.05025.pdf
+
+# 11. TAMiL (TODO)
+链接：https://openreview.net/pdf?id=-M0TNnyWFT5
+method| 设定 | Buffer | 复现精度 | 论文精度
+------ | ----- | ----- | ----- | ------
+TAMiL | (20, 20) | 500 | 49.3% | 50.11%
+TAMiL | (20, 20) | 200 | 40.7% | 41.43% 

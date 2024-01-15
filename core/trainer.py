@@ -8,6 +8,7 @@ from core.utils import init_seed, AverageMeter, get_instance, GradualWarmupSched
 from core.model.buffer import *
 import core.model as arch
 from core.model.buffer import *
+from core.model.replay import bic
 from torch.utils.data import DataLoader
 import numpy as np
 import sys
@@ -60,6 +61,12 @@ class Trainer(object):
         self.train_meter, self.test_meter = self._init_meter()
 
         self.val_per_epoch = config['val_per_epoch']
+
+        
+        # modify by xyk
+        if self.config["classifier"]["name"] == "bic":
+            self.stage2_epoch = config['stage2_epoch']
+
 
     def _init_logger(self, config, mode='train'):
         '''
@@ -171,9 +178,13 @@ class Trainer(object):
         # optimizer = get_instance(
         #     torch.optim, "optimizer", config, params=params
         # )
+
         scheduler = get_instance(
-            torch.optim.lr_scheduler, "lr_scheduler", config, optimizer=optimizer, gamma=config['lr_scheduler']['kwargs']['gamma']
-        )
+            torch.optim.lr_scheduler, "lr_scheduler", config, optimizer=optimizer)
+        
+        # scheduler = get_instance(
+        #     torch.optim.lr_scheduler, "lr_scheduler", config, optimizer=optimizer, gamma=config['lr_scheduler']['kwargs']['gamma']
+        # )
         # scheduler = GradualWarmupScheduler(
         #     optimizer, self.config
         # )  # if config['warmup']==0, scheduler will be a normal lr_scheduler, jump into this class for details
@@ -264,19 +275,61 @@ class Trainer(object):
             ) = self._init_optim(self.config)
 
 
+            # self.init_lr = 0.1
+            # self.init_lr_decay = 0.1
+            # self.init_weight_decay = 0.0005
+            # self.init_milestones = [100, 150, 200]  # PyCIL: [60, 120, 170]
+            # self.init_momentum = 0.9
+
+            # self.lr = 0.1
+            # self.lr_decay = 0.1
+            # self.weight_decay = 2e-4
+            # self.milestones = [100, 150, 200]  # PyCIL: [60, 100, 140]
+            # self.momentum = 0.9
+
+            # if task_idx == 0:
+            #     self.optimizer = optim.SGD(
+            #         self.model.backbone.parameters(),
+            #         momentum=self.init_momentum,
+            #         lr=self.init_lr,
+            #         weight_decay=self.init_weight_decay,
+            #     )
+            #     self.scheduler = optim.lr_scheduler.MultiStepLR(
+            #         optimizer=self.optimizer, milestones=self.init_milestones, gamma=self.init_lr_decay
+            #     )
+            # else:
+            #     self.optimizer = optim.SGD(
+            #         self.model.backbone.parameters(),
+            #         lr=self.lr,
+            #         momentum=self.momentum,
+            #         weight_decay=self.weight_decay,
+            #     )
+            #     self.scheduler = optim.lr_scheduler.MultiStepLR(
+            #         optimizer=self.optimizer, milestones=self.milestones, gamma=self.lr_decay
+            #     )
             dataloader = self.train_loader.get_loader(task_idx)
 
-            
-            if isinstance(self.buffer, LinearBuffer) and task_idx != 0:
-                datasets = deepcopy(dataloader.dataset)
-                datasets.images.extend(self.buffer.images)
-                datasets.labels.extend(self.buffer.labels)
-                dataloader = DataLoader(
-                    datasets,
-                    shuffle = True,
-                    batch_size = self.config['batch_size'],
-                    drop_last = True
-                )
+
+            if isinstance(self.buffer, (LinearBuffer, LinearHerdingBuffer)) and task_idx != 0:
+
+                if self.config['classifier']['name'] == "bic":
+                    dataloader, val_dataloader = bic.split_data(copy.deepcopy(dataloader), copy.deepcopy(self.buffer), self.config['batch_size'], task_idx)
+                
+                else:
+                    datasets = dataloader.dataset
+                    datasets.images.extend(self.buffer.images)
+                    datasets.labels.extend(self.buffer.labels)
+                    dataloader = DataLoader(
+                        datasets,
+                        shuffle = True,
+
+                        # XXX: 修改batchsize=128，设置不要drop last
+                        batch_size = self.config['batch_size'],
+                        drop_last = False,
+                        num_workers = 4
+                    )
+
+
             
             print("================Task {} Training!================".format(task_idx))
             print("The training samples number: {}".format(len(dataloader.dataset)))
@@ -306,13 +359,102 @@ class Trainer(object):
                 self.model.after_task(task_idx, self.buffer, self.train_loader.get_loader(task_idx), self.test_loader.get_loader(task_idx))
 
 
+
+            # stage_2  train
+            if self.config["classifier"]["name"] == "bic" and task_idx != 0:
+                self.model.backbone.eval()
+                (_, __,
+                    self.optimizer,
+                    self.scheduler,
+                ) = self._init_optim(self.config)
+                
+                scheduler = GradualWarmupScheduler(
+                    self.model.bias_optimizer, self.config
+                )
+
+                print("================ Train on the train set (stage2)================")
+                for epoch_idx in range(self.stage2_epoch):
+                    print("learning rate: {}".format(self.scheduler.get_last_lr()))
+                    print("================ Train on the train set ================")
+                    train_meter = self.stage2_train(epoch_idx, val_dataloader)
+                    print("Epoch [{}/{}] |\tLoss: {:.3f} \tAverage Acc: {:.3f} ".format(epoch_idx, self.stage2_epoch, train_meter.avg('loss'), train_meter.avg("acc1")))
+
+
+                    if (epoch_idx+1) % self.val_per_epoch == 0 or (epoch_idx+1)==self.inc_epoch:
+                        print("================ Test on the test set (stage2)================")
+                        test_acc = self._validate(task_idx)
+                        best_acc = max(test_acc["avg_acc"], best_acc)
+                        print(
+                        " * Average Acc: {:.3f} Best acc {:.3f}".format(test_acc["avg_acc"], best_acc)
+                        )
+                        print(
+                        " Per-Task Acc:{}".format(test_acc['per_task_acc'])
+                        )
+            
+                    self.scheduler.step()
+
+
+
+
+
+            # # XXX: 使用NCM测试
+            # # after building buffer, using NCM test
+            # if hasattr(self.model, 'NCM_classify'):
+            #     test_acc = self._validate(task_idx)
+            #     print('++++ NCM test ++++')
+            #     print(
+            #     " * Average Acc: {:.3f}".format(test_acc["avg_acc"])
+            #     )
+            #     print(
+            #     " Per-Task Acc:{}".format(test_acc['per_task_acc'])
+            #     )
+
+
+
             if self.buffer.buffer_size > 0:
+                if self.buffer.strategy == None:
+                    pass
                 if self.buffer.strategy == 'herding':
-                    # hearding_update(self.train_loader.get_loader(task_idx).dataset, self.buffer, self.model.backbone, self.device)
-                    hearding_update(self.train_loader.get_loader(task_idx).dataset, self.buffer, nn.Sequential(*list(self.model.backbone.children())[:-1]), self.device)
+                    hearding_update(self.train_loader.get_loader(task_idx).dataset, self.buffer, self.model.backbone, self.device)
+                    # hearding_update(self.train_loader.get_loader(task_idx).dataset, self.buffer, nn.Sequential(*list(self.model.backbone.children())[:-1]), self.device)
                 elif self.buffer.strategy == 'random':
                     random_update(self.train_loader.get_loader(task_idx).dataset, self.buffer)
+                
 
+
+    def stage2_train(self, epoch_idx, dataloader):
+        """
+        The train stage.
+
+        Args:
+            epoch_idx (int): Epoch index
+
+        Returns:
+            dict:  {"avg_acc": float}
+        """
+        self.model.eval()
+        for _ in range(len(self.model.bias_layers)):
+            self.model.bias_layers[_].train()
+        meter = self.train_meter
+        meter.reset()
+        
+
+        with tqdm(total=len(dataloader)) as pbar:
+            for batch_idx, batch in enumerate(dataloader):
+                output, acc, loss = self.model.bias_observe(batch)
+
+                #self.optimizer.zero_grad()
+
+                #loss.backward()
+
+                #self.optimizer.step()
+                pbar.update(1)
+                
+                meter.update("acc1", acc)
+                meter.update("loss", loss.item())
+
+
+        return meter
 
 
     def _train(self, epoch_idx, dataloader):

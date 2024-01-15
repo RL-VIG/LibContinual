@@ -25,7 +25,7 @@ class ContinualDatasets:
             self.dataloaders.append(DataLoader(
                 SingleDataseat(self.data_root, self.mode, self.cls_map, start_idx, end_idx, self.trfms),
                 shuffle = True,
-                batch_size = 32,
+                batch_size = 128,
                 drop_last = True
             ))
 
@@ -67,8 +67,9 @@ class SingleDataseat(Dataset):
             img_list = [self.cls_map[id] + '/' + pic_path for pic_path in os.listdir(os.path.join(self.data_root, self.mode, self.cls_map[id]))]
             imgs.extend(img_list)
             labels.extend([id for _ in range(len(img_list))])
-
+        
         return imgs, labels
+        # return np.array(imgs), np.array(labels)
 
     
 

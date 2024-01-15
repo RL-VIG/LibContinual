@@ -1,53 +1,67 @@
 includes:
   - headers/data.yaml
   - headers/device.yaml
-  - headers/model.yaml
-  - headers/optimizer.yaml
-  - backbones/resnet12.yaml
+  # - headers/model.yaml
+  # - headers/optimizer.yaml
+  # - backbones/resnet12.yaml
 
-data_root: /data/fsl/cifar10/
+data_root: /data/fanzhichen/continual/cifar100
 image_size: 32
-  
+
+
+warmup: 3
+
+
 save_path: ./
 # data
-init_cls_num: 2
-inc_cls_num: 2
+init_cls_num: 20
+inc_cls_num: 20
 task_num: 5
 
 
-epoch: 3
-device_ids: 0
+batch_size: 128
+
+init_epoch: 100
+epoch: 100
+
+device_ids: 5
 n_gpu: 1
 val_per_epoch: 1
+
 
 optimizer:
   name: SGD
   kwargs:
     lr: 0.1
+    momentum: 0.9
+    weight_decay: 0.0005
 
 lr_scheduler:
-  name: StepLR
+  name: CosineAnnealingLR
   kwargs:
-    gamma: 0.1
-    step_size: 10
+    T_max: 100
+
 
 backbone:
-  name: resnet18
+  name: resnet32
   kwargs:
-    num_classes: 10
+    num_classes: 100
     args: 
-      dataset: cifar10
+      dataset: cifar100
 
 
 buffer:
   name: LinearHerdingBuffer
   kwargs:
-    buffer_size: 500
-    batch_size: 32
+    buffer_size: 2000
+    batch_size: 64
     # strategy: herding     # random, equal_random, reservoir, herding
 
 classifier:
   name: ICarl
   kwargs:
-    num_class: 10
-    feat_dim: 512
+    num_class: 100
+    feat_dim: 64
+    init_cls_num: 20
+    inc_cls_num: 20
+    task_num: 5

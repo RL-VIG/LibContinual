@@ -18,7 +18,9 @@ def random_update(datasets, buffer):
     buffer.images = images.tolist()
     buffer.labels = labels.tolist()
 
+
 def hearding_update(datasets, buffer, feature_extractor, device):
+    print("Using Herding Update Strategy")
     per_classes = buffer.buffer_size // buffer.total_classes
 
     selected_images, selected_labels = [], []
@@ -50,6 +52,7 @@ def construct_examplar(datasets, images, labels, feature_extractor, per_classes,
         for data in dataloader:
             imgs = data['image'].to(device)
             features.append(feature_extractor(imgs)['features'].cpu().numpy().tolist())
+            # features.append(feature_extractor(imgs).cpu().numpy().tolist())
 
     features = np.concatenate(features)
     selected_images, selected_labels = [], []
