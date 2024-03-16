@@ -23,27 +23,25 @@ LibContinual的配置文件采用了yaml格式的文件，同时也支持从命�
 
 ## LibContinual中配置文件的设置
 
-以下详细介绍配置文件中每部分代表的信息以及如何编写。将以DN4方法的配置给出示例。
+以下详细介绍配置文件中每部分代表的信息以及如何编写，以下将以bic方法的配置给出示例。
 
 ### 数据设置
 
-+ `data_root`：数据集存放的路径
++ `data_root`：数据集存放的路径。
 
-+ `image_size`：输入图像的尺寸
++ `image_size`：输入图像的尺寸。
 
-+ `pin_momery`：是否使用内存加速读取
++ `pin_momery`：是否使用内存加速读取。
 
-+ `augment`：是否使用数据增强
++ `augment`：是否使用数据增强。
 
-+ `init_cls_num`:  初始类别数量
++ `init_cls_num`:  初始类别数量。
 
-+ `inc_cls_num`:  增量类别数量
++ `inc_cls_num`:  增量类别数量。
 
-+ `task_num`:  任务数
++ `task_num`:  任务数量。
 
-+ `works`：数据加载和预处理的工作线程数量
-
-+ 
++ `works`：数据加载和预处理的工作线程数量。
 
   ```yaml
   data_root: /data/cifar100
@@ -56,29 +54,30 @@ LibContinual的配置文件采用了yaml格式的文件，同时也支持从命�
   works: 8 
   ```
 
+
 ### 模型设置
 
 + `backbone`：方法所使用的`backbone`信息。
+  
   + `name`：使用的backbone的名称，需要与LibContinual中实现的backbone的大小写一致。
   + `kwargs`：`backbone`初始化时用到的参数，必须保持名称与代码中的名称一致。
-    + num_classes：类别数量
-    + args：其他参数项
+    + num_classes：类别数量。
+    + args：其他项参数，例如所使用的数据集`dataset`。
   
-```yaml
+  ```yaml
   backbone:
-      name: resnet18
+  	name: resnet18
       kwargs:
       	num_classes: 100
-      	args: 
+        	args: 
         		dataset: cifar100
-```
-  
+  ```
 + `classifier`：方法所使用的方法信息。
   
   + `name`：使用的方法的名称，需要与LibContinual中实现的方法的名称一致。
 + `kwargs`：方法初始化时用到的参数，必须保持名称与代码中的名称一致。
-    + feat_dim：维度设定
-  
+    + feat_dim：维度设定。
+    
   ```yaml
   classifier:
       name: bic
@@ -135,9 +134,12 @@ LibContinual的配置文件采用了yaml格式的文件，同时也支持从命�
 ### 硬件设置
 
 + `device_ids`：训练可以用到的`gpu`的编号，与`nvidia-smi`命令显示的编号相同。
-+ `n_gpu`：训练使用并行训练的`gpu`个数，如果为`1`则不适用并行训练。
-+ `deterministic`：是否开启`torch.backend.cudnn.benchmark`以及`torch.backend.cudnn.deterministic`以及是否使训练随机种子确定。
+
++ `n_gpu`：训练使用并行训练的`gpu`个数，如果仅有`1`个GPU的话，则不适用并行训练。
+
 + `seed`：训练时`numpy`，`torch`，`cuda`使用的种子点。
+
++ `deterministic`：是否开启`torch.backend.cudnn.benchmark`以及`torch.backend.cudnn.deterministic`以及是否使训练随机种子确定。
 
   ```yaml
   device_ids: 0,1,2,3,4,5,6,7
