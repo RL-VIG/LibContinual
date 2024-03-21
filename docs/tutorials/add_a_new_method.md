@@ -1,7 +1,9 @@
 # Add a new method
 
-我们以`LUCIR`(Learning_a_Unified_Classifier_Incrementally_via_Rebalancing)方法为例，描述如何添加一种新的方法。 <br>
-首先，我们了解一下所有方法的共同父类`Finetune`。
+下面以`LUCIR`(Learning_a_Unified_Classifier_Incrementally_via_Rebalancing)方法为例，描述如何添加一种新的方
+法。 <br>
+
+首先，所有方法都继承同一父类`Finetune`。
 
 ```python
 class Finetune(nn.Module):
@@ -39,7 +41,7 @@ class Finetune(nn.Module):
 + `after_task`：在每个任务开始训练后调用，用于对模型结构、训练参数等进行调整，需要用户自定义。
 + `get_parameters`：在每个任务开始训练前调用，返回当前任务的训练参数。
 
-以上这些接口也是新增方法所必需要实现的接口。
+以上这些接口是新增方法所必需要实现的接口。
 
 ## LUCIR
 接下来以`LUCIR`为例，描述如何在`LibContinual`中新增一个方法
@@ -59,25 +61,14 @@ class LUCIR(Finetune):
     def before_task(self, task_idx, buffer, train_loader, test_loaders):
         self.task_idx = task_idx
 
-        if task_idx == 1:
-            self.ref_model = copy.deepcopy(self.backbone)
-            ...
-            new_fc = SplitCosineLinear(in_features, out_features, self.kwargs['inc_cls_num'])
-            self.backbone.fc = new_fc
+        self.ref_model = copy.deepcopy(self.backbone)
+        ...
+        new_fc = SplitCosineLinear(in_features, out_features, self.kwargs['inc_cls_num'])
 
-        elif task_idx > 1:
-            ...
-            self.backbone.fc = new_fc
-            lamda_mult = (out_features1+out_features2)*1.0 / (self.kwargs['inc_cls_num'])
-
-        if task_idx == 0:
-            self.loss_fn = nn.CrossEntropyLoss()
-        else:
-            self.loss_fn1 = nn.CosineEmbeddingLoss()
-            self.loss_fn2 = nn.CrossEntropyLoss()
-            self.loss_fn3 = nn.MarginRankingLoss(margin=self.kwargs['dist'])
-            ...
-
+        self.loss_fn1 = nn.CosineEmbeddingLoss()
+        self.loss_fn2 = nn.CrossEntropyLoss()
+        self.loss_fn3 = nn.MarginRankingLoss(margin=self.kwargs['dist'])
+        ...
 
         self.backbone = self.backbone.to(self.device)
         if self.ref_model is not None:
@@ -98,15 +89,13 @@ class LUCIR(Finetune):
         x, y = data['image'], data['label']
         logit = self.backbone(x)
 
-        if self.task_idx == 0:
-            loss = self.loss_fn(logit, y)
-        else:
-            ref_outputs = self.ref_model(x)
-            loss = self.loss_fn1(...) * self.cur_lamda
-            loss += self.loss_fn2(...)
-            if  hard_num > 0:
-                ...
-                loss += self.loss_fn3(...) * self.lw_mr
+        ...
+        ref_outputs = self.ref_model(x)
+        loss = self.loss_fn1(...) * self.cur_lamda
+        loss += self.loss_fn2(...)
+        if  hard_num > 0:
+            ...
+            loss += self.loss_fn3(...) * self.lw_mr
 
         pred = torch.argmax(logit, dim=1)
 
@@ -122,20 +111,13 @@ class LUCIR(Finetune):
 
 
     def inference(self, data):
-        ...
+        pass
 
 
     def _init_optim(self, config, task_idx):
-        if task_idx > 0:
-            #fix the embedding of old classes
-            ignored_params = list(map(id, self.backbone.fc.fc1.parameters()))
-            base_params = filter(lambda p: id(p) not in ignored_params, \
-                    self.backbone.parameters())
-            tg_params =[{'params': base_params, 'lr': 0.1, 'weight_decay': 5e-4}, \
+        ...
+        tg_params =[{'params': base_params, 'lr': 0.1, 'weight_decay': 5e-4}, \
                         {'params': self.backbone.fc.fc1.parameters(), 'lr': 0, 'weight_decay': 0}]
-        else:
-            tg_params = self.backbone.parameters()
-
         return tg_params
 ```
 + 在`__init__`中，对`LUCIR`所需要的参数`K, lw_mr, ref_model`进行初始化。
