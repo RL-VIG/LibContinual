@@ -61,31 +61,14 @@ class LUCIR(Finetune):
 
         if task_idx == 1:
             self.ref_model = copy.deepcopy(self.backbone)
-            in_features = self.backbone.fc.in_features
-            out_features = self.backbone.fc.out_features
-            new_fc = SplitCosineLinear(in_features, out_features, self.kwargs['inc_cls_num'])
             ...
+            new_fc = SplitCosineLinear(in_features, out_features, self.kwargs['inc_cls_num'])
             self.backbone.fc = new_fc
-            lamda_mult = out_features*1.0 / self.kwargs['inc_cls_num']
-
 
         elif task_idx > 1:
-            self.ref_model = copy.deepcopy(self.backbone) # 应该带上classifier
-            in_features = self.backbone.fc.in_features
-            out_features1 = self.backbone.fc.fc1.out_features
-            out_features2 = self.backbone.fc.fc2.out_features
-            new_fc = SplitCosineLinear(in_features, out_features1+out_features2, self.kwargs['inc_cls_num']).to(self.device)
             ...
             self.backbone.fc = new_fc
             lamda_mult = (out_features1+out_features2)*1.0 / (self.kwargs['inc_cls_num'])
-        
-        if task_idx > 0:
-            self.cur_lamda = self.kwargs['lamda'] * math.sqrt(lamda_mult)
-        else:
-            self.cur_lamda = self.kwargs['lamda']
-
-
-        self._init_new_fc(task_idx, buffer, train_loader)
 
         if task_idx == 0:
             self.loss_fn = nn.CrossEntropyLoss()
@@ -104,45 +87,26 @@ class LUCIR(Finetune):
     def _init_new_fc(self, task_idx, buffer, train_loader):
         if task_idx == 0:
             return
-        old_embedding_norm = self.backbone.fc.fc1.weight.data.norm(dim=1, keepdim=True)   # 旧类向量
-        average_old_embedding_norm = torch.mean(old_embedding_norm, dim=0).to('cpu').type(torch.DoubleTensor)   # 旧类向量的均值
-        feature_model = nn.Sequential(*list(self.backbone.children())[:-1])
-        num_features = self.backbone.fc.in_features
-        novel_embedding = torch.zeros((self.kwargs['inc_cls_num'], num_features))
-
-        tmp_datasets = copy.deepcopy(train_loader.dataset)
         ...
-        
-        self.backbone.to(self.device)
         self.backbone.fc.fc2.weight.data = novel_embedding.to(self.device)
 
     def _compute_feature(self, feature_model, loader, num_samples, num_features):
         ...
-        return features
 
 
     def observe(self, data):
         x, y = data['image'], data['label']
-        x = x.to(self.device)
-        y = y.to(self.device)
         logit = self.backbone(x)
 
         if self.task_idx == 0:
             loss = self.loss_fn(logit, y)
         else:
             ref_outputs = self.ref_model(x)
-            loss = self.loss_fn1(cur_features, ref_features.detach(), \
-                    torch.ones(x.size(0)).to(self.device)) * self.cur_lamda
-            
-            loss += self.loss_fn2(logit, y)
-            ...
+            loss = self.loss_fn1(...) * self.cur_lamda
+            loss += self.loss_fn2(...)
             if  hard_num > 0:
-                gt_scores = gt_scores[hard_index].view(-1, 1).repeat(1, self.K)
-                max_novel_scores = max_novel_scores[hard_index]
-                assert(gt_scores.size() == max_novel_scores.size())
-                assert(gt_scores.size(0) == hard_num)
-                loss += self.loss_fn3(gt_scores.view(-1, 1), \
-                        max_novel_scores.view(-1, 1), torch.ones(hard_num*self.K, 1).to(self.device)) * self.lw_mr
+                ...
+                loss += self.loss_fn3(...) * self.lw_mr
 
         pred = torch.argmax(logit, dim=1)
 
@@ -158,16 +122,7 @@ class LUCIR(Finetune):
 
 
     def inference(self, data):
-        x, y = data['image'], data['label']
-        x = x.to(self.device)
-        y = y.to(self.device)
-        
-        logit = self.backbone(x)
-
-        pred = torch.argmax(logit, dim=1)
-
-        acc = torch.sum(pred == y).item()
-        return pred, acc / x.size(0)
+        ...
 
 
     def _init_optim(self, config, task_idx):
@@ -178,7 +133,7 @@ class LUCIR(Finetune):
                     self.backbone.parameters())
             tg_params =[{'params': base_params, 'lr': 0.1, 'weight_decay': 5e-4}, \
                         {'params': self.backbone.fc.fc1.parameters(), 'lr': 0, 'weight_decay': 0}]
-        elif config['classifier']['name'] == 'LUCIR':
+        else:
             tg_params = self.backbone.parameters()
 
         return tg_params
