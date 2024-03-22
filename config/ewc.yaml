@@ -11,15 +11,15 @@ image_size: 32
 
 save_path: ./
 # data
-init_cls_num: 20
-inc_cls_num: 20
-task_num: 5
+init_cls_num: 50
+inc_cls_num: 50
+task_num: 2
 
-
-epoch: 40 # 160
+init_epoch: 200
+epoch: 180 # 160
 device_ids: 4
 n_gpu: 1
-val_per_epoch: 1
+val_per_epoch: 5
 
 
 batch_size: 128
@@ -39,7 +39,7 @@ lr_scheduler:
     milestones: [60, 120, 170]
 
 backbone:
-  name: resnet32
+  name: cifar_resnet32
   kwargs:
     num_classes: 100
     args: 
@@ -57,7 +57,7 @@ classifier:
   name: EWC
   kwargs:
     num_class: 100
-    feat_dim: 512
-    init_cls_num: 20
-    inc_cls_num: 20
+    feat_dim: 64
+    init_cls_num: 50
+    inc_cls_num: 50
     lamda: 1000

@@ -151,48 +151,12 @@ class Trainer(object):
         Returns:
             tuple: A tuple of optimizer, scheduler.
         """
-        # params_dict_list = {"params": self.model.parameters()}
-        params = self.model.parameters()
-    
-
-        if config['classifier']['name'] == 'LUCIR':
-            params = self.model._init_optim(config, self.task_idx)
-        # if config['classifier']['name'] == 'LUCIR' and self.task_idx > 0:
-        #     #fix the embedding of old classes
-        #     ignored_params = list(map(id, self.model.backbone.fc.fc1.parameters()))
-        #     base_params = filter(lambda p: id(p) not in ignored_params, \
-        #             self.model.backbone.parameters())
-        #     tg_params =[{'params': base_params, 'lr': 0.1, 'weight_decay': 5e-4}, \
-        #                 {'params': self.model.backbone.fc.fc1.parameters(), 'lr': 0, 'weight_decay': 0}]
-        # elif config['classifier']['name'] == 'LUCIR':
-        #     tg_params = self.model.backbone.parameters()
-
-        # for My
-        # optimizer = get_instance(
-        #     torch.optim, "optimizer", config, params=self.model.reg_params
-        # )
         optimizer = get_instance(
             torch.optim, "optimizer", config, params=self.model.get_parameters(config)
         )
-        
-        # optimizer = get_instance(
-        #     torch.optim, "optimizer", config, params=params
-        # )
 
         scheduler = get_instance(
             torch.optim.lr_scheduler, "lr_scheduler", config, optimizer=optimizer)
-        
-        # scheduler = get_instance(
-        #     torch.optim.lr_scheduler, "lr_scheduler", config, optimizer=optimizer, gamma=config['lr_scheduler']['kwargs']['gamma']
-        # )
-        # scheduler = GradualWarmupScheduler(
-        #     optimizer, self.config
-        # )  # if config['warmup']==0, scheduler will be a normal lr_scheduler, jump into this class for details
-        
-        # For LUCIR
-        # optimizer = optim.SGD(tg_params, lr=0.1, momentum=0.9, weight_decay=5e-4)
-        # scheduler = MultiStepLR(optimizer, milestones=config['lr_scheduler']['kwargs']['milestones'], 
-        #                             gamma=config['lr_scheduler']['kwargs']['gamma'])
 
 
         if 'init_epoch' in config.keys():
@@ -278,18 +242,18 @@ class Trainer(object):
             # self.init_lr = 0.1
             # self.init_lr_decay = 0.1
             # self.init_weight_decay = 0.0005
-            # self.init_milestones = [100, 150, 200]  # PyCIL: [60, 120, 170]
+            # self.init_milestones = [60, 120, 170]  # PyCIL: [60, 120, 170]
             # self.init_momentum = 0.9
 
             # self.lr = 0.1
             # self.lr_decay = 0.1
             # self.weight_decay = 2e-4
-            # self.milestones = [100, 150, 200]  # PyCIL: [60, 100, 140]
+            # self.milestones = [80, 120]  # PyCIL: [60, 100, 140]
             # self.momentum = 0.9
 
             # if task_idx == 0:
             #     self.optimizer = optim.SGD(
-            #         self.model.backbone.parameters(),
+            #         self.model.get_parameters({}),
             #         momentum=self.init_momentum,
             #         lr=self.init_lr,
             #         weight_decay=self.init_weight_decay,
@@ -299,7 +263,7 @@ class Trainer(object):
             #     )
             # else:
             #     self.optimizer = optim.SGD(
-            #         self.model.backbone.parameters(),
+            #         self.model.get_parameters({}),
             #         lr=self.lr,
             #         momentum=self.momentum,
             #         weight_decay=self.weight_decay,
@@ -307,6 +271,8 @@ class Trainer(object):
             #     self.scheduler = optim.lr_scheduler.MultiStepLR(
             #         optimizer=self.optimizer, milestones=self.milestones, gamma=self.lr_decay
             #     )
+                
+                
             dataloader = self.train_loader.get_loader(task_idx)
 
 

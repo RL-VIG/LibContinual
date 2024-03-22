@@ -11,17 +11,30 @@ from torch.utils.data import DataLoader
 from torch import optim
 
 
+class Model(nn.Module):
+    # A model consists with a backbone and a classifier
+    def __init__(self, backbone, feat_dim, num_class):
+        super().__init__()
+        self.backbone = backbone
+        self.feat_dim = feat_dim
+        self.num_class = num_class
+        self.classifier = nn.Linear(feat_dim, num_class)
+        
+    def forward(self, x):
+        return self.get_logits(x)
+    
+    def get_logits(self, x):
+        logits = self.classifier(self.backbone(x)['features'])
+        return logits
 
 class EWC(Finetune):
     def __init__(self, backbone, feat_dim, num_class, **kwargs):
         super().__init__(backbone, feat_dim, num_class, **kwargs)
         self.kwargs = kwargs
-        # self.classifier = CosineLinear(feat_dim, kwargs['init_cls_num'])
+        self.network = Model(self.backbone, feat_dim, kwargs['init_cls_num'])
         self.fisher = None
         self.lamda = self.kwargs['lamda']
         
-        self.test_fc_a = nn.Linear(10, 10, bias=False)
-        self.test_fc_b = nn.Linear(5, 5, bias=False)
         
     def get_parameters(self,  config):
 
@@ -32,33 +45,33 @@ class EWC(Finetune):
         
         # case2
         train_parameters = []
-        train_parameters.append({"params": self.backbone.parameters()})
+        # train_parameters.append({"params": self.backbone.parameters()})
+        train_parameters.append({"params": self.network.parameters()})
+        
         return train_parameters
         
 
 
     def before_task(self, task_idx, buffer, train_loader, test_loaders):
         self.task_idx = task_idx
-        in_features = self.backbone.fc.in_features
-        out_features = self.backbone.fc.out_features
+        in_features = self.network.classifier.in_features
+        out_features = self.network.classifier.out_features
         
         new_fc = nn.Linear(in_features, self.kwargs['init_cls_num'] + task_idx * self.kwargs['inc_cls_num'])
-        new_fc.weight.data[:out_features] = self.backbone.fc.weight.data
-        self.backbone.fc = new_fc
-        self.backbone.to(self.device)
+        new_fc.weight.data[:out_features] = self.network.classifier.weight.data
+        self.network.classifier = new_fc
+        self.network.to(self.device)
 
 
     def observe(self, data):
         x, y = data['image'], data['label']
         x = x.to(self.device)
         y = y.to(self.device)
-        # print(x.shape)
-        # logit = self.classifier(self.backbone(x)['features'])    
-        logit = self.backbone(x)
+        logit = self.network(x)
         if self.task_idx == 0:
             loss = F.cross_entropy(logit, y)
         else:
-            old_classes = self.backbone.fc.out_features - self.kwargs['inc_cls_num']
+            old_classes = self.network.classifier.out_features - self.kwargs['inc_cls_num']
             loss = F.cross_entropy(logit[:, old_classes:], y - old_classes)
             loss += self.lamda * self.compute_ewc()
             
@@ -72,7 +85,7 @@ class EWC(Finetune):
         if self.task_idx == 0:
             self.fisher = self.getFisher(train_loader)
         else:
-            alpha = 1 - self.kwargs['inc_cls_num']/self.backbone.fc.out_features
+            alpha = 1 - self.kwargs['inc_cls_num']/self.network.classifier.out_features
             new_finsher = self.getFisher(train_loader)
             for n, p in new_finsher.items():
                 new_finsher[n][: len(self.fisher[n])] = (
@@ -83,7 +96,7 @@ class EWC(Finetune):
             
         self.mean = {
             n: p.clone().detach()
-            for n, p in self.backbone.named_parameters()
+            for n, p in self.network.named_parameters()
             if p.requires_grad
         }
         
@@ -95,7 +108,7 @@ class EWC(Finetune):
         x = x.to(self.device)
         y = y.to(self.device)
         
-        logit = self.backbone(x)
+        logit = self.network(x)
 
         pred = torch.argmax(logit, dim=1)
 
@@ -106,21 +119,21 @@ class EWC(Finetune):
     def getFisher(self, train_loader):
         fisher = {
             n: torch.zeros(p.shape).to(self.device)
-            for n, p in self.backbone.named_parameters()
+            for n, p in self.network.named_parameters()
             if p.requires_grad
         }
-        self.backbone.train()
-        optimizer = optim.SGD(self.backbone.parameters(), lr=0.1)
+        self.network.train()
+        optimizer = optim.SGD(self.network.parameters(), lr=0.1)
         for batch_idx, data in enumerate(train_loader):
             x, y = data['image'], data['label']
             x = x.to(self.device)
             y = y.to(self.device)
             
-            logits = self.backbone(x)
+            logits = self.network(x)
             loss = torch.nn.functional.cross_entropy(logits, y)
             optimizer.zero_grad()
             loss.backward()
-            for n, p in self.backbone.named_parameters():
+            for n, p in self.network.named_parameters():
                 if p.grad is not None:
                     fisher[n] += p.grad.pow(2).clone()
         for n, p in fisher.items():
@@ -130,7 +143,7 @@ class EWC(Finetune):
 
     def compute_ewc(self):
         loss = 0
-        for n, p in self.backbone.named_parameters():
+        for n, p in self.network.named_parameters():
             if n in self.fisher.keys():
                 # print(p.device)
                 # print(self.mean[n].device)

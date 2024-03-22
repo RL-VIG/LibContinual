@@ -28,7 +28,8 @@ def hearding_update(datasets, buffer, feature_extractor, device):
     labels = np.array(datasets.labels + buffer.labels)
 
     for cls in range(buffer.total_classes):
-        print("Construct examplars for class {}".format(cls))
+        if cls % 20 == 0 or cls == buffer.total_classes-1:
+            print("Construct examplars for class {}".format(cls))
         cls_images_idx = np.where(labels == cls)
         cls_images, cls_labels = images[cls_images_idx], labels[cls_images_idx]
 

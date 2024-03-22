@@ -111,14 +111,14 @@ class LinearHerdingBuffer:
         # compute feature for all training sample for all train samples
         extracted_features = []
         extracted_targets = []
-        print("!!!!! The origin code is\'feats = model.backbone(image)['features'] \', change to \'feats = model.extract_vector(image) \' by WA")
+        # print("!!!!! The origin code is\'feats = model.backbone(image)['features'] \', change to \'feats = model.extract_vector(image) \' by WA")
         with torch.no_grad():
             model.eval()
             for data in loader:
                 image = data['image'].to(device)
                 label = data['label'].to(device)
-                feats = model.extract_vector(image)
-                # feats = model.backbone(image)['features']
+                # feats = model.extract_vector(image)
+                feats = model.backbone(image)['features']
                 feats = feats / feats.norm(dim=1).view(-1, 1)  # Feature normalization
                 extracted_features.append(feats)
                 extracted_targets.append(label)

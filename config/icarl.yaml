@@ -14,17 +14,17 @@ warmup: 3
 
 save_path: ./
 # data
-init_cls_num: 20
-inc_cls_num: 20
-task_num: 5
+init_cls_num: 10
+inc_cls_num: 10
+task_num: 10
 
 
 batch_size: 128
 
-init_epoch: 100
-epoch: 100
-
-device_ids: 5
+init_epoch: 200  #100
+epoch: 170  #100
+ 
+device_ids: 2
 n_gpu: 1
 val_per_epoch: 1
 
@@ -43,7 +43,7 @@ lr_scheduler:
 
 
 backbone:
-  name: resnet32
+  name: cifar_resnet32
   kwargs:
     num_classes: 100
     args: 
@@ -62,6 +62,6 @@ classifier:
   kwargs:
     num_class: 100
     feat_dim: 64
-    init_cls_num: 20
-    inc_cls_num: 20
-    task_num: 5
+    init_cls_num: 10
+    inc_cls_num: 10
+    task_num: 10

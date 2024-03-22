@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 
 
 class ContinualDatasets:
-    def __init__(self, mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms):
+    def __init__(self, mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms, batchsize):
         self.mode = mode
         self.task_num = task_num
         self.init_cls_num = init_cls_num
@@ -15,6 +15,7 @@ class ContinualDatasets:
         self.cls_map = cls_map
         self.trfms = trfms
         self.dataloaders = []
+        self.batchsize = batchsize
 
         self.create_loaders()
 
@@ -25,7 +26,7 @@ class ContinualDatasets:
             self.dataloaders.append(DataLoader(
                 SingleDataseat(self.data_root, self.mode, self.cls_map, start_idx, end_idx, self.trfms),
                 shuffle = True,
-                batch_size = 128,
+                batch_size = self.batchsize,
                 drop_last = True
             ))
 
@@ -64,6 +65,7 @@ class SingleDataseat(Dataset):
     def _init_datalist(self):
         imgs, labels = [], []
         for id in range(self.start_idx, self.end_idx):
+            # print(id, self.cls_map[id])
             img_list = [self.cls_map[id] + '/' + pic_path for pic_path in os.listdir(os.path.join(self.data_root, self.mode, self.cls_map[id]))]
             imgs.extend(img_list)
             labels.extend([id for _ in range(len(img_list))])

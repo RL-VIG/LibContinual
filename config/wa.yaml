@@ -15,8 +15,8 @@ inc_cls_num: 20
 task_num: 5
 
 
-init_epoch: 250 # PyCIL: 200
-epoch: 250 # PyCIL: 170
+init_epoch: 250 #250 # PyCIL: 200
+epoch: 250 #250 # PyCIL: 170
 device_ids: 0
 n_gpu: 1
 val_per_epoch: 1
@@ -37,7 +37,7 @@ lr_scheduler:
     milestones: [80, 120]
 
 backbone:
-  name: resnet32_wa
+  name: cifar_resnet32
   kwargs:
     num_classes: 100
     args:
@@ -55,4 +55,5 @@ classifier:
   name: WA
   kwargs:
     num_class: 100
-    feat_dim: 512
+    feat_dim: 64
+    init_cls_num: 20

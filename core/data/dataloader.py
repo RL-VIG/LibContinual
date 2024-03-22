@@ -43,7 +43,7 @@ def get_dataloader(config, mode, cls_map=None):
         for label, ori_label in enumerate(perm):
             cls_map[label] = cls_list[ori_label]
 
-    return ContinualDatasets(mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms)
+    return ContinualDatasets(mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms, config['batch_size'])
 
 
 
