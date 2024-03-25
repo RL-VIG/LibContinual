@@ -14,11 +14,22 @@ Make continual learning easy.
 
 ## Quick Installation(tod)
 (待文档部分完成)  <br>
-请参考文档中`安装`部分。 <br>
-完整文档：`./docs`
+请参考文档中[`安装`](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/install.md)部分。 <br>
+完整文档：[`./docs`](https://github.com/RL-VIG/LibContinual/tree/master/docs)
 
 ## Datasets(todo)
-此处需要准备常用数据集:`CIFAR-10`, `CIFAR-100`, `miniImageNet`
+[`CIFAR-100`](https://drive.google.com/drive/folders/1EL46LQ3ww-F1NVTwFDPIg-nO198cUqWm?usp=sharing), `miniImageNet(todo)`  <br>
+
+将对应数据集的压缩包解压至指定路径:
+```
+unzip cifar100.zip -d /path/to/your/dataset
+```
+修改.yaml文件的data_root参数：
+```
+data_root: /path/to/your/dataset
+```
+如何添加自定义数据集请参考文档:[`添加自定义数据集`](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/data_module.md)
+
 
 ## Acknowledgement
 LibContinual is an open source project designed to help continual learning researchers quickly understand the classic methods and code structures. We welcome other contributors to use this framework to implement their own or other impressive methods and add them to LibContinual. This library can only be used for academic research. We welcome any feedback during using LibContinual and will try our best to continually improve the library.
