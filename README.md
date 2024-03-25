@@ -2,22 +2,22 @@
 Make continual learning easy.
 
 ## Supported Methods
-+ [BiC (CVPR 2019)](https://arxiv.org/abs/1905.13260)
-+ [EWC (PNAS 2017)](https://arxiv.org/abs/1612.00796)
-+ [iCaRL (CVPR2017)](https://arxiv.org/abs/1611.07725)
-+ [LUCIR (CVPR 2019)](https://openaccess.thecvf.com/content_CVPR_2019/html/Hou_Learning_a_Unified_Classifier_Incrementally_via_Rebalancing_CVPR_2019_paper.html)
-+ [LwF (ECCV 2016)](https://arxiv.org/abs/1606.09282)
-+ [WA (CVPR 2020)](https://arxiv.org/abs/1911.07053)
-+ [OCM (PMLR 2022)](https://proceedings.mlr.press/v162/guo22g.html)
-+ [DER (CVPR 2021)](https://arxiv.org/abs/2103.16788)
++ [BiC (CVPR 2019)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/bic/README.md)
++ [EWC (PNAS 2017)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/ewc/README.md)
++ [iCaRL (CVPR2017)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/icarl/README.md)
++ [LUCIR (CVPR 2019)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/lucir/README.md)
++ [LwF (ECCV 2016)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/lwf/README.md)
++ [WA (CVPR 2020)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/wa/README.md)
++ [OCM (PMLR 2022)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/ocm/README.md)
++ [DER (CVPR 2021)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/der/README.md)
 
 
-## Quick Installation(tod)
+## Quick Installation
 (待文档部分完成)  <br>
 请参考文档中[`安装`](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/install.md)部分。 <br>
 完整文档：[`./docs`](https://github.com/RL-VIG/LibContinual/tree/master/docs)
 
-## Datasets(todo)
+## Datasets
 [`CIFAR-100`](https://drive.google.com/drive/folders/1EL46LQ3ww-F1NVTwFDPIg-nO198cUqWm?usp=sharing), `miniImageNet(todo)`  <br>
 
 将对应数据集的压缩包解压至指定路径:
@@ -29,6 +29,15 @@ unzip cifar100.zip -d /path/to/your/dataset
 data_root: /path/to/your/dataset
 ```
 如何添加自定义数据集请参考文档:[`添加自定义数据集`](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/data_module.md)
+
+## Get Start
+
+当您已经完成`Quick Installation`和`Datasets`后，我们以`LUCIR`方法为例展示如何使用`LibContinual`。
+- **Step1: 修改`run_trainer.py`中`Config`参数为`./config/lucir.yaml`**
+- **Step2：配置`./config/lucir.yaml`文件中的参数，各参数含义请参考[配置文件](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/config_file.md)**
+- **Step3: 运行代码`python run_trainer.py`**
+- **Step4：日志保存在配置文件中`save_path`路径下**
+
 
 
 ## Acknowledgement
