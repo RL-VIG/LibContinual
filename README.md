@@ -1,6 +1,8 @@
 # LibContinual
 Make continual learning easy.
 
+<img src="./resources/imgs/flowchart.png" width = 1000, height=400>
+
 ## Quick Installation
 
 Please refer to [`install.md`](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/install.md) <br>
@@ -24,13 +26,13 @@ To add a custom dataset, please refer to [`dataset.md`](https://github.com/RL-VI
 
 Once you have completed the "Quick Installation" and "Datasets" sections, we can now proceed to demonstrate how to use the "LibContinual" framework with the [`LUCIR`](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/lucir/README.md) method. 
 
-- **Step1: Set the path in `run_trainer.py` with `./config/lucir.yaml`**
+- **Step1:** Set the path in `run_trainer.py` with `./config/lucir.yaml`
     ```python
     config = Config("./config/lucir.yaml").get_config_dict()
     ```
-- **Step2：Configure the parameters in the `./config/lucir.yaml` file. Please refer to [`config.md`](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/config_file.md) for the meanings of each parameter.**
-- **Step3: Run code `python run_trainer.py`**
-- **Step4：After the training is completed, the log files will be saved in the path specified by the `save_path` parameter.**
+- **Step2:** Configure the parameters in the `./config/lucir.yaml` file. Please refer to [`config.md`](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/config_file.md) for the meanings of each parameter.
+- **Step3:** Run code `python run_trainer.py`
+- **Step4:** After the training is completed, the log files will be saved in the path specified by the `save_path` parameter.
 
 
 ## Supported Methods
