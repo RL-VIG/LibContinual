@@ -1,7 +1,7 @@
 # LibContinual
 Make continual learning easy.
 
-<img src="./resources/imgs/flowchart.png" width = 1000, height=400>
+![flowchart](./resources/imgs/flowchart.png)
 
 ## Quick Installation
 
