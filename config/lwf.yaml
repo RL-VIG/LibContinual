@@ -10,9 +10,9 @@ image_size: 32
   
 save_path: ./
 # data
-init_cls_num: 10
-inc_cls_num: 10
-task_num: 10
+init_cls_num: 5 # 10
+inc_cls_num: 5 #10
+task_num: 20 #10
 
 
 epoch: 100  # 100
@@ -38,7 +38,7 @@ lr_scheduler:
 backbone:
   name: resnet18
   kwargs:
-    num_classes: 10
+    num_classes: 100
     args: 
       dataset: cifar100
 
@@ -55,8 +55,8 @@ classifier:
   kwargs:
     num_class: 100
     feat_dim: 512
-    init_cls_num: 10
-    inc_cls_num: 10
+    init_cls_num: 5 #10
+    inc_cls_num: 5 #10
     dist: 0.5
     lamda: 10
     K: 2
