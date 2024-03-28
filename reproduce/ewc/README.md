@@ -3,6 +3,8 @@
 ## Abstract
 The ability to learn tasks in a sequential fashion is crucial to the development of artificial intelligence. Neural networks are not, in general, capable of this and it has been widely thought that catastrophic forgetting is an inevitable feature of connectionist models. We show that it is possible to overcome this limitation and train networks that can maintain expertise on tasks which they have not experienced for a long time. Our approach remembers old tasks by selectively slowing down learning on the weights important for those tasks. We demonstrate our approach is scalable and effective by solving a set of classification tasks based on the MNIST hand written digit dataset and by learning several Atari 2600 games sequentially.
 
+![EWC](../../resources/imgs/EWC.png)
+
 
 ## Citation
 ```
@@ -10,19 +12,21 @@ The ability to learn tasks in a sequential fashion is crucial to the development
   title={Overcoming catastrophic forgetting in neural networks},
   author={Kirkpatrick, James and Pascanu, Razvan and Rabinowitz, Neil and Veness, Joel and Desjardins, Guillaume and Rusu, Andrei A and Milan, Kieran and Quan, John and Ramalho, Tiago and Grabska-Barwinska, Agnieszka and others},
   journal={Proceedings of the national academy of sciences},
-  volume={114},
-  number={13},
   pages={3521--3526},
   year={2017},
-  publisher={National Acad Sciences}
 }
 ```
 
-## How to Reproduce LUCIR
+## How to Reproduce EWC
 
-- **Step1: 修改`run_trainer.py`中`Config`参数为`./config/lucir.yaml`**
-
-- **Step2: python run_trainer.py**:
+- **Step1: Set the path in `run_trainer.py` with `./config/ewc.yaml`**
+    ```python
+    config = Config("./config/ewc.yaml").get_config_dict()
+    ```
+- **Step2: Run code**
+    ```python
+    python run_trainer.py
+    ```
 
 
 ## Results
