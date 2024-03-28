@@ -1,6 +1,38 @@
 # LibContinual
 Make continual learning easy.
 
+## Quick Installation
+
+Please refer to [`install.md`](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/install.md) <br>
+Complete tutorials can be found at [`./docs`](https://github.com/RL-VIG/LibContinual/tree/master/docs)
+
+## Datasets
+[CIFAR-100](https://www.cs.toronto.edu/~kriz/cifar.html) are available at [Google Drive](https://drive.google.com/drive/folders/1EL46LQ3ww-F1NVTwFDPIg-nO198cUqWm?usp=sharing)  <br>
+
+After the dataset is downloaded, please extract the compressed file to the specified path.
+```
+unzip cifar100.zip -d /path/to/your/dataset
+```
+Set the `data_root` in `.yaml`：
+```
+data_root: /path/to/your/dataset
+```
+To add a custom dataset, please refer to [`dataset.md`](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/data_module.md).
+
+
+## Getting Started
+
+Once you have completed the "Quick Installation" and "Datasets" sections, we can now proceed to demonstrate how to use the "LibContinual" framework with the [`LUCIR`](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/lucir/README.md) method. 
+
+- **Step1: Set the path in `run_trainer.py` with `./config/lucir.yaml`**
+    ```python
+    config = Config("./config/lucir.yaml").get_config_dict()
+    ```
+- **Step2：Configure the parameters in the `./config/lucir.yaml` file. Please refer to [`config.md`](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/config_file.md) for the meanings of each parameter.**
+- **Step3: Run code `python run_trainer.py`**
+- **Step4：After the training is completed, the log files will be saved in the path specified by the `save_path` parameter.**
+
+
 ## Supported Methods
 + [BiC (CVPR 2019)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/bic/README.md)
 + [EWC (PNAS 2017)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/ewc/README.md)
@@ -10,34 +42,6 @@ Make continual learning easy.
 + [WA (CVPR 2020)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/wa/README.md)
 + [OCM (PMLR 2022)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/ocm/README.md)
 + [DER (CVPR 2021)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/der/README.md)
-
-
-## Quick Installation
-(待文档部分完成)  <br>
-请参考文档中[`安装`](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/install.md)部分。 <br>
-完整文档：[`./docs`](https://github.com/RL-VIG/LibContinual/tree/master/docs)
-
-## Datasets
-[`CIFAR-100`](https://drive.google.com/drive/folders/1EL46LQ3ww-F1NVTwFDPIg-nO198cUqWm?usp=sharing), `miniImageNet(todo)`  <br>
-
-将对应数据集的压缩包解压至指定路径:
-```
-unzip cifar100.zip -d /path/to/your/dataset
-```
-修改.yaml文件的data_root参数：
-```
-data_root: /path/to/your/dataset
-```
-如何添加自定义数据集请参考文档:[`添加自定义数据集`](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/data_module.md)
-
-## Get Start
-
-当您已经完成`Quick Installation`和`Datasets`后，我们以`LUCIR`方法为例展示如何使用`LibContinual`。
-- **Step1: 修改`run_trainer.py`中`Config`参数为`./config/lucir.yaml`**
-- **Step2：配置`./config/lucir.yaml`文件中的参数，各参数含义请参考[配置文件](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/config_file.md)**
-- **Step3: 运行代码`python run_trainer.py`**
-- **Step4：日志保存在配置文件中`save_path`路径下**
-
 
 
 ## Acknowledgement
