@@ -6,7 +6,19 @@ import math
 import numpy as np
 from .finetune import Finetune
 
+
 def KD_loss(pred, soft, T=2):
+    '''
+    Compute the knowledge distillation loss.
+
+    Args:
+        pred (torch.Tensor): Predictions of the model.
+        soft (torch.Tensor): Soft targets.
+        T (float): Temperature parameter for softening the predictions. Default is 2.
+
+    Returns:
+        torch.Tensor: Knowledge distillation loss.
+    '''
     pred = torch.log_softmax(pred / T, dim=1)
     soft = torch.softmax(soft / T, dim=1)
     return -1 * torch.mul(soft, pred).sum() / pred.shape[0]
@@ -14,7 +26,14 @@ def KD_loss(pred, soft, T=2):
 
 
 class Model(nn.Module):
-    # A model consists with a backbone and a classifier
+    '''
+    A model consists with a backbone and a classifier.
+
+    Args:
+        backbone (nn.Module): Backbone network.
+        feat_dim (int): Dimension of the extracted features.
+        num_class (int): Number of classes in the dataset.
+    '''
     def __init__(self, backbone, feat_dim, num_class):
         super().__init__()
         self.backbone = backbone
@@ -26,10 +45,25 @@ class Model(nn.Module):
         return self.get_logits(x)
     
     def get_logits(self, x):
+        '''
+        Compute logits for the input data.
+
+        Args:
+            x (torch.Tensor): Input data.
+
+        Returns:
+            torch.Tensor: Logits of the input data.
+        '''
         logits = self.classifier(self.backbone(x)['features'])
         return logits
 
     def update_classifier(self, nb_classes):
+        '''
+        Incrementally update the classifier with deepcopy.
+
+        Args:
+            nb_classes (int): Number of classes after update.
+        '''
         classifier = nn.Linear(self.feat_dim, nb_classes)
         if self.classifier is not None:
             nb_output = self.classifier.out_features
@@ -42,6 +76,12 @@ class Model(nn.Module):
         self.classifier = classifier
         
     def weight_align(self, increment):
+        '''
+        Align the weight of the classifier after every task.
+
+        Args:
+            increment (int): Number of classes added in the current task.
+        '''
         weights = self.classifier.weight.data
         newnorm = torch.norm(weights[-increment:, :], p=2, dim=1)
         oldnorm = torch.norm(weights[:-increment, :], p=2, dim=1)
@@ -58,6 +98,9 @@ class Model(nn.Module):
         return logits
     
     def freeze(self):
+        '''
+        Freeze the model parameters.
+        '''
         for param in self.parameters():
             param.requires_grad = False
         self.eval()
@@ -65,6 +108,15 @@ class Model(nn.Module):
         return self
     
     def extract_vector(self, x):
+        '''
+        Extract features from the backbone network.
+
+        Args:
+            x (torch.Tensor): Input data.
+
+        Returns:
+            torch.Tensor: Extracted features.
+        '''
         return self.backbone(x)["features"]
 
 
@@ -72,9 +124,7 @@ class Model(nn.Module):
 
 class WA(Finetune):
     def __init__(self, backbone, feat_dim, num_class, **kwargs):
-        # 用来初始化各自算法需要的对象
         super().__init__(backbone, feat_dim, num_class, **kwargs)
-        # self.backbone = backbone
         self.network = Model(self.backbone, feat_dim, kwargs['init_cls_num'])
         self.device = kwargs['device']
         self.old_network = None
@@ -85,6 +135,15 @@ class WA(Finetune):
         self.total_classes_indexes = 0
 
     def observe(self, data):
+        '''
+        Do every current task.
+
+        Args:
+            data (dict): Dictionary containing input data and labels.
+
+        Returns:
+            tuple: Tuple containing predictions, accuracy, and loss.
+        '''
         x, y = data['image'].to(self.device), data['label'].to(self.device)
 
         self.network.to(self.device)
@@ -109,6 +168,15 @@ class WA(Finetune):
         return pred, acc / x.size(0), loss
 
     def inference(self, data):
+        '''
+        Perform inference on the input data.
+
+        Args:
+            data (dict): Dictionary containing input data and labels.
+
+        Returns:
+            tuple: Tuple containing predictions and accuracy.
+        '''
         x, y = data['image'].to(self.device), data['label'].to(self.device)
 
         logits = self.network(x)
@@ -120,12 +188,30 @@ class WA(Finetune):
         return self.network(x)
 
     def before_task(self, task_idx, buffer, train_loader, test_loaders):
+        '''
+        Do before every task for task initialization.
+
+        Args:
+            task_idx (int): Index of the current task.
+            buffer (Buffer): Buffer object.
+            train_loader (DataLoader): DataLoader for training data.
+            test_loaders (list): List of DataLoaders for test data.
+        '''
         self.total_classes = buffer.total_classes
         self.network.update_classifier(self.total_classes)
 
         self.total_classes_indexes = np.arange(self.known_classes, self.total_classes)
 
     def after_task(self, task_idx, buffer, train_loader, test_loaders):
+        '''
+        Do after every task for updating the model.
+
+        Args:
+            task_idx (int): Index of the current task.
+            buffer (Buffer): Buffer object.
+            train_loader (DataLoader): DataLoader for training data.
+            test_loaders (list): List of DataLoaders for test data.
+        '''
         if self.task_idx > 0:
             self.network.weight_align(self.total_classes - self.known_classes)
         # self.old_network = self.network.copy().freeze()
@@ -140,5 +226,3 @@ class WA(Finetune):
                       self.device)
 
         self.task_idx += 1
-
-
