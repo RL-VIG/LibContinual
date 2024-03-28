@@ -12,7 +12,7 @@ LibContinual的配置文件采用了yaml格式的文件，同时也支持从命�
 
 尽管`default.yaml`中设置的是持续学习中的一些最基础的配置，无法仅依靠`default.yaml`直接运行程序。运行代码前，用户需要在`config/`目录下定义已经在LibContinual中实现了的方法的配置。
 
-考虑到持续方法有一些基本参数例如`image_sie, epoch`或者`device id`，这样的参数是经常需要改动的。LibContinual支持在命令行中对一些简单的配置进行更改而不需要修改`yaml`文件。同样的，在训练和测试过程中，很多不同的持续学习方法的参数是相同的。为了简洁起见，我们将这些相同的参数包装到了一起，放到了`config/headers`目录下，这样就能够通过导入的方式简洁地编写自定义方法的`yaml`文件。
+考虑到持续方法有一些基本参数例如`image_sie， epoch`或者`device id`，这样的参数是经常需要改动的。LibContinual支持在命令行中对一些简单的配置进行更改而不需要修改`yaml`文件。同样的，在训练和测试过程中，很多不同的持续学习方法的参数是相同的。为了简洁起见，我们将这些相同的参数包装到了一起，放到了`config/headers`目录下，这样就能够通过导入的方式简洁地编写自定义方法的`yaml`文件。
 
 以下是`config/headers`目录下文件的构成。
 
@@ -61,8 +61,8 @@ LibContinual的配置文件采用了yaml格式的文件，同时也支持从命�
   
   + `name`：使用的backbone的名称，需要与LibContinual中实现的backbone的大小写一致。
   + `kwargs`：`backbone`初始化时用到的参数，必须保持名称与代码中的名称一致。
-    + num_classes：类别数量。
-    + args：其他项参数，例如所使用的数据集`dataset`。
+    + `num_classes`：类别数量。
+    + `args`：其他项参数，例如所使用的数据集`dataset`。
   
   ```yaml
   backbone:
@@ -76,8 +76,9 @@ LibContinual的配置文件采用了yaml格式的文件，同时也支持从命�
   
   + `name`：使用的方法的名称，需要与LibContinual中实现的方法的名称一致。
 + `kwargs`：方法初始化时用到的参数，必须保持名称与代码中的名称一致。
-    + feat_dim：维度设定。
     
+    + `feat_dim`：维度设定。
+  
   ```yaml
   classifier:
       name: bic
@@ -88,6 +89,8 @@ LibContinual的配置文件采用了yaml格式的文件，同时也支持从命�
 ### 训练设置
 
 + `epoch`：训练的`epoch`数。
+
++ `test_epoch`: 测试的`epoch`数。
 
 + `val_per_epoch`:  验证阶段的每一次的`epoch`数。
 
