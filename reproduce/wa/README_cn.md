@@ -13,7 +13,7 @@
 @inproceedings{zhao2020maintaining,
   title={Maintaining discrimination and fairness in class incremental learning},
   author={Zhao, Bowen and Xiao, Xi and Gan, Guojun and Zhang, Bin and Xia, Shu-Tao},
-  booktitle={Proceedings of the IEEE/CVF conference on computer vision and pattern recognition},
+  booktitle={Proceedings of the IEEE/CVF conference on computer vision and pattern recognition (CVPR)},
   pages={13208--13217},
   year={2020}
 }
