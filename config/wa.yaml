@@ -5,24 +5,28 @@ includes:
   - headers/optimizer.yaml
   - backbones/resnet12.yaml
 
-data_root: /data/fanzhichen/continual/cifar100
+# Set paths to datasets
+data_root: ${DATASET_DIR}/cifar100
+
+# Image size
 image_size: 32
 
 save_path: ./
-# data
+
+# Data settings
 init_cls_num: 20
 inc_cls_num: 20
 task_num: 5
 
-
-init_epoch: 250 #250 # PyCIL: 200
-epoch: 250 #250 # PyCIL: 170
+# Training setting
+init_epoch: 250
+epoch: 250
 device_ids: 0
 n_gpu: 1
 val_per_epoch: 1
 batch_size: 128
 
-
+# Optimizer settings
 optimizer:
   name: SGD
   kwargs:
@@ -30,12 +34,14 @@ optimizer:
     weight_decay: 2e-4
     momentum: 0.9
 
+# Learning rate scheduler settings
 lr_scheduler:
   name: MultiStepLR
   kwargs:
     gamma: 0.1
     milestones: [80, 120]
 
+# Backbone architecture settings
 backbone:
   name: cifar_resnet32
   kwargs:
@@ -43,7 +49,7 @@ backbone:
     args:
       dataset: cifar100
 
-
+# Buffer settings
 buffer:
   name: LinearHerdingBuffer
   kwargs:
@@ -51,6 +57,7 @@ buffer:
     batch_size: 128
 #    strategy: herding     # random, equal_random, reservoir, herding
 
+# Classifier settings
 classifier:
   name: WA
   kwargs:
