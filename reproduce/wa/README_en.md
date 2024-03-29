@@ -29,8 +29,8 @@ It consists of two steps:
 
 ## Results on CIFAR-100 dataset
 
-| Arch     | Input Size | Batch Size | Buffer Size | Task Number | Mean ACC |
-| :------- | :--------: | :--------: | :---------: | :---------: | :------: |
-| resnet32 |   32x32    |    128     |    2000     |      5      |  50.27   |
+|   Arch   | Input Size | Batch Size | Buffer Size | Epochs | Task Number | Average ACC |
+| :------: | :--------: | :--------: | :---------: | :----: | :---------: | :---------: |
+| resnet32 |   32x32    |    128     |    2000     |  250   |      5      |    47.2%    |
 
 Note: The paper of WA only used a buffer size of 2000 for the experiment.
