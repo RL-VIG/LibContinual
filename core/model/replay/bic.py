@@ -31,12 +31,10 @@ class Model(nn.Module):
     def __init__(self, backbone, feat_dim, num_class, device):
         super().__init__()
         self.backbone = backbone
-        
         self.feat_dim = feat_dim
         self.num_class = num_class
         self.classifier = nn.Linear(feat_dim, num_class)
     
-        
     def forward(self, x):
         return self.get_logits(x)
     
@@ -60,7 +58,6 @@ class bic(Finetune):
         self.bias_layers=[self.bias_layer1, self.bias_layer2, self.bias_layer3, self.bias_layer4, self.bias_layer5]
         
         
-
         self.model = Model(backbone, feat_dim, num_class, self.device)
         self.seen_cls = kwargs['init_cls_num']
         self.inc_cls_num  = kwargs['inc_cls_num']
@@ -80,7 +77,6 @@ class bic(Finetune):
         self.bias_optimizer = self.optimizer_cls(params=self.bias_layers[self.T].parameters(), **self.optimizer_kwargs)
         self.criterion = nn.CrossEntropyLoss()
         self.previous_model = None
-
 
      
         
@@ -130,9 +126,8 @@ class bic(Finetune):
         self.seen_cls += self.inc_cls_num
         
     def stage1(self, data):
-        #print("Training ... ")
         #losses = []
-        #stage1 正常训练
+        #stage1 normal training
         x, y = data['image'], data['label']
         x = x.to(self.device)
         y = y.to(self.device)
@@ -140,22 +135,17 @@ class bic(Finetune):
         p = self.model(x)
         p = self.bias_forward(p,self.bias_layers)
         
-        
         loss = self.criterion(p[:,:self.seen_cls], y)
-        
         pred = torch.argmax(p[:,:self.seen_cls], dim=1)
         acc = torch.sum(pred == y).item()
         return pred, acc / x.size(0), loss
 
     def stage1_distill(self, data):
-        #print("Training ... ")
         distill_losses = []
         ce_losses = []
         T = 2
-
         alpha = (self.seen_cls - 20)/ self.seen_cls
         #print("classification proportion 1-alpha = ", 1-alpha)
-        
         x, y = data['image'], data['label']
         x = x.to(self.device)
         y = y.to(self.device)
@@ -166,7 +156,6 @@ class bic(Finetune):
         #    label = label.view(-1).cuda()
         p = self.model(x)
         p = self.bias_forward(p,self.bias_layers)
-
         pred = torch.argmax(p[:,:self.seen_cls], dim=1)
         acc = torch.sum(pred == y).item()
 
@@ -193,14 +182,10 @@ class bic(Finetune):
 
     #def stage2(self, val_bias_data, criterion, optimizer):
     def stage2(self, val_bias_data, bias_optimizer):
-        
-        #print("Evaluating ... ")
         losses = []
-
         x, y = val_bias_data['image'], val_bias_data['label']
         x = x.to(self.device)
         y = y.to(self.device)
-
         #for i, (image, label) in enumerate(tqdm(val_bias_data)):
         #    image = image.cuda()
         #    label = label.view(-1).cuda()
@@ -240,13 +225,11 @@ class bic(Finetune):
 
         train_datasets = copy.deepcopy(buffer_datasets) # empty
         val_datasets = copy.deepcopy(buffer_datasets)   # empty
-    
         buffer_datasets.images.extend(buffer.images)   # buffer
         buffer_datasets.labels.extend(buffer.labels)
  
 
         from sklearn.model_selection import train_test_split
-
         images_train, images_val, labels_train, labels_val = train_test_split(buffer_datasets.images,
                                                                         buffer_datasets.labels,
                                                                         test_size=0.1,  
@@ -255,20 +238,14 @@ class bic(Finetune):
 
         train_datasets.images.extend(images_train)   # 90% buffer
         train_datasets.labels.extend(labels_train)
-
         val_datasets.images.extend(images_val)       # 10% buffer
         val_datasets.labels.extend(labels_val)
 
-        
-        
-
-        
         datasets = dataloader.dataset
 
         val_num = buffer.buffer_size/(task_idx*20)
         ratio = val_num/len(datasets.images)
         #print(ratio)
-
         images_train, images_val, labels_train, labels_val = train_test_split(datasets.images,
                                                                         datasets.labels,
                                                                         test_size=ratio,  
@@ -277,7 +254,6 @@ class bic(Finetune):
 
         train_datasets.images.extend(images_train)      # train = 90% current + 90% buffer
         train_datasets.labels.extend(labels_train)
-
         val_datasets.images.extend(images_val)          # val = 10% current + 10% buffer
         val_datasets.labels.extend(labels_val)          
 

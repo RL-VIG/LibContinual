@@ -5,6 +5,7 @@ includes:
   - headers/optimizer.yaml
   - backbones/CifarResnet.yaml
 
+# remote your data root
 data_root: /data/fanzhichen/continual/cifar100
 image_size: 32
 save_path: ./
@@ -13,14 +14,13 @@ save_path: ./
 init_cls_num: 20
 inc_cls_num: 20
 task_num: 5
-
 epoch: 80
 device_ids: 0
 n_gpu: 1
 val_per_epoch: 5
 stage2_epoch: 100
-
 batch_size: 128
+
 
 optimizer:
   name: SGD
