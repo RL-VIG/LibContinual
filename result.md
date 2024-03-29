@@ -63,3 +63,20 @@ method| 设定 | Buffer | 复现精度 | 论文精度
 ------ | ----- | ----- | ----- | ------
 TAMiL | (20, 20) | 500 | 49.3% | 50.11%
 TAMiL | (20, 20) | 200 | 40.7% | 41.43% 
+
+
+
+-----
+method| kind |buffer | acc
+--- | --- | --- | ---
+LwF  | regularize | - | 43.56
+WA | regularize | 2000 | 48.20%
+EWC | regularize | - | 57.3%
+LUCIR | replay | 2000 | 57.49
+OCM | replay | 2000 | 35.03%
+iCaRL | replay | 2000 | 53.00%
+BIC | replay | 2000 | 57.80%
+TAMIL | arch | 2000 | 59.21%
+DER | arch | 2000 | 
+
+
