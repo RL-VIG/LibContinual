@@ -130,7 +130,7 @@ Note that due to the distinct operations of continual learning algorithms for th
 
 ## Add `lucir.yaml`
 
-文件中各参数含义请参考[config.md]()
+Please refer to [`config.md`](./config_file_en.md) for the meaning of each parameter
 ### Dataset
 
 ```yaml

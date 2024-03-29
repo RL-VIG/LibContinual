@@ -19,7 +19,7 @@ Set the `data_root` in `.yaml`：
 ```
 data_root: /path/to/your/dataset
 ```
-To add a custom dataset, please refer to [`dataset.md`](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/data_module.md).
+To add a custom dataset, please refer to [`dataset.md`](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/en/data_module_en.md).
 
 
 ## Getting Started
@@ -30,7 +30,7 @@ Once you have completed the "Quick Installation" and "Datasets" sections, we can
     ```python
     config = Config("./config/lucir.yaml").get_config_dict()
     ```
-- **Step2:** Configure the parameters in the `./config/lucir.yaml` file. Please refer to [`config.md`](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/config_file.md) for the meanings of each parameter.
+- **Step2:** Configure the parameters in the `./config/lucir.yaml` file. Please refer to [`config.md`](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/en/config_file_en/.md) for the meanings of each parameter.
 - **Step3:** Run code `python run_trainer.py`
 - **Step4:** After the training is completed, the log files will be saved in the path specified by the `save_path` parameter.
 

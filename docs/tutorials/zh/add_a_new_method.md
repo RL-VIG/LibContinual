@@ -1,6 +1,6 @@
 # Add a new method
 
-下面以`LUCIR`(Learning_a_Unified_Classifier_Incrementally_via_Rebalancing)方法为例，描述如何添加一种新的方
+下面以[`LUCIR`](https://openaccess.thecvf.com/content_CVPR_2019/html/Hou_Learning_a_Unified_Classifier_Incrementally_via_Rebalancing_CVPR_2019_paper.html)方法为例，描述如何添加一种新的方
 法。 <br>
 
 首先，所有方法都继承同一父类`Finetune`。
@@ -41,10 +41,8 @@ class Finetune(nn.Module):
 + `after_task`：在每个任务开始训练后调用，用于对模型结构、训练参数等进行调整，需要用户自定义。
 + `get_parameters`：在每个任务开始训练前调用，返回当前任务的训练参数。
 
-以上这些接口是新增方法所必需要实现的接口。
 
 ## LUCIR
-接下来以`LUCIR`为例，描述如何在`LibContinual`中新增一个方法
 
 ### 建立模型
 首先在`core/model/replay`下添加`lucir.py`文件：（此处省略部分源码）
@@ -105,9 +103,7 @@ class LUCIR(Finetune):
     def after_task(self, task_idx, buffer, train_loader, test_loaders):
         if self.task_idx > 0:
             self.handle_ref_features.remove()
-            self.handle_cur_features.remove()
-            self.handle_old_scores_bs.remove()
-            self.handle_new_scores_bs.remove()
+            ...
 
 
     def inference(self, data):
@@ -133,15 +129,9 @@ class LUCIR(Finetune):
 
 
 ## 新增lucir.yaml文件
-
+各参数含义请参考['config.md'](./config_file_zh.md)
 ### 数据划分相关参数
-`data_root`: 数据集存放路径  <br>
-`image_size`: 图片大小 <br>
-`save_path`: 训练日志存放路径<br>
-`init_cls_num`: 第一个任务类别数<br>
-`inc_cls_num`: 其他任务类别数<br>
-`task_num`: 任务数量<br>
-```
+```yaml
 data_root: /data/fanzhichen/continual/cifar100
 image_size: 32
 save_path: ./
@@ -151,10 +141,7 @@ task_num: 6
 ```
 
 ### 训练优化器相关参数
-关于训练模型所用的`optimizer`和`scheduler`。
-`name`: 优化器的种类  <br>
-`kwargs`: 按照`torch.optim`所用参数进行编写<br>
-```
+```yaml
 optimizer:
   name: SGD
   kwargs:
@@ -170,8 +157,7 @@ lr_scheduler:
 ```
 
 ### backbone相关参数
-相关参数含义如优化器参数
-```
+```yaml
 backbone:
   name: resnet32
   kwargs:
@@ -183,8 +169,8 @@ backbone:
 
 ### buffer相关参数
 `name`: 选择`LinearBuffer`, 会将数据在任务开始前与当前任务数据合并在一起。  <br>
-`strategy`：选择`herding`更新策略，目前可支持`random`,`equal_random`,`reservoir`,`herding` <br>
-```
+`strategy`：选择`herding`更新策略，目前可支持`random`,`equal_random`,`reservoir`,`herding`,`None` <br>
+```yaml
 buffer:
   name: LinearBuffer
   kwargs:
@@ -196,8 +182,7 @@ buffer:
 
 ### 算法相关参数
 `name`：此处标识所采用何种算法
-`kwargs`: 算法z执行所需参数，会在`init_model`时传入。
-```
+```yaml
 classifier:
   name: LUCIR
   kwargs:

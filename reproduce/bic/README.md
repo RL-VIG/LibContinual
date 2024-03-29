@@ -1,4 +1,4 @@
-# Large Scale Incremental Learning <a href="http://openaccess.thecvf.com/content_CVPR_2019/papers/Wu_Large_Scale_Incremental_Learning_CVPR_2019_paper.pdf"> (CVPR'2019)</a>
+# Large Scale Incremental Learning [(CVPR'2019)](https://openaccess.thecvf.com/content_CVPR_2019/papers/Wu_Large_Scale_Incremental_Learning_CVPR_2019_paper.pdf)
 
 ## Abstract
 
@@ -18,7 +18,7 @@ Modern machine learning suffers from catastrophic forgetting when learning new c
 @inproceedings{wu2019large,
   title={Large scale incremental learning},
   author={Wu, Yue and Chen, Yinpeng and Wang, Lijuan and Ye, Yuancheng and Liu, Zicheng and Guo, Yandong and Fu, Yun},
-  booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
+  booktitle={Proceedings of the IEEE/CVF conference on computer vision and pattern recognition (CVPR)},
   pages={374--382},
   year={2019}
 }
@@ -26,20 +26,14 @@ Modern machine learning suffers from catastrophic forgetting when learning new c
 
 ## How to Reproduce bic
 
-It consists of two steps:
-
-- **Step1: Modify  `./run_trainer.py``**
-- Modify the `Config("./config/xxx.yaml")`in `./run_trainer.py` to ``./config/bic.yaml`
-  
-- **Step2: Run command**:
-- `python run_trainer.py`
-
-### An example of cifar100 dataset with ResNet18
-
-```bash
-# base training
-python ./run_trainer.py
-```
+- **Step1: Set the path in `run_trainer.py` with `./config/bic.yaml`**
+    ```python
+    config = Config("./config/bic.yaml").get_config_dict()
+    ```
+- **Step2: Run command**
+    ```python
+    python run_trainer.py
+    ```
 
 **Note**:
 

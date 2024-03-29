@@ -28,7 +28,7 @@ LibContinual配置文件使用`yaml`文件格式。我们预定义的配置文�
 - `pin_momery`：是否使用内存来加速读取
 - `workers`：并行读取数据进程的数量
 
-```
+```yaml
 data_root: /data/cifar10/
 image_size: 32
 ```
@@ -45,14 +45,14 @@ image_size: 32
   - `args`：需要的其他参数
     - `dataset`：所使用的数据集，不同数据集的骨干网络实现细节有所不同
 
-  ~~~
+  ```yaml
   backbone:
     name: resnet18
     kwargs:
       num_classes: 10
       args: 
         dataset: cifar10
-  ~~~
+  ```
 
 `classifier`：方法中使用的分类器信息
 
@@ -60,7 +60,7 @@ image_size: 32
 
 - `kwargs`：分类器的初始化参数，需要与代码实现的名称保持一致
 
-  ~~~
+  ```yaml
   classifier:
     name: PASS
     kwargs:
@@ -70,7 +70,7 @@ image_size: 32
       feat_KD: 10.0
       proto_aug: 10.0
       temp : 0.1
-  ~~~
+  ```
 
 #### 训练设置
 
@@ -83,7 +83,7 @@ image_size: 32
 - `batch_size`：训练时的批次大小
 - `warm_up`：训练之前的预热轮次
 
-~~~
+```yaml
 warmup: 0
 init_cls_num: 50
 inc_cls_num: 10
@@ -92,7 +92,7 @@ batch_size: 64
 init_epoch: 100
 epoch: 100
 val_per_epoch: 10
-~~~
+```
 
 #### 优化器设置
 
@@ -102,26 +102,26 @@ val_per_epoch: 10
     - `lr`：优化器学习率
     - `weight_decay`：权重衰减
 
-~~~
+```yaml
 optimizer:
   name: Adam
   kwargs:
     lr: 0.001
     weight_decay: 0.0002
-~~~
+```
 
 `lr_scheduler`：训练中使用的学习率调整策略，只支持`Pytorch`内置的优化器调整策略
 
 - `name`：学习率调整策略的名称
 - `kwargs`：学习率调整策略的参数，注意不同的学习率调整策略会有不同的参数
 
-~~~
+```yaml
 lr_scheduler:
   name: StepLR
   kwargs:
     step_size: 45
     gamma: 0.1
-~~~
+```
 
 #### 硬件设置
 
@@ -130,7 +130,7 @@ lr_scheduler:
 - `deterministic`：是否开启 `torch.backend.cudnn.benchmark` 和 `torch.backend.cudnn.deterministic` 
 - `seed`：在 `numpy`，`torch`和 `cuda`中使用的随机种子
 
-```
+```yaml
 device_ids: 3
 n_gpu: 1
 seed: 0

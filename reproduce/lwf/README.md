@@ -7,20 +7,13 @@ When building a unified vision system or gradually adding new apabilities to a s
 
 ## Citation
 
-```
+```bibtex
 @inproceedings{Li2018LwF,
+  title        = {Learning Without Forgetting},
   author       = {Zhizhong Li and
                   Derek Hoiem},
-  editor       = {Bastian Leibe and
-                  Jiri Matas and
-                  Nicu Sebe and
-                  Max Welling},
-  title        = {Learning Without Forgetting},
-  booktitle    = {Computer Vision European Conference,{ECCV} 2016},
-  series       = {Lecture Notes in Computer Science},
-  volume       = {9908},
+  booktitle    = {Computer Vision European Conference (ECCV)},
   pages        = {614--629},
-  publisher    = {Springer},
   year         = {2016},
 }
 ```
@@ -29,7 +22,7 @@ When building a unified vision system or gradually adding new apabilities to a s
 
 - **Step1: Set the path in `run_trainer.py` with `./config/lwf.yaml`**
     ```python
-    config = Config("./config/lucir.yaml").get_config_dict()
+    config = Config("./config/lwf.yaml").get_config_dict()
     ```
 - **Step2: Run code**
     ```python

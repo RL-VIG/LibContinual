@@ -19,12 +19,16 @@ Deep neural networks (DNNs) have been applied in class incremental learning, whi
 }
 ```
 
-## How to reproduce WA
+## How to Reproduce WA
 
-It consists of two steps:
-
-- **Step1**: Set paths to datasets in `wa.yaml` and modify the `Config` in `run_trainer.py` to `./config/wa.yaml`.
-- **Step2**: Execute `python run_trainer.py`.
+- **Step1: Set the path in `run_trainer.py` with `./config/wa.yaml`**
+    ```python
+    config = Config("./config/wa.yaml").get_config_dict()
+    ```
+- **Step2: Run command**
+    ```python
+    python run_trainer.py
+    ```
 
 
 ## Results on CIFAR-100 dataset

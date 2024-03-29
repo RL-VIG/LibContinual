@@ -7,13 +7,12 @@ We address the problem of class incremental learning, which is a core step towar
 
 ## Citation
 
-```
+```bibtex
 @inproceedings{Yan2021DER,
   author       = {Shipeng Yan and Jiangwei Xie and Xuming He},
   title        = {{DER:} Dynamically Expandable Representation for Class Incremental Learning},
-  booktitle    = {{IEEE} Conference on Computer Vision and Pattern Recognition, {CVPR} 2021},
+  booktitle    = {Proceedings of the IEEE/CVF conference on computer vision and pattern recognition (CVPR)},
   pages        = {3014--3023},
-  publisher    = {Computer Vision Foundation / {IEEE}},
   year         = {2021},
 }
 ```
@@ -24,7 +23,7 @@ We address the problem of class incremental learning, which is a core step towar
     ```python
     config = Config("./config/lucir.yaml").get_config_dict()
     ```
-- **Step2: Run code**
+- **Step2: Run command**
     ```python
     python run_trainer.py
     ```
