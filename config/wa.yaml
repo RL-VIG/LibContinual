@@ -21,7 +21,7 @@ task_num: 5
 # Training setting
 init_epoch: 250
 epoch: 250
-device_ids: 0
+device_ids: 3
 n_gpu: 1
 val_per_epoch: 1
 batch_size: 128
@@ -39,11 +39,11 @@ lr_scheduler:
   name: MultiStepLR
   kwargs:
     gamma: 0.1
-    milestones: [80, 120]
+    milestones: [100, 150, 200]
 
 # Backbone architecture settings
 backbone:
-  name: cifar_resnet32
+  name: resnet32
   kwargs:
     num_classes: 100
     args:
