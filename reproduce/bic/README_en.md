@@ -9,7 +9,7 @@ Modern machine learning suffers from catastrophic forgetting when learning new c
 <!-- [IMAGE] -->
 
 <div align=center>
-<img src="" width="80%"/>
+<img src="https://github.com/RL-VIG/LibContinual/resources/imgs/bic.png" width="80%"/>
 </div>
 
 ## Citation
