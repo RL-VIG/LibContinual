@@ -1,4 +1,4 @@
-# Online Continual Learning through Mutual Information Maximization [(PMLR'2022)](https://proceedings.mlr.press/v162/guo22g.html)
+# Online Continual Learning through Mutual Information Maximization [(ICML'2021)](https://proceedings.mlr.press/v162/guo22g.html)
 
 
 

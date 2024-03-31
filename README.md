@@ -30,20 +30,21 @@ Once you have completed the "Quick Installation" and "Datasets" sections, we can
     ```python
     config = Config("./config/lucir.yaml").get_config_dict()
     ```
-- **Step2:** Configure the parameters in the `./config/lucir.yaml` file. Please refer to [`config.md`](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/en/config_file_en/.md) for the meanings of each parameter.
+- **Step2:** Configure the parameters in the `./config/lucir.yaml` file. Please refer to [`config.md`](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/en/config_file_en.md) for the meanings of each parameter.
 - **Step3:** Run code `python run_trainer.py`
 - **Step4:** After the training is completed, the log files will be saved in the path specified by the `save_path` parameter.
 
 
 ## Supported Methods
-+ [BiC (CVPR 2019)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/bic/README.md)
++ [LwF (ECCV 2016)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/lwf/README.md)
 + [EWC (PNAS 2017)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/ewc/README.md)
 + [iCaRL (CVPR2017)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/icarl/README.md)
++ [BiC (CVPR 2019)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/bic/README.md)
 + [LUCIR (CVPR 2019)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/lucir/README.md)
-+ [LwF (ECCV 2016)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/lwf/README.md)
 + [WA (CVPR 2020)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/wa/README.md)
-+ [OCM (PMLR 2022)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/ocm/README.md)
 + [DER (CVPR 2021)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/der/README.md)
++ [OCM (PMLR 2022)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/ocm/README.md)
+
 
 
 ## Acknowledgement
