@@ -1,6 +1,9 @@
 # LibContinual
 Make continual learning easy.
 
+## Introduction
+LibContinual is an open source continual learning toolbox based on PyTorch. The master branch works with PyTorch 1.13. The compatibility to earlier versions of PyTorch is not fully tested.
+
 ![flowchart](./resources/imgs/flowchart.png)
 
 ## Quick Installation
