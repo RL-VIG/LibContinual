@@ -47,7 +47,7 @@ backbone:
 buffer:
   name: LinearBuffer
   kwargs:
-    buffer_size: 40000
+    buffer_size: 2000
     batch_size: 32
     strategy: random     # random, equal_random, reservoir, herding
 
