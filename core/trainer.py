@@ -16,6 +16,7 @@ from core.utils import Logger, fmt_date_str
 from torch.optim.lr_scheduler import MultiStepLR
 import torch.optim as optim
 from copy import deepcopy
+from pprint import pprint
 
 class Trainer(object):
     """
@@ -39,7 +40,7 @@ class Trainer(object):
         self.device = self._init_device(config) 
         # self.writer = self._init_writer(self.viz_path)   # todo   add tensorboard
         
-        print(self.config)
+        pprint(self.config)
 
         self.init_cls_num, self.inc_cls_num, self.task_num = self._init_data(config)
         self.model = self._init_model(config)  # todo add parameter select
