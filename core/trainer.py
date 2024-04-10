@@ -15,6 +15,7 @@ from core.utils import Logger, fmt_date_str
 from torch.optim.lr_scheduler import MultiStepLR
 import torch.optim as optim
 from copy import deepcopy
+from pprint import pprint
 
 class Trainer(object):
     """
@@ -31,7 +32,7 @@ class Trainer(object):
         self.logger = self._init_logger(config)           
         self.device = self._init_device(config) 
         
-        print(self.config)
+        pprint(self.config)
 
         self.init_cls_num, self.inc_cls_num, self.task_num = self._init_data(config)
         self.model = self._init_model(config)  # todo add parameter select

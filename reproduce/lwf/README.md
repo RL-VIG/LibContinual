@@ -34,5 +34,6 @@ When building a unified vision system or gradually adding new apabilities to a s
 | Backbone | Pretrained |  Dataset  | Epochs |    Split    | Precision |
 | :------: | :--------: | :-------: | :----: | :---------: | :-------: |
 | Resnet18 |   False    | CIFAR-100 |  100   | Base0 Inc10 |  43.00%   |
+| Resnet18 |   False    | CIFAR-100 |  100   | Base0 Inc5 |  43.90%   |
 
 
