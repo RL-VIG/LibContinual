@@ -31,6 +31,7 @@ Conventionally, deep neural networks are trained offline, relying on a large dat
 ## Results
 
 
-|backbone | buffer_size | Dataset | init_cls | inc_cls | acc|
-| --- | --- | --- | --- | --- | --- |
-| cifar_resnet32|  0 | CIFAR-100 | 50 | 50 | 39.00 | 
+| Dataset  | Num of tasks | Buffer size | Reproduced Accuracy | Reported Accuracy |
+| :------: | :----------: | :---------: | :-----------------: | :---------------: |
+| CIFAR100 |      2      |    2000     |        63.00         |       62.41        |
+| CIFAR100 |      5      |    2000     |        47.40         |       48.91        |

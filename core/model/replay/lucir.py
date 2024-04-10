@@ -75,7 +75,7 @@ class LUCIR(Finetune):
 
 
         elif task_idx > 1:
-            self.ref_model = copy.deepcopy(self.network) # 应该带上classifier
+            self.ref_model = copy.deepcopy(self.network) 
             in_features = self.network.classifier.in_features
             out_features1 = self.network.classifier.fc1.out_features
             out_features2 = self.network.classifier.fc2.out_features
@@ -91,8 +91,6 @@ class LUCIR(Finetune):
         else:
             self.cur_lamda = self.kwargs['lamda']
 
-        # print("out_feature = ", self.backbone.fc.out_features)
-        # 初始化新的类别向量
         self._init_new_fc(task_idx, buffer, train_loader)
 
         if task_idx == 0:
@@ -108,27 +106,17 @@ class LUCIR(Finetune):
             self.handle_cur_features = self.network.classifier.register_forward_hook(get_cur_features)
             self.handle_old_scores_bs = self.network.classifier.fc1.register_forward_hook(get_old_scores_before_scale)
             self.handle_new_scores_bs = self.network.classifier.fc2.register_forward_hook(get_new_scores_before_scale)
-            # num_old_classes = self.ref_model.fc.out_features
-            # handle_ref_features = self.ref_model.fc.register_forward_hook(get_ref_features)
-            # handle_cur_features = self.classifier.register_forward_hook(get_cur_features)
-            # handle_old_scores_bs = self.classifier.fc1.register_forward_hook(get_old_scores_before_scale)
-            # handle_new_scores_bs = self.classifier.fc2.register_forward_hook(get_new_scores_before_scale)
-        # update optimizer  todo
 
         self.network = self.network.to(self.device)
         if self.ref_model is not None:
             self.ref_model = self.ref_model.to(self.device)
 
-        
-    
-
     def _init_new_fc(self, task_idx, buffer, train_loader):
         if task_idx == 0:
             return
-        old_embedding_norm = self.network.classifier.fc1.weight.data.norm(dim=1, keepdim=True)   # 旧类向量
-        average_old_embedding_norm = torch.mean(old_embedding_norm, dim=0).to('cpu').type(torch.DoubleTensor)   # 旧类向量的均值
-        # feature_model = nn.Sequential(*list(self.network.children())[:-1])   # 把network直接换成backbone()['feature']?
-        feature_model = self.network.backbone   # 把network直接换成backbone()['feature']?
+        old_embedding_norm = self.network.classifier.fc1.weight.data.norm(dim=1, keepdim=True)  
+        average_old_embedding_norm = torch.mean(old_embedding_norm, dim=0).to('cpu').type(torch.DoubleTensor) 
+        feature_model = self.network.backbone 
         num_features = self.network.classifier.in_features
         novel_embedding = torch.zeros((self.kwargs['inc_cls_num'], num_features))
 
@@ -137,12 +125,10 @@ class LUCIR(Finetune):
             cls_dataset = train_loader.dataset
             task_data, task_target = cls_dataset.images, cls_dataset.labels
             cls_indices = np.where(np.array(task_target) == cls_idx) # tuple
-            # print(type(cls_indices))
-            # print(len(cls_indices[0]))
             cls_data, cls_target = np.array([task_data[i] for i in cls_indices[0]]), np.array([task_target[i] for i in cls_indices[0]])
             tmp_datasets.images = cls_data
             tmp_datasets.labels = cls_target
-            tmp_loader = DataLoader(tmp_datasets, batch_size=2, shuffle=False, num_workers=2)
+            tmp_loader = DataLoader(tmp_datasets, batch_size=128, shuffle=False, num_workers=2)
             num_samples = cls_data.shape[0]
             cls_features = self._compute_feature(feature_model, tmp_loader, num_samples, num_features)
             norm_features = F.normalize(torch.from_numpy(cls_features), p=2, dim=1)
@@ -170,8 +156,6 @@ class LUCIR(Finetune):
         x, y = data['image'], data['label']
         x = x.to(self.device)
         y = y.to(self.device)
-        # print(x.shape)
-        # logit = self.classifier(self.backbone(x)['features'])    
         logit = self.network(x)
 
         if self.task_idx == 0:
@@ -201,8 +185,8 @@ class LUCIR(Finetune):
                         max_novel_scores.view(-1, 1), torch.ones(hard_num*self.K, 1).to(self.device)) * self.lw_mr
 
         pred = torch.argmax(logit, dim=1)
-
         acc = torch.sum(pred == y).item()
+
         return pred, acc / x.size(0), loss
 
     def after_task(self, task_idx, buffer, train_loader, test_loaders):
@@ -226,22 +210,6 @@ class LUCIR(Finetune):
         acc = torch.sum(pred == y).item()
         return pred, acc / x.size(0)
 
-
-    def _init_optim(self, config, task_idx):
-        if task_idx > 0:
-            #fix the embedding of old classes
-            ignored_params = list(map(id, self.network.classifier.fc1.parameters()))
-            base_params = filter(lambda p: id(p) not in ignored_params, \
-                    self.network.parameters())
-            tg_params =[{'params': base_params, 'lr': 0.1, 'weight_decay': 5e-4}, \
-                        {'params': self.network.classifier.fc1.parameters(), 'lr': 0, 'weight_decay': 0}]
-        else:
-            tg_params = self.network.parameters()
-
-        
-        return tg_params
-    
-    
     def get_parameters(self, config):
         if self.task_idx > 0:
             #fix the embedding of old classes
@@ -252,6 +220,5 @@ class LUCIR(Finetune):
                         {'params': self.network.classifier.fc1.parameters(), 'lr': 0, 'weight_decay': 0}]
         else:
             tg_params = self.network.parameters()
-
         
         return tg_params
