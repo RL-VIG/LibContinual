@@ -335,7 +335,12 @@ class Trainer(object):
                     random_update(self.train_loader.get_loader(task_idx).dataset, self.buffer)
                 
 
-
+            print("================Task {} Testing!================".format(task_idx))
+            test_acc = self._validate(task_idx)
+            best_acc = max(test_acc["avg_acc"], best_acc)
+            print(" * Average Acc: {:.2f} Best acc {:.2f}".format(test_acc["avg_acc"], best_acc))
+            print(" * Per-Task Acc:{}".format(test_acc['per_task_acc']))
+                    
     def stage2_train(self, epoch_idx, dataloader):
         """
         The train stage.
