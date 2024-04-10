@@ -7,4 +7,5 @@ from .bic import bic
 from .ewc import EWC
 from .tam import TAM
 from .ocm import OCM
-from .dualprompt import DualPrompt
+from .eraml import ERAML
+from .erace import ERACE

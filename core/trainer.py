@@ -404,6 +404,7 @@ class Trainer(object):
                 meter.update("acc1", 100 * acc)
                 meter.update("loss", loss.item())
 
+
         return meter
 
 
