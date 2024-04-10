@@ -451,6 +451,7 @@ class Trainer(object):
                 self.optimizer.step()
                 pbar.update(1)
                 
+                meter.update("loss", loss)
                 meter.update("acc1", acc)
                 
                 sum += batch['image'].size(0)
