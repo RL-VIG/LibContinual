@@ -5,7 +5,6 @@ from time import time
 from tqdm import tqdm
 from core.data import get_dataloader
 from core.utils import init_seed, AverageMeter, get_instance, GradualWarmupScheduler, count_parameters
-from core.model.buffer import *
 import core.model as arch
 from core.model.buffer import *
 from core.model.replay import bic
@@ -29,15 +28,8 @@ class Trainer(object):
         self.config = config
         self.config['rank'] = rank
         self.distribute = self.config['n_gpu'] > 1  # 暂时不考虑分布式训练
-        # (
-        #     self.result_path, 
-        #     self.log_path, 
-        #     self.checkpoints_path, 
-        #     self.viz_path
-        # ) = self._init_files(config)                     # todo   add file manage
         self.logger = self._init_logger(config)           
         self.device = self._init_device(config) 
-        # self.writer = self._init_writer(self.viz_path)   # todo   add tensorboard
         
         print(self.config)
 
@@ -86,9 +78,6 @@ class Trainer(object):
         log_prefix = config['classifier']['name'] + "-" + config['backbone']['name'] + "-" + f"epoch{config['epoch']}" #mode
         log_file = os.path.join(log_path, "{}-{}.log".format(log_prefix, fmt_date_str()))
 
-        # if not os.path.isfile(log_file):
-        #     os.mkdir(log_file)
-
         logger = Logger(log_file)
 
         # hack sys.stdout
@@ -107,8 +96,6 @@ class Trainer(object):
             device: a device.
         """
         init_seed(config['seed'], config['deterministic'])
-        # os.environ["CUDA_VISIBLE_DEVICES"] = str(config['device_ids'])
-
         device = torch.device("cuda:{}".format(config['device_ids']))
 
         return device
@@ -133,11 +120,11 @@ class Trainer(object):
             # self.writer,
         )
 
-        test_meter = [AverageMeter(
+        test_meter = AverageMeter(
             "test",
             ["batch_time", "data_time", "calc_time", "acc1"],
             # self.writer,
-        ) for _ in range(self.task_num)]
+        )
 
         return train_meter, test_meter
 
@@ -237,44 +224,8 @@ class Trainer(object):
                 self.optimizer,
                 self.scheduler,
             ) = self._init_optim(self.config)
-
-
-            # self.init_lr = 0.1
-            # self.init_lr_decay = 0.1
-            # self.init_weight_decay = 0.0005
-            # self.init_milestones = [60, 120, 170]  # PyCIL: [60, 120, 170]
-            # self.init_momentum = 0.9
-
-            # self.lr = 0.1
-            # self.lr_decay = 0.1
-            # self.weight_decay = 2e-4
-            # self.milestones = [80, 120]  # PyCIL: [60, 100, 140]
-            # self.momentum = 0.9
-
-            # if task_idx == 0:
-            #     self.optimizer = optim.SGD(
-            #         self.model.get_parameters({}),
-            #         momentum=self.init_momentum,
-            #         lr=self.init_lr,
-            #         weight_decay=self.init_weight_decay,
-            #     )
-            #     self.scheduler = optim.lr_scheduler.MultiStepLR(
-            #         optimizer=self.optimizer, milestones=self.init_milestones, gamma=self.init_lr_decay
-            #     )
-            # else:
-            #     self.optimizer = optim.SGD(
-            #         self.model.get_parameters({}),
-            #         lr=self.lr,
-            #         momentum=self.momentum,
-            #         weight_decay=self.weight_decay,
-            #     )
-            #     self.scheduler = optim.lr_scheduler.MultiStepLR(
-            #         optimizer=self.optimizer, milestones=self.milestones, gamma=self.lr_decay
-            #     )
-                
                 
             dataloader = self.train_loader.get_loader(task_idx)
-
 
             if isinstance(self.buffer, (LinearBuffer, LinearHerdingBuffer)) and task_idx != 0:
 
@@ -288,15 +239,12 @@ class Trainer(object):
                     dataloader = DataLoader(
                         datasets,
                         shuffle = True,
-
-                        # XXX: 修改batchsize=128，设置不要drop last
                         batch_size = self.config['batch_size'],
                         drop_last = False,
-                        num_workers = 4
+                        num_workers = 8
                     )
 
 
-            
             print("================Task {} Training!================".format(task_idx))
             print("The training samples number: {}".format(len(dataloader.dataset)))
 
@@ -306,17 +254,17 @@ class Trainer(object):
                 print("learning rate: {}".format(self.scheduler.get_last_lr()))
                 print("================ Train on the train set ================")
                 train_meter = self._train(epoch_idx, dataloader)
-                print("Epoch [{}/{}] |\tLoss: {:.3f} \tAverage Acc: {:.3f} ".format(epoch_idx, self.init_epoch if task_idx == 0 else self.inc_epoch, train_meter.avg('loss'), train_meter.avg("acc1")))
+                print("Epoch [{}/{}] |\tLoss: {:.4f} \tAverage Acc: {:.2f} ".format(epoch_idx, self.init_epoch if task_idx == 0 else self.inc_epoch, train_meter.avg('loss'), train_meter.avg("acc1")))
 
                 if (epoch_idx+1) % self.val_per_epoch == 0 or (epoch_idx+1)==self.inc_epoch:
                     print("================ Test on the test set ================")
                     test_acc = self._validate(task_idx)
                     best_acc = max(test_acc["avg_acc"], best_acc)
                     print(
-                    " * Average Acc: {:.3f} Best acc {:.3f}".format(test_acc["avg_acc"], best_acc)
+                    " * Average Acc: {:.2f} Best acc {:.2f}".format(test_acc["avg_acc"], best_acc)
                     )
                     print(
-                    " Per-Task Acc:{}".format(test_acc['per_task_acc'])
+                    " * Per-Task Acc:{}".format(test_acc['per_task_acc'])
                     )
             
                 self.scheduler.step()
@@ -354,7 +302,7 @@ class Trainer(object):
                         " * Average Acc: {:.3f} Best acc {:.3f}".format(test_acc["avg_acc"], best_acc)
                         )
                         print(
-                        " Per-Task Acc:{}".format(test_acc['per_task_acc'])
+                        " * Per-Task Acc:{}".format(test_acc['per_task_acc'])
                         )
             
                     self.scheduler.step()
@@ -382,7 +330,6 @@ class Trainer(object):
                     pass
                 if self.buffer.strategy == 'herding':
                     hearding_update(self.train_loader.get_loader(task_idx).dataset, self.buffer, self.model.backbone, self.device)
-                    # hearding_update(self.train_loader.get_loader(task_idx).dataset, self.buffer, nn.Sequential(*list(self.model.backbone.children())[:-1]), self.device)
                 elif self.buffer.strategy == 'random':
                     random_update(self.train_loader.get_loader(task_idx).dataset, self.buffer)
                 
@@ -434,11 +381,9 @@ class Trainer(object):
             dict:  {"avg_acc": float}
         """
         self.model.train()
-        meter = self.train_meter
+        meter = deepcopy(self.train_meter)
         meter.reset()
-        
-        sum = 0.
-        
+
         with tqdm(total=len(dataloader)) as pbar:
             for batch_idx, batch in enumerate(dataloader):
                 output, acc, loss = self.model.observe(batch)
@@ -450,13 +395,9 @@ class Trainer(object):
                 self.optimizer.step()
                 pbar.update(1)
                 
-                meter.update("acc1", acc)
-                
-                sum += batch['image'].size(0)
+                meter.update("acc1", 100 * acc)
+                meter.update("loss", loss.item())
 
-        if epoch_idx == 0:
-            print("task {},   sample {}".format(self.task_idx, sum))
-            
         return meter
 
 
@@ -465,19 +406,24 @@ class Trainer(object):
         dataloaders = self.test_loader.get_loader(task_idx)
 
         self.model.eval()
-        meter = self.test_meter
+        total_meter = deepcopy(self.test_meter)
+        meter = deepcopy(self.test_meter)
+        
+        total_meter.reset()
+        meter.reset()
         
         per_task_acc = []
         with torch.no_grad():
             for t, dataloader in enumerate(dataloaders):
-                meter[t].reset()
+                meter.reset()
                 for batch_idx, batch in enumerate(dataloader):
                     output, acc = self.model.inference(batch)
-                    meter[t].update("acc1", acc)
+                    meter.update("acc1", 100 * acc)
+                    total_meter.update("acc1", 100 * acc)
 
-                per_task_acc.append(round(meter[t].avg("acc1"), 2))
+                per_task_acc.append(round(meter.avg("acc1"), 2))
         
-        return {"avg_acc" : np.mean(per_task_acc), "per_task_acc" : per_task_acc}
+        return {"avg_acc" : round(total_meter.avg("acc1"), 2), "per_task_acc" : per_task_acc}
     
 
 
