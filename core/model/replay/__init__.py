@@ -9,3 +9,4 @@ from .tam import TAM
 from .ocm import OCM
 from .eraml import ERAML
 from .erace import ERACE
+from .dualprompt import DualPrompt
