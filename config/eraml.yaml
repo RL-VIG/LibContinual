@@ -1,15 +1,15 @@
 # For logger
 save_path : ""
 
-data_root: "../dataset/cifar-dataset/cifar100" #data path, where is your data
+data_root: "../dataset/cifar-dataset/cifar10" #data path, where is your data
 
 # init_cls_num = inc_cls_num
 # task_num = total class / inc_cls_num
 # buffer capacity = num_classes * 20
 
-task_num: 20 #任务数量
-init_cls_num: 5 # 第一次任务的分类数量
-inc_cls_num: 5 #之后每次任务的分类数量
+task_num: 5 #任务数量
+init_cls_num: 2 # 第一次任务的分类数量
+inc_cls_num: 2 #之后每次任务的分类数量
 init_epoch: 15 # init_epoch
 epoch: 15 # inc_epoch
 batch_size: 32
@@ -30,7 +30,7 @@ lr_scheduler:
 buffer:
   name: ERBuffer
   kwargs:
-    capacity: 2000
+    capacity: 200
     input_size: (3, 32, 32)
 
 backbone: 
@@ -42,5 +42,5 @@ backbone:
 classifier:
   name: ERAML
   kwargs:
-    num_classes: 100
+    num_classes: 10
     task_free: False
