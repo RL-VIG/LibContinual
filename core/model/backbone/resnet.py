@@ -391,7 +391,7 @@ class CifarResNet(nn.Module):
         self.stage_3 = self._make_layer(block, 64, layer_blocks, 2)
         self.avgpool = nn.AvgPool2d(8)
         self.out_dim = 64 * block.expansion
-        self.fc = nn.Linear(64*block.expansion, 20)
+        # self.fc = nn.Linear(64*block.expansion, 20)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -414,6 +414,7 @@ class CifarResNet(nn.Module):
             downsample = nn.Sequential(
                 nn.Conv2d(self.inplanes, planes * block.expansion,
                           kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(planes * block.expansion),
             )
             # downsample = DownsampleA(self.inplanes, planes * block.expansion, stride)
 
@@ -440,8 +441,8 @@ class CifarResNet(nn.Module):
             'fmaps': [x_1, x_2, x_3],
             'features': features
         }
-        out = self.fc(features)
-        return out
+        # out = self.fc(features)
+        # return out
     
     
     def feature(self, x):
@@ -461,12 +462,6 @@ class CifarResNet(nn.Module):
     def last_conv(self):
         return self.stage_3[-1].conv_b
 
-
-# def cifarresnet(**kwargs):
-#     """Constructs a ResNet-32 model for CIFAR-100."""
-#     model = CifarResNet(BasicBlock, 32)
-#     return model
-
 class BiasLayer(nn.Module):
     def __init__(self):
         super(BiasLayer, self).__init__()
@@ -476,10 +471,6 @@ class BiasLayer(nn.Module):
         return self.alpha * x + self.beta
     def printParam(self, i):
         print(i, self.alpha.item(), self.beta.item())
-
-
-
-
 
 
 class CosineLinear(nn.Module):
@@ -501,13 +492,6 @@ class CosineLinear(nn.Module):
             self.sigma.data.fill_(1) #for initializaiton of sigma
 
     def forward(self, input):
-        #w_norm = self.weight.data.norm(dim=1, keepdim=True)
-        #w_norm = w_norm.expand_as(self.weight).add_(self.epsilon)
-        #x_norm = input.data.norm(dim=1, keepdim=True)
-        #x_norm = x_norm.expand_as(input).add_(self.epsilon)
-        #w = self.weight.div(w_norm)
-        #x = input.div(x_norm)
-        
         out = F.linear(F.normalize(input, p=2,dim=1), \
                 F.normalize(self.weight, p=2, dim=1))
         if self.sigma is not None:
@@ -578,7 +562,7 @@ class modified_BasicBlock(nn.Module):
 
 class modified_ResNet(nn.Module):
 
-    def __init__(self, block, layers, num_classes=50):
+    def __init__(self, block, layers, num_classes=10):
         self.inplanes = 16
         super(modified_ResNet, self).__init__()
         self.conv1 = nn.Conv2d(3, 16, kernel_size=3, stride=1, padding=1,
@@ -590,8 +574,6 @@ class modified_ResNet(nn.Module):
         self.layer3 = self._make_layer(block, 64, layers[2], stride=2, last_phase=True)
         self.avgpool = nn.AvgPool2d(8, stride=1)
         # self.fc = modified_linear.CosineLinear(64 * block.expansion, num_classes)
-        self.fc = nn.Linear(64 * block.expansion, num_classes)
-        # self.fc = CosineLinear(64 * block.expansion, num_classes)
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -633,33 +615,45 @@ class modified_ResNet(nn.Module):
 
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
-        x = self.fc(x)
+        
+        return {"features": x}
 
+        
+    def feature(self, x):
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+
+        x = self.avgpool(x)
+        x = x.view(x.size(0), -1)
+        
         return x
 
-def resnet20(pretrained=False, **kwargs):
+
+def cifar_resnet20(pretrained=False, **kwargs):
     n = 3
-    model = modified_ResNet(modified_BasicBlock, [n, n, n], num_classes=50)
+    # model = modified_ResNet(modified_BasicBlock, [n, n, n], num_classes=50)
+    model = CifarResNet(ResNetBasicblock, 20)
     if 'cosine_fc' in kwargs['args'].keys() and kwargs['args']['cosine_fc']:
         in_features = model.fc.in_features
         out_features = model.fc.out_features
         model.fc = CosineLinear(in_features, out_features)
     return model
 
-def resnet32(pretrained=False, **kwargs):
-    # LUCIR:
-    # n = 5
-    # model = modified_ResNet(modified_BasicBlock, [n, n, n], num_classes=20)
-    # print(kwargs)
-    # if 'cosine_fc' in kwargs['args'].keys() and kwargs['args']['cosine_fc']:
-    #     in_features = model.fc.in_features
-    #     out_features = model.fc.out_features
-    #     model.fc = CosineLinear(in_features, out_features)
-    # return model
-
-
+def cifar_resnet32(pretrained=False, **kwargs):
     # EWC
     model = CifarResNet(ResNetBasicblock, 32)
+    return model
+
+
+def resnet32_V2(pretrained=False, **kwargs):
+    # ## LUCIR:
+    n = 5
+    model = modified_ResNet(modified_BasicBlock, [n, n, n], num_classes=50)
     return model
 
 

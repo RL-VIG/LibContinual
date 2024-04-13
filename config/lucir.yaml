@@ -7,16 +7,15 @@ includes:
 
 data_root: /data/fanzhichen/continual/cifar100
 image_size: 32
-  
 save_path: ./
 # data
-init_cls_num: 50
-inc_cls_num: 25
-task_num: 3
+init_cls_num: 20
+inc_cls_num: 20
+task_num: 5
 
 
-epoch: 160 # 160
-device_ids: 1
+epoch: 160
+device_ids: 0
 n_gpu: 1
 val_per_epoch: 5
 
@@ -38,12 +37,11 @@ lr_scheduler:
     milestones: [80, 120]
 
 backbone:
-  name: cifar_resnet32
+  name: resnet32_V2
   kwargs:
     num_classes: 100
     args: 
       dataset: cifar100
-      cosine_fc: True
 
 
 buffer:
@@ -58,8 +56,8 @@ classifier:
   kwargs:
     num_class: 100
     feat_dim: 64
-    init_cls_num: 50
-    inc_cls_num: 25
+    init_cls_num: 20
+    inc_cls_num: 20
     dist: 0.5
     lamda: 5
     K: 2
