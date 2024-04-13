@@ -16,7 +16,7 @@ inc_cls_num: 50
 task_num: 2
 
 init_epoch: 200
-epoch: 180 # 160
+epoch: 180
 device_ids: 4
 n_gpu: 1
 val_per_epoch: 5

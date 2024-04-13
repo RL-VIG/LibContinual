@@ -1,4 +1,5 @@
 from .resnet import *
+from .vit import vit_pt_imnet
 def get_backbone(config):
     """
     Get the backbone according to the config dict.

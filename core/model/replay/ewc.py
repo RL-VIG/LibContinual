@@ -35,23 +35,6 @@ class EWC(Finetune):
         self.fisher = None
         self.lamda = self.kwargs['lamda']
         
-        
-    def get_parameters(self,  config):
-
-        # # case1
-        # train_parameters = []
-        # train_parameters.append({"params": self.test_fc_a.parameters(), "lr": 0.1, "weigth_decay": 0.00005})
-        # train_parameters.append({"params": self.test_fc_b.parameters(), "lr": 0.01})
-        
-        # case2
-        train_parameters = []
-        # train_parameters.append({"params": self.backbone.parameters()})
-        train_parameters.append({"params": self.network.parameters()})
-        
-        return train_parameters
-        
-
-
     def before_task(self, task_idx, buffer, train_loader, test_loaders):
         self.task_idx = task_idx
         in_features = self.network.classifier.in_features
@@ -59,6 +42,7 @@ class EWC(Finetune):
         
         new_fc = nn.Linear(in_features, self.kwargs['init_cls_num'] + task_idx * self.kwargs['inc_cls_num'])
         new_fc.weight.data[:out_features] = self.network.classifier.weight.data
+        new_fc.bias.data[:out_features] = self.network.classifier.bias.data
         self.network.classifier = new_fc
         self.network.to(self.device)
 
@@ -145,8 +129,6 @@ class EWC(Finetune):
         loss = 0
         for n, p in self.network.named_parameters():
             if n in self.fisher.keys():
-                # print(p.device)
-                # print(self.mean[n].device)
                 loss += (
                     torch.sum(
                         (self.fisher[n])
@@ -155,3 +137,8 @@ class EWC(Finetune):
                     / 2
                 )
         return loss
+    
+    def get_parameters(self,  config):
+        train_parameters = []
+        train_parameters.append({"params": self.network.parameters()})
+        return train_parameters

@@ -27,7 +27,7 @@ class ContinualDatasets:
                 SingleDataseat(self.data_root, self.mode, self.cls_map, start_idx, end_idx, self.trfms),
                 shuffle = True,
                 batch_size = self.batchsize,
-                drop_last = True
+                drop_last = False
             ))
 
     def get_loader(self, task_idx):

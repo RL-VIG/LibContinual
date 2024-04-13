@@ -1,6 +1,5 @@
 import torch
 import numpy as np
-import kornia
 import torch.nn.functional as F
 
 from torch import nn

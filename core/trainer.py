@@ -17,6 +17,8 @@ import torch.optim as optim
 from copy import deepcopy
 from pprint import pprint
 
+from core.scheduler import CosineSchedule
+
 class Trainer(object):
     """
     The Trainer.
@@ -143,6 +145,7 @@ class Trainer(object):
             torch.optim, "optimizer", config, params=self.model.get_parameters(config)
         )
 
+        
         scheduler = get_instance(
             torch.optim.lr_scheduler, "lr_scheduler", config, optimizer=optimizer)
 

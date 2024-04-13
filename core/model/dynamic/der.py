@@ -191,6 +191,7 @@ class DER(Finetune):
         self.fc.weight.data[-increment:, :] *= gamma
 
     def before_task(self, task_idx, buffer, train_loader, test_loaders):
+        print("@@@@@\n")
         self.task_idx = task_idx
         self.known_cls_num = self.total_cls_num
         self.total_cls_num = self.init_cls_num + self.task_idx*self.inc_cls_num
@@ -214,6 +215,17 @@ class DER(Finetune):
         self.convnets[-1].train()
         # for i,cov in enumerate(self.convnets):
         #     iffreeze(f'cov{i}',cov)
+        
+    def get_parameters(self, config):
+        train_parameters = []
+        
+        train_parameters.append({"params": self.convnets.parameters()})
+        
+        if self.fc is not None:
+            train_parameters.append({"params": self.fc.parameters()})
+        if self.aux_fc is not None:
+            train_parameters.append({"params": self.aux_fc.parameters()})
+        return train_parameters
     
 def iffreeze(name,net):
     for k,v in net.named_parameters():

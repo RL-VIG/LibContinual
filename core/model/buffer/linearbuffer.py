@@ -13,11 +13,5 @@ class LinearBuffer:
     def is_empty(self):
         return len(self.labels) == 0
 
-
-    # def __deepcopy__(self, ref):
-    #     new_buffer = LinearBuffer(ref.buffer_size, ref.strategy, ref.batch_size)
-    #     new_buffer.images = copy.deepcopy(ref.images)
-    #     new_buffer.labels = copy.deepcopy(ref.labels)
-        
     
 
