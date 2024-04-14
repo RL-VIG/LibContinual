@@ -37,7 +37,7 @@ class Trainer(object):
         pprint(self.config)
 
         self.init_cls_num, self.inc_cls_num, self.task_num = self._init_data(config)
-        self.model = self._init_model(config)  # todo add parameter select
+        self.model = self._init_model(config) 
         (
             self.train_loader,
             self.test_loader,
@@ -58,7 +58,6 @@ class Trainer(object):
         self.val_per_epoch = config['val_per_epoch']
 
         
-        # modify by xyk
         if self.config["classifier"]["name"] == "bic":
             self.stage2_epoch = config['stage2_epoch']
 
@@ -120,13 +119,11 @@ class Trainer(object):
         train_meter = AverageMeter(
             "train",
             ["batch_time", "data_time", "calc_time", "loss", "acc1"],
-            # self.writer,
         )
 
         test_meter = AverageMeter(
             "test",
             ["batch_time", "data_time", "calc_time", "acc1"],
-            # self.writer,
         )
 
         return train_meter, test_meter
@@ -310,24 +307,6 @@ class Trainer(object):
                         )
             
                     self.scheduler.step()
-
-
-
-
-
-            # # XXX: 使用NCM测试
-            # # after building buffer, using NCM test
-            # if hasattr(self.model, 'NCM_classify'):
-            #     test_acc = self._validate(task_idx)
-            #     print('++++ NCM test ++++')
-            #     print(
-            #     " * Average Acc: {:.3f}".format(test_acc["avg_acc"])
-            #     )
-            #     print(
-            #     " Per-Task Acc:{}".format(test_acc['per_task_acc'])
-            #     )
-
-
 
             if self.buffer.buffer_size > 0:
                 if self.buffer.strategy == None:

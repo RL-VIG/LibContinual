@@ -78,8 +78,6 @@ class DualPrompt(Finetune):
     def after_task(self, task_idx, buffer, train_loader, test_loaders):
         self.last_out_dim = self.out_dim
 
-
-
     def inference(self, data):
         x, y = data['image'], data['label']
         x = x.to(self.device)

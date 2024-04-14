@@ -266,12 +266,7 @@ def _load_weights(model: VisionTransformer, checkpoint_path: str, prefix: str = 
     model.pos_embed.copy_(pos_embed_w)
     model.norm.weight.copy_(_n2p(w[f'{prefix}Transformer/encoder_norm/scale']))
     model.norm.bias.copy_(_n2p(w[f'{prefix}Transformer/encoder_norm/bias']))
-#     if isinstance(model.head, nn.Linear) and model.head.bias.shape[0] == w[f'{prefix}head/bias'].shape[-1]:
-#         model.head.weight.copy_(_n2p(w[f'{prefix}head/kernel']))
-#         model.head.bias.copy_(_n2p(w[f'{prefix}head/bias']))
-#     if isinstance(getattr(model.pre_logits, 'fc', None), nn.Linear) and f'{prefix}pre_logits/bias' in w:
-#         model.pre_logits.fc.weight.copy_(_n2p(w[f'{prefix}pre_logits/kernel']))
-#         model.pre_logits.fc.bias.copy_(_n2p(w[f'{prefix}pre_logits/bias']))
+
     for i, block in enumerate(model.blocks.children()):
         block_prefix = f'{prefix}Transformer/encoderblock_{i}/'
         mha_prefix = block_prefix + 'MultiHeadDotProductAttention_1/'
@@ -381,11 +376,5 @@ class ViTZoo(nn.Module):
             
         
 def vit_pt_imnet(pretrained=False, **kwargs):
-    print("Create ViTZoo")
-    print(kwargs)
-    print(kwargs['num_classes'])
     return ViTZoo(**kwargs)
-
-# def vit_pt_imnet(out_dim, block_division = None, prompt_flag = 'None', prompt_param=None):
-#     return ViTZoo(num_classes=out_dim, pt=True, prompt_flag=prompt_flag, prompt_param=prompt_param)
 

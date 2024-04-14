@@ -100,7 +100,6 @@ class ICarl(nn.Module):
             x = x.to(self.device)
             y = y.to(self.device)
 
-            # XXX: modify here 输出类别是见过的类别 
             logits = self.network(x)[:, :self.accu_cls_num]
             pred = torch.argmax(logits, dim=1)
 

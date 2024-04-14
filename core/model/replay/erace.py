@@ -87,11 +87,11 @@ class ERACE(nn.Module):
         # keep track of current task for task-based methods
         self.task = self.cur_task_idx
 
-        # 处理新数据
+        
         pred, inc_correct_counts, inc_loss = self.process_inc(self.inc_data)
         inc_total_counts = self.inc_data['y'].shape[0]
 
-        # 处理新+旧数据
+        
         re_loss = 0
         if len(self.buffer) > 0 and (self.task_free or self.task > 0):
             re_data = self.buffer.sample_random(**self.sample_kwargs)

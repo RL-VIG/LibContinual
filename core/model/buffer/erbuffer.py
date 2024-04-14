@@ -257,44 +257,24 @@ class ERBuffer(nn.Module):
 
     def sample_pos_neg(self, inc_data, task_free=True, same_task_neg=True):
 
-        x     = inc_data['x']                                # 新数据的样本
-        label = inc_data['y']                                # 新数据的标签
-        task  = torch.zeros_like(label).fill_(inc_data['t']) # 与 label 相同 shape 的 task，数值用任务编号填满
+        x     = inc_data['x']                              
+        label = inc_data['y']                               
+        task  = torch.zeros_like(label).fill_(inc_data['t'])
 
         # we need to create an "augmented" buffer containing the incoming data
-        bx   = torch.cat((self.bx[:self.current_index], x))      # 缓存的样本 + 新数据的样本
-        by   = torch.cat((self.by[:self.current_index], label))  # 缓存的标签 + 新数据的标签
-        bt   = torch.cat((self.bt[:self.current_index], task))   # 缓存的任务编号 + 新数据的任务编号
-        bidx = torch.arange(bx.size(0)).to(bx.device)            # 记录 bx 的索引
+        bx   = torch.cat((self.bx[:self.current_index], x))    
+        by   = torch.cat((self.by[:self.current_index], label)) 
+        bt   = torch.cat((self.bt[:self.current_index], task)) 
+        bidx = torch.arange(bx.size(0)).to(bx.device)     
 
         # buf_size x label_size
-        '''
-        same_label = Tensor[by_count, label_count]
-
-        label.view(1, -1) 将 label 视为 Tensor[1, label_count]
-        by.view(-1, 1)    将 by    视为 Tensor[by_count, 1]
-
-        label.view(1, -1) = ['apple', 'orange']
-        by.view(-1, 1 )   = [['apple'],
-                             ['starfruit'],
-                             ['apple'],
-                             ['orange']]
-        same_label = [[True, False],
-                      [False, False],
-                      [True, False],
-                      [False, True]]
-        '''
-        same_label = label.view(1, -1)             == by.view(-1, 1)    # 布尔矩阵，表示每个新来的样本和缓冲区中的样本是否有相同的标签
-        same_task  = task.view(1, -1)              == bt.view(-1, 1)    # 布尔矩阵，表示每个新来的样本和缓冲区中的样本是否有相同的任务编号
-        same_ex    = bidx[-x.size(0):].view(1, -1) == bidx.view(-1, 1)  # 布尔矩阵，表示每个新来的样本和缓冲区中的样本是否是同一个样本（即索引相同）
+        same_label = label.view(1, -1)             == by.view(-1, 1)  
+        same_task  = task.view(1, -1)              == bt.view(-1, 1)   
+        same_ex    = bidx[-x.size(0):].view(1, -1) == bidx.view(-1, 1) 
 
         task_labels = label.unique()
         real_same_task = same_task
 
-        # TASK FREE METHOD : instead of using the task ID, we'll use labels in the current batch to mimic task
-        # 在 task_free 模式下，same_task 一定全都是 True，我们给它加一点限制：
-        # 在 buffer 中，只有当标签有出现在 label 中，我们才把它算作 same task
-        # 如 by = [1,0,1,2], label = [1,2], 我们便设在 buffer 中只有 idx = [0, 2, 3] 的算作 same task
         if task_free:
             same_task = torch.zeros_like(same_task)
 

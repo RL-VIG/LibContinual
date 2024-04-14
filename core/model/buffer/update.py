@@ -38,33 +38,6 @@ def hearding_update(datasets, buffer, feature_extractor, device):
 
     buffer.images, buffer.labels = selected_images, selected_labels
 
-
-# def herding_update(datasets, buffer, feature_extractor, device, old_classes, new_classes):
-#     print("Using New Herding Update Strategy")
-#     per_classes = buffer.buffer_size // buffer.total_classes
-#     images = np.array(buffer.images)
-#     labels = np.array(buffer.labels)
-    
-#     selected_images, selected_labels = [], []
-#     for cls in range(old_classes):
-#         cls_images_idx = np.where(labels == cls)
-#         cls_images, cls_labels = images[cls_images_idx], labels[cls_images_idx]
-#         cls_images = cls_images[:per_classes]
-#         cls_labels = cls_labels[:per_classes]
-        
-#         selected_images.extend(cls_images)
-#         selected_labels.extend(cls_labels)
-        
-#     for cls in range(old_classes, new_classes):
-#         cls_images_idx = np.where(labels == cls)
-#         cls_images, cls_labels = images[cls_images_idx], labels[cls_images_idx]
-
-#         cls_selected_images, cls_selected_labels = construct_examplar(copy.copy(datasets), cls_images, cls_labels, feature_extractor, per_classes, device)
-#         selected_images.extend(cls_selected_images)
-#         selected_labels.extend(cls_selected_labels)
-
-#     buffer.images, buffer.labels = selected_images, selected_labels
-
 def construct_examplar(datasets, images, labels, feature_extractor, per_classes, device):
     if len(images) <= per_classes:
         return images, labels

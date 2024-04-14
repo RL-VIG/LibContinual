@@ -636,12 +636,7 @@ class modified_ResNet(nn.Module):
 
 def cifar_resnet20(pretrained=False, **kwargs):
     n = 3
-    # model = modified_ResNet(modified_BasicBlock, [n, n, n], num_classes=50)
     model = CifarResNet(ResNetBasicblock, 20)
-    if 'cosine_fc' in kwargs['args'].keys() and kwargs['args']['cosine_fc']:
-        in_features = model.fc.in_features
-        out_features = model.fc.out_features
-        model.fc = CosineLinear(in_features, out_features)
     return model
 
 def cifar_resnet32(pretrained=False, **kwargs):

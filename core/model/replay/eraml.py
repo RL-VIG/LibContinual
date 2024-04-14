@@ -58,8 +58,8 @@ class ERAML(nn.Module):
 
         batch_size = features.shape[0]
         if labels is not None:  
-            labels = labels.contiguous().view(-1, 1)           # 转置
-            anch_labels = anch_labels.contiguous().view(-1, 1) # 转置
+            labels = labels.contiguous().view(-1, 1)           
+            anch_labels = anch_labels.contiguous().view(-1, 1) 
             if labels.shape[0] != batch_size:
                 print(f"len of labels: {len(labels)}")
                 raise ValueError('Num of labels does not match num of features')
@@ -67,7 +67,6 @@ class ERAML(nn.Module):
         else:
             mask = mask.float().to(device)
 
-        # 样本的特征向量的维度
         contrast_count = features.shape[1]
         contrast_feature = torch.cat(torch.unbind(features, dim=1), dim=0) # hid_all
 
@@ -80,8 +79,8 @@ class ERAML(nn.Module):
             temperature)
 
         # for numerical stability
-        logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True) # 找出每一行的最大值，logits_max [20, 1]
-        logits = anchor_dot_contrast - logits_max.detach() # detach() 使其剥离计算图，然后减去
+        logits_max, _ = torch.max(anchor_dot_contrast, dim=1, keepdim=True) 
+        logits = anchor_dot_contrast - logits_max.detach() 
 
         # tile mask
         mask = mask.repeat(anchor_count, contrast_count)
@@ -125,30 +124,27 @@ class ERAML(nn.Module):
                         same_task_neg = True # If true, neg sample can only choose from inc_data, instead of inc_data + buffer
                     )
             
-            # 归一化处理新样本和它们对应的正负样本
-            hidden  = self.model.return_hidden(inc_data['x'])   # 输入隐藏层，获得特征向量
-            hidden_norm = self.normalize(hidden[~invalid_idx])  # 归一化
+         
+            hidden  = self.model.return_hidden(inc_data['x'])   
+            hidden_norm = self.normalize(hidden[~invalid_idx])  
 
-            #去掉加强
-            #all_xs  = self.train_tf(torch.cat((pos_x, neg_x)))    # 合并，加强
             all_xs = torch.cat((pos_x, neg_x))
-            all_hid = self.normalize(self.model.return_hidden(all_xs)) # 输入隐藏层，获得特征向量，并归一化
+            all_hid = self.normalize(self.model.return_hidden(all_xs))
             all_hid = all_hid.reshape(2, pos_x.size(0), -1)
-            pos_hid, neg_hid = all_hid[:, ~invalid_idx]           # 拆分，并去掉 invalid
+            pos_hid, neg_hid = all_hid[:, ~invalid_idx]        
 
-            # 如果至少有一个样本是 valid 的，即存在正负样本
             if (~invalid_idx).any():
-                inc_y = inc_data['y'][~invalid_idx]                # 在当前任务的标签中，只留下 valid 的
-                pos_y = pos_y[~invalid_idx]                        # 当前标签的正标签中，只留下 valid 的
-                neg_y = neg_y[~invalid_idx]                        # 当前标签的负标签中，只留下 valid 的
+                inc_y = inc_data['y'][~invalid_idx]             
+                pos_y = pos_y[~invalid_idx]                    
+                neg_y = neg_y[~invalid_idx]                   
                 hid_all = torch.cat((pos_hid, neg_hid), dim=0)
                 y_all   = torch.cat((pos_y, neg_y), dim=0)
                 
                 loss = self.sup_con_loss(
-                        labels=y_all,                              # 正负标签
-                        features=hid_all.unsqueeze(1),             # 正负样本
-                        anch_labels=inc_y.repeat(2),               # 标签
-                        anchor_feature=hidden_norm.repeat(2, 1),   # 样本
+                        labels=y_all,                             
+                        features=hid_all.unsqueeze(1),             
+                        anch_labels=inc_y.repeat(2),              
+                        anchor_feature=hidden_norm.repeat(2, 1),   
                         temperature=0.2, #hardcoded for now
                 ) 
             else:
