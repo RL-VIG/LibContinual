@@ -16,7 +16,7 @@ The mainstream paradigm behind continual learning has been to adapt the model pa
 }
 ```
 
-## How to Reproduce DualPrompt
+## How to Reproduce L2P
 
 - **Step1: Set the path in `run_trainer.py` with `./config/l2p.yaml`**
     ```python
