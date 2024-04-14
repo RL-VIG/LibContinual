@@ -190,8 +190,13 @@ class bic(Finetune):
         return self.stage2(data, self.bias_optimizer)
 
     # modify by xyk
-    def get_parameters(self, config):
-        return self.model.backbone.parameters()
+    def get_parameters(self, config, stage2=False):
+        if stage2:
+            print("@@@ Using Stage 2")
+            return list(self.bias_layer1.parameters()) + list(self.bias_layer2.parameters()) + list(self.bias_layer3.parameters()) + list(self.bias_layer4.parameters()) + list(self.bias_layer5.parameters())
+        else:
+            # return self.model.backbone.parameters()
+            return self.model.parameters()
 
 
     @staticmethod

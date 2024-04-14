@@ -128,7 +128,7 @@ class Trainer(object):
 
         return train_meter, test_meter
 
-    def _init_optim(self, config):
+    def _init_optim(self, config, stage2=False):
         """
         Init the optimizers and scheduler from config, if necessary, load the state dict from a checkpoint.
 
@@ -138,9 +138,14 @@ class Trainer(object):
         Returns:
             tuple: A tuple of optimizer, scheduler.
         """
-        optimizer = get_instance(
-            torch.optim, "optimizer", config, params=self.model.get_parameters(config)
-        )
+        if stage2:
+            optimizer = get_instance(
+                torch.optim, "optimizer", config, params=self.model.get_parameters(config, stage2=True)
+            )
+        else:
+            optimizer = get_instance(
+                torch.optim, "optimizer", config, params=self.model.get_parameters(config)
+            )
 
         
         scheduler = get_instance(
@@ -281,7 +286,7 @@ class Trainer(object):
                 (_, __,
                     self.optimizer,
                     self.scheduler,
-                ) = self._init_optim(self.config)
+                ) = self._init_optim(self.config, stage2=True)
                 
                 scheduler = GradualWarmupScheduler(
                     self.model.bias_optimizer, self.config
