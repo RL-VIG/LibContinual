@@ -11,5 +11,7 @@ from .ewc import EWC
 from .ocm import OCM
 from .eraml import ERAML
 from .erace import ERACE
-from .dualprompt import DualPrompt
 from .der import DER
+from .dualprompt import DualPrompt
+from .l2p import L2P
+from .codaprompt import CodaPrompt
