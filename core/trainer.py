@@ -7,7 +7,7 @@ from core.data import get_dataloader
 from core.utils import init_seed, AverageMeter, get_instance, GradualWarmupScheduler, count_parameters
 import core.model as arch
 from core.model.buffer import *
-from core.model.replay import bic
+from core.model import bic
 from torch.utils.data import DataLoader
 import numpy as np
 import sys

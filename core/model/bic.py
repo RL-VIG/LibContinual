@@ -12,8 +12,8 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torch.optim.lr_scheduler import StepLR
-from ..backbone.resnet import BiasLayer
-from ...data.dataset import BatchData, Exemplar
+from core.model.backbone.resnet import BiasLayer
+from core.data.dataset import BatchData, Exemplar
 from torchvision.transforms import Compose, Normalize, ToTensor
 from torchvision import transforms
 from torch.utils.data import DataLoader

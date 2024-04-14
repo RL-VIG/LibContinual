@@ -5,7 +5,7 @@ import torch.nn as nn
 from torch.nn import Parameter
 import torch.nn.functional as F
 from .finetune import Finetune
-from ..backbone import resnet18, resnet34, resnet50
+from core.model.backbone import resnet18, resnet34, resnet50
 from core.utils import get_instance
 
 def get_convnet(convnet_type, pretrained=False):
@@ -56,7 +56,6 @@ class DER(Finetune):
         self.task_sizes = []
 
         self.kwargs = kwargs
-        # self.old_fc = None
         self.init_cls_num = kwargs['init_cls_num']
         self.inc_cls_num = kwargs['inc_cls_num']
         self.known_cls_num = 0
@@ -116,7 +115,6 @@ class DER(Finetune):
             loss_aux = F.cross_entropy(aux_logits, aux_targets)
             loss = loss_aux + loss_clf
 
-        # print(logit)
         pred = torch.argmax(logit, dim=1)
 
         acc = torch.sum(pred == y).item()
@@ -191,7 +189,6 @@ class DER(Finetune):
         self.fc.weight.data[-increment:, :] *= gamma
 
     def before_task(self, task_idx, buffer, train_loader, test_loaders):
-        print("@@@@@\n")
         self.task_idx = task_idx
         self.known_cls_num = self.total_cls_num
         self.total_cls_num = self.init_cls_num + self.task_idx*self.inc_cls_num
@@ -202,8 +199,6 @@ class DER(Finetune):
         self.convnets = self.convnets.to(self.device)
         self.fc = self.fc.to(self.device)
         self.aux_fc = self.aux_fc.to(self.device)
-        # if task_idx!=0:
-        #     self.old_backbone = self.freeze(self.copy(self.backbone)).to(self.device)
 
     def _train(self):
         self.fc.train()

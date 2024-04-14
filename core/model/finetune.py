@@ -4,8 +4,6 @@ from torch import nn
 class Finetune(nn.Module):
     def __init__(self, backbone, feat_dim, num_class, **kwargs):
         super().__init__()
-        # print("==============\n")
-        # print(kwargs)
         self.backbone = backbone
         self.feat_dim = feat_dim
         self.num_class = num_class

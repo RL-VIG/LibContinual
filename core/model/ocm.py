@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from copy import deepcopy
-from ..buffer.onlinebuffer import OnlineBuffer
+from core.model.buffer.onlinebuffer import OnlineBuffer
 import math
 import numbers
 import numpy as np
