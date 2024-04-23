@@ -26,8 +26,8 @@ LibContinual is an open source continual learning toolbox based on PyTorch. The 
 
 ## Quick Installation
 
-Please refer to [`install.md`](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/install.md) <br>
-Complete tutorials can be found at [`./docs`](https://github.com/RL-VIG/LibContinual/tree/master/docs)
+Please refer to [`install.md`](https://libcontinual.readthedocs.io/en/latest/docs/install.html) <br>
+Complete tutorials can be found at [`./docs`](https://libcontinual.readthedocs.io/en/latest/)
 
 ## Datasets
 [CIFAR-100](https://www.cs.toronto.edu/~kriz/cifar.html) are available at [Google Drive](https://drive.google.com/drive/folders/1EL46LQ3ww-F1NVTwFDPIg-nO198cUqWm?usp=sharing)  <br>
@@ -40,7 +40,7 @@ Set the `data_root` in `.yaml`：
 ```
 data_root: /path/to/your/dataset
 ```
-To add a custom dataset, please refer to [`dataset.md`](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/en/data_module_en.md).
+To add a custom dataset, please refer to [`dataset.md`](https://libcontinual.readthedocs.io/en/latest/docs/data_module_en.html).
 
 
 ## Getting Started
@@ -51,7 +51,7 @@ Once you have completed the "Quick Installation" and "Datasets" sections, we can
     ```python
     config = Config("./config/lucir.yaml").get_config_dict()
     ```
-- **Step2:** Configure the parameters in the `./config/lucir.yaml` file. Please refer to [`config.md`](https://github.com/RL-VIG/LibContinual/blob/master/docs/tutorials/en/config_file_en.md) for the meanings of each parameter.
+- **Step2:** Configure the parameters in the `./config/lucir.yaml` file. Please refer to [`config.md`](https://libcontinual.readthedocs.io/en/latest/docs/config_file_en.html) for the meanings of each parameter.
 - **Step3:** Run code `python run_trainer.py`
 - **Step4:** After the training is completed, the log files will be saved in the path specified by the `save_path` parameter.
 
