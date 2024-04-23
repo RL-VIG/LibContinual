@@ -6,3 +6,4 @@ sphinxcontrib-jsmath
 sphinxcontrib-napoleon
 sphinxcontrib-qthelp
 sphinxcontrib-serializinghtml
+myst-parser
