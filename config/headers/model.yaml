@@ -1,4 +1,0 @@
-epoch: 50
-
-batch_size: 64
-val_per_epoch: 1
