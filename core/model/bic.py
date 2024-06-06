@@ -1,3 +1,9 @@
+'''
+    We drew inspiration from the BIC original code and would like to express our gratitude to the outstanding contributors in the community whose code motivated us to refine the LibContinual framework.
+    # Paper link https://arxiv.org/abs/1905.13260
+    # Office link https://github.com/wuyuebupt/LargeScaleIncrementalLearning
+    # Unoffice link https://github.com/sairin1202/BIC
+'''
 import os
 path = os.getcwd()
 os.chdir(path)
@@ -101,7 +107,8 @@ class bic(Finetune):
         if self.T < self.task_num:
             self.bias_optimizer = self.optimizer_cls(params=self.bias_layers[self.T].parameters(), **self.optimizer_kwargs)
         self.seen_cls += self.inc_cls_num
-        
+    
+    # The classic two-phase processing approach employed by BIC.
     def stage1(self, data):
         x, y = data['image'], data['label']
         x = x.to(self.device)
