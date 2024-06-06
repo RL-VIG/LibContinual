@@ -1,3 +1,17 @@
+# -*- coding: utf-8 -*-
+"""
+@inproceedings{zhao2020maintaining,
+  title={Maintaining discrimination and fairness in class incremental learning},
+  author={Zhao, Bowen and Xiao, Xi and Gan, Guojun and Zhang, Bin and Xia, Shu-Tao},
+  booktitle={Proceedings of the IEEE/CVF conference on computer vision and pattern recognition (CVPR)},
+  pages={13208--13217},
+  year={2020}
+}
+https://arxiv.org/abs/1911.07053
+
+Adapted from https://github.com/G-U-N/PyCIL/blob/master/models/wa.py, https://github.com/G-U-N/PyCIL/blob/master/utils/inc_net.py.
+"""
+
 import torch
 from torch import nn
 import copy
@@ -9,6 +23,9 @@ from .finetune import Finetune
 
 def KD_loss(pred, soft, T=2):
     '''
+    Code Reference:
+    https://github.com/G-U-N/PyCIL/blob/master/models/wa.py
+
     Compute the knowledge distillation loss.
 
     Args:
@@ -24,9 +41,11 @@ def KD_loss(pred, soft, T=2):
     return -1 * torch.mul(soft, pred).sum() / pred.shape[0]
 
 
-
-class Model(nn.Module):
+class IncrementalModel(nn.Module):
     '''
+    Code Reference:
+    https://github.com/G-U-N/PyCIL/blob/master/utils/inc_net.py
+    
     A model consists with a backbone and a classifier.
 
     Args:
@@ -57,38 +76,40 @@ class Model(nn.Module):
         logits = self.classifier(self.backbone(x)['features'])
         return logits
 
-    def update_classifier(self, nb_classes):
+    def update_classifier(self, number_classes):
         '''
         Incrementally update the classifier with deepcopy.
 
         Args:
-            nb_classes (int): Number of classes after update.
+            number_classes (int): Number of classes after update.
         '''
-        classifier = nn.Linear(self.feat_dim, nb_classes)
+        classifier = nn.Linear(self.feat_dim, number_classes)
         if self.classifier is not None:
-            nb_output = self.classifier.out_features
+            number_output = self.classifier.out_features
             weight = copy.deepcopy(self.classifier.weight.data)
             bias = copy.deepcopy(self.classifier.bias.data)
-            classifier.weight.data[:nb_output] = weight
-            classifier.bias.data[:nb_output] = bias
+            classifier.weight.data[:number_output] = weight
+            classifier.bias.data[:number_output] = bias
 
         del self.classifier
         self.classifier = classifier
+
         
-    def weight_align(self, increment):
+    def classifier_weight_align(self, incremental_number):
         '''
         Align the weight of the classifier after every task.
 
         Args:
-            increment (int): Number of classes added in the current task.
+            incremental_number (int): Number of classes added in the current task.
         '''
         weights = self.classifier.weight.data
-        newnorm = torch.norm(weights[-increment:, :], p=2, dim=1)
-        oldnorm = torch.norm(weights[:-increment, :], p=2, dim=1)
-        meannew = torch.mean(newnorm)
-        meanold = torch.mean(oldnorm)
-        gamma = meanold / meannew
-        self.classifier.weight.data[-increment:, :] *= gamma
+        new_norm = torch.norm(weights[-incremental_number:, :], p=2, dim=1)
+        old_norm = torch.norm(weights[:-incremental_number, :], p=2, dim=1)
+        new_mean = torch.mean(new_norm)
+        old_mean = torch.mean(old_norm)
+        gamma = old_mean / new_mean
+        self.classifier.weight.data[-incremental_number:, :] *= gamma
+
         
     def forward(self, x):
         return self.get_logits(x)
@@ -120,12 +141,10 @@ class Model(nn.Module):
         return self.backbone(x)["features"]
 
 
-
-
 class WA(Finetune):
     def __init__(self, backbone, feat_dim, num_class, **kwargs):
         super().__init__(backbone, feat_dim, num_class, **kwargs)
-        self.network = Model(self.backbone, feat_dim, kwargs['init_cls_num'])
+        self.network = IncrementalModel(self.backbone, feat_dim, kwargs['init_cls_num'])
         self.device = kwargs['device']
         self.old_network = None
         self.known_classes = 0
