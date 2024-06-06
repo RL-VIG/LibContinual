@@ -1,3 +1,21 @@
+# -*- coding: utf-8 -*-
+"""
+@inproceedings{DBLP:conf/cvpr/YanX021,
+  author       = {Shipeng Yan and
+                  Jiangwei Xie and
+                  Xuming He},
+  title        = {{DER:} Dynamically Expandable Representation for Class Incremental
+                  Learning},
+  booktitle    = {{IEEE} Conference on Computer Vision and Pattern Recognition, {CVPR}
+                  2021, virtual, June 19-25, 2021},
+  pages        = {3014--3023},
+  year         = {2021},
+}
+
+https://openaccess.thecvf.com/content/CVPR2021/papers/Yan_DER_Dynamically_Expandable_Representation_for_Class_Incremental_Learning_CVPR_2021_paper.pdf
+
+Adapted from https://github.com/G-U-N/PyCIL/blob/master/models/der.py
+"""
 import math
 import copy
 import torch
