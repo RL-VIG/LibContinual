@@ -61,7 +61,11 @@ class EWC(Finetune):
         super().__init__(backbone, feat_dim, num_class, **kwargs)
         self.kwargs = kwargs
         self.network = Model(self.backbone, feat_dim, kwargs['init_cls_num'])
-        self.fisher = None
+        
+        self.ref_param = {n: p.clone().detach() for n, p in self.network.named_parameters() 
+                          if p.requires_grad}
+        self.fisher = {n: torch.zeros(p.shape).to(self.device) for n, p in self.network.named_parameters()
+                       if p.requires_grad}
         self.lamda = self.kwargs['lamda']
         
     def before_task(self, task_idx, buffer, train_loader, test_loaders):
@@ -95,30 +99,29 @@ class EWC(Finetune):
 
 
     def after_task(self, task_idx, buffer, train_loader, test_loaders):
-        if self.task_idx == 0:
-            self.fisher = self.getFisher(train_loader)
-        else:
-            """
-            Code Reference:
-            https://github.com/G-U-N/PyCIL/blob/master/models/ewc.py
-            """
-            alpha = 1 - self.kwargs['inc_cls_num']/self.network.classifier.out_features
-            new_finsher = self.getFisher(train_loader)
-            for n, p in new_finsher.items():
-                new_finsher[n][: len(self.fisher[n])] = (
-                    alpha * self.fisher[n]
-                    + (1 - alpha) * new_finsher[n][: len(self.fisher[n])]
-                )
-            self.fisher = new_finsher
+        """
+        Args:
+            task_idx (int): The index of the current task.
+            buffer: Buffer object used in previous tasks.
+            train_loader (torch.utils.data.DataLoader): Dataloader for the training dataset.
+            test_loaders (list of DataLoader): List of dataloaders for the test datasets.
             
-        self.mean = {
-            n: p.clone().detach()
-            for n, p in self.network.named_parameters()
-            if p.requires_grad
-        }
+        Code Reference:
+            https://github.com/G-U-N/PyCIL/blob/master/models/ewc.py
+            https://github.com/mmasana/FACIL/blob/master/src/approach/ewc.py
+        """
         
-        for n in self.mean.keys():
-            self.mean[n].to(self.device)
+        # record the parameters
+        self.ref_param = {n: p.clone().detach() for n, p in self.network.named_parameters() 
+                          if p.requires_grad}
+        # the shape of new fisher is changed
+        new_fisher = self.getFisher(train_loader)
+        # using growing alpha
+        alpha = 1 - self.kwargs['inc_cls_num']/self.network.classifier.out_features
+        for n, p in self.fisher.items():
+            new_fisher[n][:len(self.fisher[n])] = alpha * p + (1 - alpha) * new_fisher[n][:len(self.fisher[n])]
+
+        self.fisher = new_fisher
         
     def inference(self, data):
         x, y = data['image'], data['label']
@@ -135,48 +138,82 @@ class EWC(Finetune):
 
     def getFisher(self, train_loader):
         """
+        Compute the Fisher Information Matrix for the parameters of the network.
+        
+        Args:
+            train_loader (torch.utils.data.DataLoader): Dataloader for the training dataset.
+            
+        Returns:
+            dict: Dictionary of Fisher Information Matrices for each parameter.
+        
         Code Reference:
         https://github.com/G-U-N/PyCIL/blob/master/models/ewc.py
+        https://github.com/mmasana/FACIL/blob/master/src/approach/ewc.py
         """
+        def accumulate(fisher):
+            """
+            Accumulate the squared gradients for the Fisher Information Matrix.
+            
+            Args:
+                fisher (dict): Dictionary containing the current Fisher Information matrices.
+                
+            Returns:
+                dict: Updated Fisher Information matrices.
+            """
+            for n, p in self.network.named_parameters():
+                if p.grad is not None and n in fisher.keys():
+                    fisher[n] += p.grad.pow(2).clone() * len(y)
+            return fisher
+        
+        # Initialize Fisher Information matrices with zeros
         fisher = {
-            n: torch.zeros(p.shape).to(self.device)
-            for n, p in self.network.named_parameters()
+            n: torch.zeros_like(p).to(self.device) for n, p in self.network.named_parameters()
             if p.requires_grad
         }
+        
         self.network.train()
         optimizer = optim.SGD(self.network.parameters(), lr=0.1)
-        for batch_idx, data in enumerate(train_loader):
+        
+        loss_fn = torch.nn.CrossEntropyLoss()
+        # Iterate over the training data
+        for data in train_loader:
             x, y = data['image'], data['label']
             x = x.to(self.device)
             y = y.to(self.device)
             
             logits = self.network(x)
-            loss = torch.nn.functional.cross_entropy(logits, y)
+            loss = loss_fn(logits, y)
+            
             optimizer.zero_grad()
             loss.backward()
-            for n, p in self.network.named_parameters():
-                if p.grad is not None:
-                    fisher[n] += p.grad.pow(2).clone()
+            
+            # Accumulate Fisher Information 
+            fisher = accumulate(fisher)
+        
+        # Normalize Fisher Information matrices by the number of samples       
+        num_samples = train_loader.batch_size * len(train_loader)
         for n, p in fisher.items():
-            fisher[n] = p / len(train_loader)
-            fisher[n] = torch.min(fisher[n], torch.tensor(0.0001))
+            fisher[n] = p / num_samples
         return fisher
 
     def compute_ewc(self):
         """
-        Code Reference:
-        https://github.com/G-U-N/PyCIL/blob/master/models/ewc.py
+        Compute the Elastic Weight Consolidation (EWC) loss.
+        
+        This function calculates the EWC loss based on the stored Fisher Information matrices
+        and reference parameters from a previous task.
+        
+        References:
+        - https://github.com/G-U-N/PyCIL/blob/master/models/ewc.py
+        - https://github.com/mmasana/FACIL/blob/master/src/approach/ewc.py
+        
+        Returns:
+            torch.Tensor: The computed EWC loss.
         """
         loss = 0
         for n, p in self.network.named_parameters():
             if n in self.fisher.keys():
-                loss += (
-                    torch.sum(
-                        (self.fisher[n])
-                        * (p[: len(self.mean[n])] - self.mean[n]).pow(2)
-                    )
-                    / 2
-                )
+                loss += torch.sum(self.fisher[n] * (p[:len(self.ref_param[n])] - self.ref_param[n]).pow(2)) / 2
         return loss
     
     def get_parameters(self,  config):
