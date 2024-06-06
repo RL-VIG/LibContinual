@@ -1,3 +1,29 @@
+# -*- coding: utf-8 -*-
+"""
+@inproceedings{DBLP:conf/cvpr/SmithKGCKAPFK23,
+  author       = {James Seale Smith and
+                  Leonid Karlinsky and
+                  Vyshnavi Gutta and
+                  Paola Cascante{-}Bonilla and
+                  Donghyun Kim and
+                  Assaf Arbelle and
+                  Rameswar Panda and
+                  Rog{\'{e}}rio Feris and
+                  Zsolt Kira},
+  title        = {CODA-Prompt: COntinual Decomposed Attention-Based Prompting for Rehearsal-Free
+                  Continual Learning},
+  booktitle    = {{IEEE/CVF} Conference on Computer Vision and Pattern Recognition,
+                  {CVPR} 2023, Vancouver, BC, Canada, June 17-24, 2023},
+  pages        = {11909--11919},
+  publisher    = {{IEEE}},
+  year         = {2023}
+}
+
+https://arxiv.org/abs/2211.13218
+
+Adapted from https://github.com/GT-RIPL/CODA-Prompt
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

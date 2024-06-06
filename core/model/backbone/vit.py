@@ -1,6 +1,6 @@
 '''
- * Based on vit from blip code base
- * https://github.com/salesforce/BLIP
+Code Reference:
+Adapted from https://github.com/GT-RIPL/CODA-Prompt
 '''
 
 import torch
