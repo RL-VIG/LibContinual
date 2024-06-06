@@ -1,3 +1,14 @@
+"""
+@inproceedings{rebuffi2017icarl,
+  title={icarl: Incremental classifier and representation learning},
+  author={Rebuffi, Sylvestre-Alvise and Kolesnikov, Alexander and Sperl, Georg and Lampert, Christoph H},
+  booktitle={Proceedings of the IEEE conference on Computer Vision and Pattern Recognition},
+  pages={2001--2010},
+  year={2017}
+}
+https://arxiv.org/abs/1611.07725
+"""
+
 from typing import Iterator
 import torch
 from torch import nn
@@ -184,6 +195,10 @@ class ICarl(nn.Module):
 
     def criterion(self, x, y):
         def _KD_loss(pred, soft, T=2):
+            """
+            Code Reference:
+            KD loss function is borrowed from: https://github.com/G-U-N/PyCIL/blob/master/models/icarl.py
+            """
             pred = torch.log_softmax(pred / T, dim=1)
             soft = torch.softmax(soft / T, dim=1)
             return -1 * torch.mul(soft, pred).sum() / pred.shape[0]

@@ -1,3 +1,20 @@
+"""
+@inproceedings{guo2022online,
+  title={Online continual learning through mutual information maximization},
+  author={Guo, Yiduo and Liu, Bing and Zhao, Dongyan},
+  booktitle={International Conference on Machine Learning},
+  pages={8109--8126},
+  year={2022},
+  organization={PMLR}
+}
+https://proceedings.mlr.press/v162/guo22g.html
+
+Code Reference:
+https://github.com/gydpku/OCM/blob/main/test_cifar10.py
+
+We referred to the original author's code implementation and performed structural refactoring.
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -54,6 +71,9 @@ def get_similarity_matrix(outputs, chunk=2, multi_gpu=False):
         Compute similarity matrix
         - outputs: (B', d) tensor for B' = B * chunk
         - sim_matrix: (B', B') tensor
+
+        Code Reference:
+        https://github.com/gydpku/OCM/blob/main/test_cifar10.py
     '''
     if multi_gpu:
         outputs_gathered = []
@@ -71,6 +91,9 @@ def Supervised_NT_xent_n(sim_matrix, labels, embedding=None,temperature=0.5, chu
     '''
         Compute NT_xent loss
         - sim_matrix: (B', B') tensor for B' = B * chunk (first 2B are pos samples)
+
+        Code Reference:
+        https://github.com/gydpku/OCM/blob/main/test_cifar10.py
     '''
     device = sim_matrix.device
     labels1 = labels.repeat(2)
@@ -92,6 +115,9 @@ def Supervised_NT_xent_uni(sim_matrix, labels, temperature=0.5, chunk=2, eps=1e-
     '''
         Compute NT_xent loss
         - sim_matrix: (B', B') tensor for B' = B * chunk (first 2B are pos samples)
+        
+        Code Reference:
+        https://github.com/gydpku/OCM/blob/main/test_cifar10.py
     '''
     device = sim_matrix.device
     labels1 = labels.repeat(2)
@@ -114,6 +140,9 @@ def Supervised_NT_xent_pre(sim_matrix, labels, temperature=0.5, chunk=2, eps=1e-
     '''
         Compute NT_xent loss
         - sim_matrix: (B', B') tensor for B' = B * chunk (first 2B are pos samples)
+
+        Code Reference:
+        https://github.com/gydpku/OCM/blob/main/test_cifar10.py
     '''
     device = sim_matrix.device
     labels1 = labels#.repeat(2)
@@ -248,6 +277,10 @@ class OCM(nn.Module):
 
 
     def observe_first_task(self, x, y):
+        """
+        Code Reference:
+        https://github.com/gydpku/OCM/blob/main/test_cifar10.py
+        """
         images1, rot_sim_labels = Rotation(x, y)
         images_pair = torch.cat([images1, self.model.simclr_aug(images1)], dim=0)
         rot_sim_labels = rot_sim_labels.cuda()
@@ -271,6 +304,10 @@ class OCM(nn.Module):
 
     
     def observe_incremental_tasks(self, x, y):
+        """
+        Code Reference:
+        https://github.com/gydpku/OCM/blob/main/test_cifar10.py
+        """
         buffer_batch_size = min(64, self.buffer_per_class*len(self.class_holder))
         mem_x, mem_y,_ = self.buffer.sample(buffer_batch_size, exclude_task=None)
         mem_x = mem_x.requires_grad_()
@@ -293,6 +330,7 @@ class OCM(nn.Module):
         id1 = torch.randperm(num1)[0]
         id2 = torch.randperm(num1)[0]
         size = simclr.shape[1]
+
         sim_matrix = torch.matmul(simclr, feature_map_out[:, id1:id1 + size].t())
         sim_matrix_r = torch.matmul(simclr_r, feature_map_out_r[:, id2:id2 + size].t())
         sim_matrix += get_similarity_matrix(simclr)  
