@@ -1,3 +1,36 @@
+# -*- coding: utf-8 -*-
+"""
+@inproceedings{DBLP:conf/eccv/0002ZESZLRSPDP22,
+  author       = {Zifeng Wang and
+                  Zizhao Zhang and
+                  Sayna Ebrahimi and
+                  Ruoxi Sun and
+                  Han Zhang and
+                  Chen{-}Yu Lee and
+                  Xiaoqi Ren and
+                  Guolong Su and
+                  Vincent Perot and
+                  Jennifer G. Dy and
+                  Tomas Pfister},
+  editor       = {Shai Avidan and
+                  Gabriel J. Brostow and
+                  Moustapha Ciss{\'{e}} and
+                  Giovanni Maria Farinella and
+                  Tal Hassner},
+  title        = {DualPrompt: Complementary Prompting for Rehearsal-Free Continual Learning},
+  booktitle    = {Computer Vision - {ECCV} 2022 - 17th European Conference, Tel Aviv,
+                  Israel, October 23-27, 2022, Proceedings, Part {XXVI}},
+  volume       = {13686},
+  pages        = {631--648},
+  publisher    = {Springer},
+  year         = {2022}
+}
+
+https://arxiv.org/pdf/2204.04799
+
+Adapted from https://github.com/GT-RIPL/CODA-Prompt
+"""
+
 import math
 import copy
 import torch

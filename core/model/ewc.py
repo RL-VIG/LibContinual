@@ -1,3 +1,32 @@
+# -*- coding: utf-8 -*-
+"""
+@article{DBLP:journals/corr/KirkpatrickPRVD16,
+  author       = {James Kirkpatrick and
+                  Razvan Pascanu and
+                  Neil C. Rabinowitz and
+                  Joel Veness and
+                  Guillaume Desjardins and
+                  Andrei A. Rusu and
+                  Kieran Milan and
+                  John Quan and
+                  Tiago Ramalho and
+                  Agnieszka Grabska{-}Barwinska and
+                  Demis Hassabis and
+                  Claudia Clopath and
+                  Dharshan Kumaran and
+                  Raia Hadsell},
+  title        = {Overcoming catastrophic forgetting in neural networks},
+  journal      = {CoRR},
+  volume       = {abs/1612.00796},
+  year         = {2016}
+}
+
+https://arxiv.org/abs/1612.00796
+
+Adapted from https://github.com/G-U-N/PyCIL/blob/master/models/ewc.py
+"""
+
+
 import math
 import copy
 import torch
@@ -69,6 +98,10 @@ class EWC(Finetune):
         if self.task_idx == 0:
             self.fisher = self.getFisher(train_loader)
         else:
+            """
+            Code Reference:
+            https://github.com/G-U-N/PyCIL/blob/master/models/ewc.py
+            """
             alpha = 1 - self.kwargs['inc_cls_num']/self.network.classifier.out_features
             new_finsher = self.getFisher(train_loader)
             for n, p in new_finsher.items():
@@ -101,6 +134,10 @@ class EWC(Finetune):
     
 
     def getFisher(self, train_loader):
+        """
+        Code Reference:
+        https://github.com/G-U-N/PyCIL/blob/master/models/ewc.py
+        """
         fisher = {
             n: torch.zeros(p.shape).to(self.device)
             for n, p in self.network.named_parameters()
@@ -126,6 +163,10 @@ class EWC(Finetune):
         return fisher
 
     def compute_ewc(self):
+        """
+        Code Reference:
+        https://github.com/G-U-N/PyCIL/blob/master/models/ewc.py
+        """
         loss = 0
         for n, p in self.network.named_parameters():
             if n in self.fisher.keys():

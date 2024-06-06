@@ -59,5 +59,13 @@ Once you have completed the "Quick Installation" and "Datasets" sections, we can
 ## Acknowledgement
 LibContinual is an open source project designed to help continual learning researchers quickly understand the classic methods and code structures. We welcome other contributors to use this framework to implement their own or other impressive methods and add them to LibContinual. This library can only be used for academic research. We welcome any feedback during using LibContinual and will try our best to continually improve the library.
 
+This project has been developed with references to the following repositories:
+
+- [FACIL](https://github.com/mmasana/FACIL)
+- [PyCIL](https://github.com/G-U-N/PyCIL)
+
+
+We have referenced useful modules from these repositories in our work. We deeply appreciate the authors of these repositories.
+
 ## License
 This project is licensed under the MIT License. See LICENSE for more details.

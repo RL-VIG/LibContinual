@@ -50,5 +50,13 @@ data_root: /path/to/your/dataset
 ## Acknowledgement
 LibContinual is an open source project designed to help continual learning researchers quickly understand the classic methods and code structures. We welcome other contributors to use this framework to implement their own or other impressive methods and add them to LibContinual. This library can only be used for academic research. We welcome any feedback during using LibContinual and will try our best to continually improve the library.
 
+
+在本项目开发过程中参考了下列仓库：
+
+- [FACIL](https://github.com/mmasana/FACIL)
+- [PyCIL](https://github.com/G-U-N/PyCIL)
+
+在我们的工作中参考了这些仓库中有用的模块。我们深深感谢这些仓库的作者们。
+
 ## License
 This project is licensed under the MIT License. See LICENSE for more details.

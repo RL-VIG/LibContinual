@@ -1,3 +1,29 @@
+# -*- coding: utf-8 -*-
+"""
+@inproceedings{DBLP:conf/cvpr/0002ZL0SRSPDP22,
+  author       = {Zifeng Wang and
+                  Zizhao Zhang and
+                  Chen{-}Yu Lee and
+                  Han Zhang and
+                  Ruoxi Sun and
+                  Xiaoqi Ren and
+                  Guolong Su and
+                  Vincent Perot and
+                  Jennifer G. Dy and
+                  Tomas Pfister},
+  title        = {Learning to Prompt for Continual Learning},
+  booktitle    = {{IEEE/CVF} Conference on Computer Vision and Pattern Recognition,
+                  {CVPR} 2022, New Orleans, LA, USA, June 18-24, 2022},
+  pages        = {139--149},
+  publisher    = {{IEEE}},
+  year         = {2022}
+}
+
+https://arxiv.org/abs/2112.08654
+
+Adapted from https://github.com/GT-RIPL/CODA-Prompt
+"""
+
 import math
 import copy
 import torch

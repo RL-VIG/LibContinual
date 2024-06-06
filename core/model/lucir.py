@@ -1,3 +1,23 @@
+# -*- coding: utf-8 -*-
+"""
+@inproceedings{DBLP:conf/cvpr/HouPLWL19,
+  title        = {Learning a Unified Classifier Incrementally via Rebalancing},
+  author       = {Saihui Hou and
+                  Xinyu Pan and
+                  Chen Change Loy and
+                  Zilei Wang and
+                  Dahua Lin},
+  booktitle    = {{IEEE} Conference on Computer Vision and Pattern Recognition, {CVPR}
+                  2019, Long Beach, CA, USA, June 16-20, 2019},
+  pages        = {831--839},
+  publisher    = {Computer Vision Foundation / {IEEE}},
+  year         = {2019}
+}
+https://openaccess.thecvf.com/content_CVPR_2019/html/Hou_Learning_a_Unified_Classifier_Incrementally_via_Rebalancing_CVPR_2019_paper.html
+
+Adapted from https://github.com/hshustc/CVPR19_Incremental_Learning
+"""
+
 import math
 import copy
 import torch
