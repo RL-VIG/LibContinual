@@ -1,3 +1,18 @@
+# -*- coding: utf-8 -*-
+
+"""
+@inproceedings{wu2019large,
+  title={Large Scale Incremental Learning},
+  author={Wu, Yue and Chen, Yinpeng and Wang, Lijuan and Ye, Yuancheng and Liu, Zicheng and Guo, Yandong and Fu, Yun},
+  booktitle={Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition},
+  pages={374--382},
+  year={2019}
+}
+https://arxiv.org/abs/1905.13260
+
+Adapted from https://github.com/wuyuebupt/LargeScaleIncrementalLearning and https://github.com/sairin1202/BIC.
+"""
+
 import os
 path = os.getcwd()
 os.chdir(path)
@@ -101,7 +116,8 @@ class bic(Finetune):
         if self.T < self.task_num:
             self.bias_optimizer = self.optimizer_cls(params=self.bias_layers[self.T].parameters(), **self.optimizer_kwargs)
         self.seen_cls += self.inc_cls_num
-        
+    
+    # The classic two-phase processing approach employed by BIC.
     def stage1(self, data):
         x, y = data['image'], data['label']
         x = x.to(self.device)
@@ -114,6 +130,10 @@ class bic(Finetune):
         return pred, acc / x.size(0), loss
 
     def stage1_distill(self, data):
+        '''
+            Code Reference:
+            https://github.com/sairin1202/BIC/blob/master/trainer.py
+        '''
         distill_losses = []
         ce_losses = []
         T = 2
