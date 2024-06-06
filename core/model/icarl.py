@@ -196,6 +196,7 @@ class ICarl(nn.Module):
     def criterion(self, x, y):
         def _KD_loss(pred, soft, T=2):
             """
+            Compute the knowledge distillation (KD) loss between the predicted logits and the soft target.
             Code Reference:
             KD loss function is borrowed from: https://github.com/G-U-N/PyCIL/blob/master/models/icarl.py
             """
