@@ -1,9 +1,18 @@
-'''
-    We drew inspiration from the BIC original code and would like to express our gratitude to the outstanding contributors in the community whose code motivated us to refine the LibContinual framework.
-    # Paper link https://arxiv.org/abs/1905.13260
-    # Office link https://github.com/wuyuebupt/LargeScaleIncrementalLearning
-    # Unoffice link https://github.com/sairin1202/BIC
-'''
+# -*- coding: utf-8 -*-
+
+"""
+@inproceedings{wu2019large,
+  title={Large Scale Incremental Learning},
+  author={Wu, Yue and Chen, Yinpeng and Wang, Lijuan and Ye, Yuancheng and Liu, Zicheng and Guo, Yandong and Fu, Yun},
+  booktitle={Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition},
+  pages={374--382},
+  year={2019}
+}
+https://arxiv.org/abs/1905.13260
+
+Adapted from https://github.com/wuyuebupt/LargeScaleIncrementalLearning and https://github.com/sairin1202/BIC.
+"""
+
 import os
 path = os.getcwd()
 os.chdir(path)
@@ -121,6 +130,10 @@ class bic(Finetune):
         return pred, acc / x.size(0), loss
 
     def stage1_distill(self, data):
+        '''
+            Code Reference:
+            https://github.com/sairin1202/BIC/blob/master/trainer.py
+        '''
         distill_losses = []
         ce_losses = []
         T = 2
