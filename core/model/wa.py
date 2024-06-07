@@ -16,7 +16,6 @@ import torch
 from torch import nn
 import copy
 from torch.nn import functional as F
-import math
 import numpy as np
 from .finetune import Finetune
 
@@ -94,7 +93,6 @@ class IncrementalModel(nn.Module):
         del self.classifier
         self.classifier = classifier
 
-        
     def classifier_weight_align(self, incremental_number):
         '''
         Align the weight of the classifier after every task.
@@ -110,7 +108,6 @@ class IncrementalModel(nn.Module):
         gamma = old_mean / new_mean
         self.classifier.weight.data[-incremental_number:, :] *= gamma
 
-        
     def forward(self, x):
         return self.get_logits(x)
     
@@ -232,8 +229,7 @@ class WA(Finetune):
             test_loaders (list): List of DataLoaders for test data.
         '''
         if self.task_idx > 0:
-            self.network.weight_align(self.total_classes - self.known_classes)
-        # self.old_network = self.network.copy().freeze()
+            self.network.classifier_weight_align(self.total_classes - self.known_classes)
         self.old_network = copy.deepcopy(self.network).freeze()
         self.known_classes = self.total_classes
 
