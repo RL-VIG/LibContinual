@@ -18,9 +18,7 @@ class LWF(Finetune):
         self.known_cls_num = 0
         self.total_cls_num = 0
         self.old_backbone = None
-        
-    def copy(self,nn):
-        return copy.deepcopy(nn)
+
     def freeze(self,nn):
         for param in nn.parameters():
             param.requires_grad = False
@@ -31,7 +29,7 @@ class LWF(Finetune):
         fc = nn.Linear(self.feat_dim, self.total_cls_num).to(self.device)
         if self.classifier is not None:
             # del self.old_fc
-            self.old_fc = self.freeze(self.copy(self.classifier))
+            self.old_fc = self.freeze(copy.deepcopy(self.classifier))
             old_out = self.classifier.out_features
             weight = copy.deepcopy(self.classifier.weight.data)
             bias = copy.deepcopy(self.classifier.bias.data)
