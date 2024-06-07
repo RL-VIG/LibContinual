@@ -87,11 +87,6 @@ class DER(Finetune):
             return 0
         return self.out_dim * len(self.convnets)
 
-    def extract_vector(self, x):
-        features = [convnet(x)["features"] for convnet in self.convnets]
-        features = torch.cat(features, 1)
-        return features
-
     def forward(self, x):
         features = [convnet(x)["features"] for convnet in self.convnets]
         features = torch.cat(features, 1)
@@ -181,17 +176,7 @@ class DER(Finetune):
 
         return fc
 
-    def copy(self):
-        return copy.deepcopy(self)
-
-    def freeze(self):
-        for param in self.parameters():
-            param.requires_grad = False
-        self.eval()
-
-        return self
-
-    def freeze_conv(self):
+    def freeze_convnets(self):
         for param in self.convnets.parameters():
             param.requires_grad = False
         self.convnets.eval()
@@ -211,7 +196,7 @@ class DER(Finetune):
         self.known_cls_num = self.total_cls_num
         self.total_cls_num = self.init_cls_num + self.task_idx*self.inc_cls_num
 
-        self.freeze_conv()
+        self.freeze_convnets()
         self.update_fc(self.total_cls_num)
         self.loss_fn = nn.CrossEntropyLoss()
         self.convnets = self.convnets.to(self.device)
