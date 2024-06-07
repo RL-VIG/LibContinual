@@ -1,31 +1,16 @@
 '''
-Reference:
+Code Reference:
 https://github.com/pytorch/vision/blob/master/torchvision/models/resnet.py
+https://github.com/G-U-N/PyCIL/blob/master/convs/resnet.py
 '''
 import math
 import torch
 import torch.nn as nn
 import copy
-try:
-    from torchvision.models.utils import load_state_dict_from_url
-except:
-    from torch.hub import load_state_dict_from_url
 
 from torch.nn.parameter import Parameter
 import torch.nn.functional as F
 
-
-model_urls = {
-    'resnet18': 'https://download.pytorch.org/models/resnet18-5c106cde.pth',
-    'resnet34': 'https://download.pytorch.org/models/resnet34-333f7ec4.pth',
-    'resnet50': 'https://download.pytorch.org/models/resnet50-19c8e357.pth',
-    'resnet101': 'https://download.pytorch.org/models/resnet101-5d3b4d8f.pth',
-    'resnet152': 'https://download.pytorch.org/models/resnet152-b121ed2d.pth',
-    'resnext50_32x4d': 'https://download.pytorch.org/models/resnext50_32x4d-7cdf4587.pth',
-    'resnext101_32x8d': 'https://download.pytorch.org/models/resnext101_32x8d-8ba56ff5.pth',
-    'wide_resnet50_2': 'https://download.pytorch.org/models/wide_resnet50_2-95faca4d.pth',
-    'wide_resnet101_2': 'https://download.pytorch.org/models/wide_resnet101_2-32ee1156.pth',
-}
 
 
 def conv3x3(in_planes, out_planes, stride=1, groups=1, dilation=1):
@@ -227,17 +212,15 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def _forward_impl(self, x):
-        # See note [TorchScript super()]
-        x = self.conv1(x)  # [bs, 64, 32, 32]
+        x = self.conv1(x)
 
-        x_1 = self.layer1(x)  # [bs, 128, 32, 32]
-        x_2 = self.layer2(x_1)  # [bs, 256, 16, 16]
-        x_3 = self.layer3(x_2)  # [bs, 512, 8, 8]
-        x_4 = self.layer4(x_3)  # [bs, 512, 4, 4]
+        x_1 = self.layer1(x) 
+        x_2 = self.layer2(x_1) 
+        x_3 = self.layer3(x_2) 
+        x_4 = self.layer4(x_3) 
 
-        pooled = self.avgpool(x_4)  # [bs, 512, 1, 1]
-        features = torch.flatten(pooled, 1)  # [bs, 512]
-        # x = self.fc(x)
+        pooled = self.avgpool(x_4)
+        features = torch.flatten(pooled, 1)
 
         return {
             'fmaps': [x_1, x_2, x_3, x_4],
@@ -248,15 +231,15 @@ class ResNet(nn.Module):
         return self._forward_impl(x)
     
     def feature(self, x):
-        x = self.conv1(x)  # [bs, 64, 32, 32]
+        x = self.conv1(x) 
 
-        x_1 = self.layer1(x)  # [bs, 128, 32, 32]
-        x_2 = self.layer2(x_1)  # [bs, 256, 16, 16]
-        x_3 = self.layer3(x_2)  # [bs, 512, 8, 8]
-        x_4 = self.layer4(x_3)  # [bs, 512, 4, 4]
+        x_1 = self.layer1(x) 
+        x_2 = self.layer2(x_1) 
+        x_3 = self.layer3(x_2) 
+        x_4 = self.layer4(x_3) 
 
-        pooled = self.avgpool(x_4)  # [bs, 512, 1, 1]
-        features = torch.flatten(pooled, 1)  # [bs, 512]
+        pooled = self.avgpool(x_4) 
+        features = torch.flatten(pooled, 1) 
         
         return features
 
@@ -271,9 +254,7 @@ class ResNet(nn.Module):
 def _resnet(arch, block, layers, pretrained, progress, **kwargs):
     model = ResNet(block, layers, **kwargs)
     if pretrained:
-        state_dict = load_state_dict_from_url(model_urls[arch],
-                                              progress=progress)
-        model.load_state_dict(state_dict)
+        raise NotImplementedError
 
     if 'cosine_fc' in kwargs['args'].keys() and kwargs['args']['cosine_fc']:
         in_features = model.fc.in_features
@@ -303,38 +284,6 @@ def resnet34(pretrained=False, progress=True, **kwargs):
     return _resnet('resnet34', BasicBlock, [3, 4, 6, 3], pretrained, progress,
                    **kwargs)
 
-
-def resnet50(pretrained=False, progress=True, **kwargs):
-    r"""ResNet-50 model from
-    `"Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>`_
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-        progress (bool): If True, displays a progress bar of the download to stderr
-    """
-    return _resnet('resnet50', Bottleneck, [3, 4, 6, 3], pretrained, progress,
-                   **kwargs)
-
-
-def resnet101(pretrained=False, progress=True, **kwargs):
-    r"""ResNet-101 model from
-    `"Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>`_
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-        progress (bool): If True, displays a progress bar of the download to stderr
-    """
-    return _resnet('resnet101', Bottleneck, [3, 4, 23, 3], pretrained, progress,
-                   **kwargs)
-
-
-def resnet152(pretrained=False, progress=True, **kwargs):
-    r"""ResNet-152 model from
-    `"Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>`_
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-        progress (bool): If True, displays a progress bar of the download to stderr
-    """
-    return _resnet('resnet152', Bottleneck, [3, 8, 36, 3], pretrained, progress,
-                   **kwargs)
 
 
 
@@ -369,6 +318,13 @@ class ResNetBasicblock(nn.Module):
         return F.relu(residual + basicblock, inplace=True)
 
 
+
+'''
+Code Reference:
+https://github.com/G-U-N/PyCIL/blob/master/convs/resnet.py
+
+We keep this version ResNet to ensure that we can achieve better accuracy.
+'''
 class CifarResNet(nn.Module):
     """
     ResNet optimized for the Cifar Dataset, as specified in
@@ -427,34 +383,31 @@ class CifarResNet(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
-        x = self.conv_1_3x3(x)  # [bs, 16, 32, 32]
+        x = self.conv_1_3x3(x) 
         x = F.relu(self.bn_1(x), inplace=True)
 
-        x_1 = self.stage_1(x)  # [bs, 16, 32, 32]
-        x_2 = self.stage_2(x_1)  # [bs, 32, 16, 16]
-        x_3 = self.stage_3(x_2)  # [bs, 64, 8, 8]
+        x_1 = self.stage_1(x) 
+        x_2 = self.stage_2(x_1) 
+        x_3 = self.stage_3(x_2) 
 
-        pooled = self.avgpool(x_3)  # [bs, 64, 1, 1]
-        features = pooled.view(pooled.size(0), -1)  # [bs, 64]
+        pooled = self.avgpool(x_3) 
+        features = pooled.view(pooled.size(0), -1) 
 
         return {
             'fmaps': [x_1, x_2, x_3],
             'features': features
         }
-        # out = self.fc(features)
-        # return out
-    
     
     def feature(self, x):
-        x = self.conv_1_3x3(x)  # [bs, 16, 32, 32]
+        x = self.conv_1_3x3(x) 
         x = F.relu(self.bn_1(x), inplace=True)
 
-        x_1 = self.stage_1(x)  # [bs, 16, 32, 32]
-        x_2 = self.stage_2(x_1)  # [bs, 32, 16, 16]
-        x_3 = self.stage_3(x_2)  # [bs, 64, 8, 8]
+        x_1 = self.stage_1(x) 
+        x_2 = self.stage_2(x_1) 
+        x_3 = self.stage_3(x_2)
 
-        pooled = self.avgpool(x_3)  # [bs, 64, 1, 1]
-        features = pooled.view(pooled.size(0), -1)  # [bs, 64]
+        pooled = self.avgpool(x_3)
+        features = pooled.view(pooled.size(0), -1) 
         
         return features
 
@@ -473,6 +426,12 @@ class BiasLayer(nn.Module):
         print(i, self.alpha.item(), self.beta.item())
 
 
+
+
+'''
+Code Reference:
+https://github.com/hshustc/CVPR19_Incremental_Learning/blob/master/cifar100-class-incremental/modified_linear.py
+'''
 class CosineLinear(nn.Module):
     def __init__(self, in_features, out_features, sigma=True):
         super(CosineLinear, self).__init__()
@@ -524,8 +483,12 @@ class SplitCosineLinear(nn.Module):
 
 
 
-# modifiled resnet source code from: 
-# https://github.com/hshustc/CVPR19_Incremental_Learning
+'''
+Code Reference:
+https://github.com/hshustc/CVPR19_Incremental_Learning
+
+The version of ResNet used in the official LUCIR repository, if not used, will lead to a decrease in performance.
+'''
 
 class modified_BasicBlock(nn.Module):
     expansion = 1
@@ -652,120 +615,3 @@ def resnet32_V2(pretrained=False, **kwargs):
     return model
 
 
-
-
-
-
-#########################################################
-# For Wa
-
-def resnet32_wa(pretrained=False, **kwargs):
-    return IncrementalNet()
-
-
-class DownsampleA(nn.Module):
-    def __init__(self, nIn, nOut, stride):
-        super(DownsampleA, self).__init__()
-        assert stride == 2
-        self.avg = nn.AvgPool2d(kernel_size=1, stride=stride)
-
-    def forward(self, x):
-        x = self.avg(x)
-        return torch.cat((x, x.mul(0)), 1)
-
-
-class BaseNet(nn.Module):
-    def __init__(self):
-        super(BaseNet, self).__init__()
-        self.convnet = resnet32()
-        self.classifier = None
-
-    @property
-    def feature_dim(self):
-        return self.convnet.out_dim
-
-    def extract_vector(self, x):
-        return self.convnet(x)["features"]
-
-    def forward(self, x):
-        x = self.convnet(x)
-        out = self.classifier(x["features"])
-        out.update(x)
-
-        return out
-
-    def update_classifier(self, nb_classes):
-        pass
-
-    def generate_classifier(self, in_dim, out_dim):
-        pass
-
-    def copy(self):
-        return copy.deepcopy(self)
-
-    def freeze(self):
-        for param in self.parameters():
-            param.requires_grad = False
-        self.eval()
-
-        return self
-
-class IncrementalNet(BaseNet):
-    def __init__(self):
-        super().__init__()
-
-    def update_classifier(self, nb_classes):
-        classifier = self.generate_classifier(self.feature_dim, nb_classes)
-        if self.classifier is not None:
-            nb_output = self.classifier.out_features
-            weight = copy.deepcopy(self.classifier.weight.data)
-            bias = copy.deepcopy(self.classifier.bias.data)
-            classifier.weight.data[:nb_output] = weight
-            classifier.bias.data[:nb_output] = bias
-
-        del self.classifier
-        self.classifier = classifier
-
-    def weight_align(self, increment):
-        weights = self.classifier.weight.data
-        newnorm = torch.norm(weights[-increment:, :], p=2, dim=1)
-        oldnorm = torch.norm(weights[:-increment, :], p=2, dim=1)
-        meannew = torch.mean(newnorm)
-        meanold = torch.mean(oldnorm)
-        gamma = meanold / meannew
-        self.classifier.weight.data[-increment:, :] *= gamma
-
-    def generate_classifier(self, in_dim, out_dim):
-        classifier = SimpleLinear(in_dim, out_dim)
-
-        return classifier
-
-    def forward(self, x):
-        x = self.convnet(x)
-        out = self.classifier(x["features"])
-        out.update(x)
-        return out
-
-
-class SimpleLinear(nn.Module):
-    '''
-    Reference:
-    https://github.com/pytorch/pytorch/blob/master/torch/nn/modules/linear.py
-    '''
-    def __init__(self, in_features, out_features, bias=True):
-        super(SimpleLinear, self).__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-        self.weight = nn.Parameter(torch.Tensor(out_features, in_features))
-        if bias:
-            self.bias = nn.Parameter(torch.Tensor(out_features))
-        else:
-            self.register_parameter('bias', None)
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        nn.init.kaiming_uniform_(self.weight, nonlinearity='linear')
-        nn.init.constant_(self.bias, 0)
-
-    def forward(self, input):
-        return {'logits': F.linear(input, self.weight, self.bias)}
