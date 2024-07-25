@@ -3,7 +3,7 @@ import torch.nn as nn
 
 from peft import get_peft_model, LoraConfig
 
-class Model(nn.Module):
+class Sinet(nn.Module):
     def __init__(self, backbone, args):
         super().__init__()
         self.backbone = backbone
@@ -28,12 +28,9 @@ class Model(nn.Module):
             for i in range(args["total_sessions"])
         ])
 
-class Sinet(nn.Module):
+class InfLoRA(nn.Module):
     def __init__(self, args):
         super.__init__()
-
-
-
 
     def forward():
         pass
