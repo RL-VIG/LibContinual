@@ -34,28 +34,28 @@ Based on this empirical analysis, we propose a new method which mitigates this i
 
 ### ERACE
 
-| Dataset  | Num of Tasks | Buffer Size | Epochs | Reproduced Accuracy | Reported Accuray |
-| :------: | :----------: | :---------: | :----: | :-----------------: | :--------------: |
-| CIFAR10  |      5       |    20*10    |   1    |        31.4         |       42.82      |
-| CIFAR10  |      5       |    20*10    |   5    |        42.2         |       49.40      |
-| CIFAR10  |      5       |    20*10    |   15   |        46.6         |       44.92      |
+| Dataset  | Num of Tasks | Buffer Size | Epochs | Reproduced Accuracy | Reported Accuracy |
+| :------: | :----------: | :---------: | :----: | :-----------------: | :---------------: |
+| CIFAR10  |      5       |    20*10    |   1    |        31.4         |       42.82       |
+| CIFAR10  |      5       |    20*10    |   5    |        42.2         |       49.40       |
+| CIFAR10  |      5       |    20*10    |   15   |        46.6         |       44.92       |
 
-| Dataset  | Num of Tasks | Buffer Size | Epochs | Reproduced Accuracy | Reported Accuray |
-| :------: | :----------: | :---------: | :----: | :-----------------: | :--------------: |
-| CIFAR100 |      20      |    20*100   |   1    |       12.10         |      17.46       |
-| CIFAR100 |      20      |    20*100   |   5    |       21.20         |      18.26       |
-| CIFAR100 |      20      |    20*100   |   15   |       32.20         |      15.78       |
+| Dataset  | Num of Tasks | Buffer Size | Epochs | Reproduced Accuracy | Reported Accuracy |
+| :------: | :----------: | :---------: | :----: | :-----------------: | :---------------: |
+| CIFAR100 |      20      |    20*100   |   1    |       12.10         |      17.46        |
+| CIFAR100 |      20      |    20*100   |   5    |       21.20         |      18.26        |
+| CIFAR100 |      20      |    20*100   |   15   |       32.20         |      15.78        |
 
 ### ERAML
 
-| Dataset  | Num of Tasks | Buffer Size | Epochs | Reproduced Accuracy | Reported Accuray |
-| :------: | :----------: | :---------: | :----: | :-----------------: | :--------------: |
-| CIFAR10  |      5       |    20*10    |   1    |        29.6         |       37.48      |
-| CIFAR10  |      5       |    20*10    |   5    |        41.2         |       39.92      |
-| CIFAR10  |      5       |    20*10    |   15   |        44.2         |       35.58      |
+| Dataset  | Num of Tasks | Buffer Size | Epochs | Reproduced Accuracy | Reported Accuracy |
+| :------: | :----------: | :---------: | :----: | :-----------------: | :---------------: |
+| CIFAR10  |      5       |    20*10    |   1    |        29.6         |       37.48       |
+| CIFAR10  |      5       |    20*10    |   5    |        41.2         |       39.92       |
+| CIFAR10  |      5       |    20*10    |   15   |        44.2         |       35.58       |
 
-| Dataset  | Num of Tasks | Buffer Size | Epochs | Reproduced Accuracy | Reported Accuray |
-| :------: | :----------: | :---------: | :----: | :-----------------: | :--------------: |
-| CIFAR100 |      20      |    20*100   |   1    |       7.00          |      10.26       |
-| CIFAR100 |      20      |    20*100   |   5    |       19.20         |      14.52       |
-| CIFAR100 |      20      |    20*100   |   15   |       25.30         |      12.22       |
+| Dataset  | Num of Tasks | Buffer Size | Epochs | Reproduced Accuracy | Reported Accuracy |
+| :------: | :----------: | :---------: | :----: | :-----------------: | :---------------: |
+| CIFAR100 |      20      |    20*100   |   1    |       7.00          |      10.26        |
+| CIFAR100 |      20      |    20*100   |   5    |       19.20         |      14.52        |
+| CIFAR100 |      20      |    20*100   |   15   |       25.30         |      12.22        |
