@@ -23,7 +23,8 @@ import torch.nn as nn
 from torch.nn import Parameter
 import torch.nn.functional as F
 from .finetune import Finetune
-from core.model.backbone import resnet18, resnet34, resnet50
+# from core.model.backbone import resnet18, resnet34, resnet50
+from core.model.backbone import resnet18, resnet34
 from core.utils import get_instance
 
 def get_convnet(convnet_type, pretrained=False):
@@ -35,8 +36,8 @@ def get_convnet(convnet_type, pretrained=False):
     #     return resnet32()
     elif name == "resnet34":
         return resnet34()
-    elif name == "resnet50":
-        return resnet50()
+    # elif name == "resnet50":
+    #     return resnet50()
     else:
         raise NotImplementedError("Unknown type {}".format(convnet_type))
 

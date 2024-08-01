@@ -40,7 +40,7 @@ backbone:
     pretrain: true
 
 classifier:
-  name: ERACE
+  name: InfLoRA
   kwargs:
     num_classes: 10
     task_free: False

@@ -15,3 +15,4 @@ from .der import DER
 from .dualprompt import DualPrompt
 from .l2p import L2P
 from .codaprompt import CodaPrompt
+from .inflora import InfLoRA
