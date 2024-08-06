@@ -1,25 +1,28 @@
-# For logger
 save_path : ""
+data_root: "../../../data/cifar/cifar100" #data path, where is your data
 
-data_root: "../dataset/cifar-dataset/cifar10" #data path, where is your data
+init_cls_num: &init_cls_num 10 # 第一次任务的分类数量
+inc_cls_num: &inc_cls_num 10   # 之后每次任务的分类数量
+num_classes: &num_classes 100 
+task_num: &task_num 10
 
-# init_cls_num = inc_cls_num
-# task_num = total class / inc_cls_num
-# buffer capacity = num_classes * 20
-
-task_num: 5 #任务数量
-init_cls_num: 2 # 第一次任务的分类数量
-inc_cls_num: 2 #之后每次任务的分类数量
-init_epoch: 1 # init_epoch
-epoch: 1 # inc_epoch
-batch_size: 32
+task_num: *task_num
+init_cls_num: *init_cls_num
+inc_cls_num: *inc_cls_num
+init_epoch: 5 # 20
+epoch: 5 # 20
+batch_size: 128
+val_per_epoch: 20
+workers: 16
 
 device_ids: 0
 
 optimizer:
-  name: SGD
+  name: Adam
   kwargs:
-    lr: 0.1
+    lr: 0.05
+    weight_decay: 0.0
+
 
 lr_scheduler:
   name: StepLR
@@ -27,20 +30,28 @@ lr_scheduler:
     gamma: 0.5
     step_size: 10
 
+# buffer is not used in this method
 buffer:
-  name: ERBuffer
+  name: LinearBuffer
   kwargs:
-    capacity: 200
-    input_size: (3, 32, 32)
+    buffer_size: 0
+    strategy: None
+    batch_size: 
 
 backbone:
   name: vit_pt_imnet
   kwargs:
-    num_classes: 100
-    pretrain: true
+    num_heads: 12
+    num_classes: *num_classes
+    pretrain: True
 
 classifier:
   name: InfLoRA
   kwargs:
-    num_classes: 10
-    task_free: False
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    task_num: *task_num
+    embd_dim: 768
+    lame: 1.0
+    lamb: 0.95
+    rank: 10

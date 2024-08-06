@@ -28,10 +28,17 @@ class AverageMeter(object):
         if self.writer is not None:
             tag = "{}/{}".format(self.name, key)
             self.writer.add_scalar(tag, value)
-        self._data.last_value[key] = value
-        self._data.total[key] += value * n
-        self._data.counts[key] += n
-        self._data.average[key] = self._data.total[key] / self._data.counts[key]
+
+        # Avoid FutureWarning
+        # self._data.last_value[key] = value
+        # self._data.total[key] += value * n
+        # self._data.counts[key] += n
+        # self._data.average[key] = self._data.total[key] / self._data.counts[key]
+        
+        self._data.loc[key, "last_value"] = value
+        self._data.loc[key, "total"] += value * n
+        self._data.loc[key, "counts"] += n
+        self._data.loc[key, "average"] = self._data.total[key] / self._data.counts[key]
 
     def avg(self, key):
         return self._data.average[key]
@@ -172,6 +179,10 @@ class GradualWarmupScheduler(_LRScheduler):
 
 
 def count_parameters(model):
+
+    # DEBUG delete
+    print(sum(p.numel() for p in model.parameters() if not p.requires_grad))
+
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 def fmt_date_str(date=None, fmt="%y-%m-%d-%H-%M-%S"):

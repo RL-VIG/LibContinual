@@ -379,6 +379,7 @@ class Trainer(object):
 
         with tqdm(total=len(dataloader)) as pbar:
             for batch_idx, batch in enumerate(dataloader):
+
                 output, acc, loss = self.model.observe(batch)
 
                 self.optimizer.zero_grad()

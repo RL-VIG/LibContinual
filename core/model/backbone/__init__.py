@@ -13,7 +13,9 @@ def get_backbone(config):
     kwargs = dict()
     kwargs.update(config['backbone']['kwargs'])
     try:
-        emb_func = eval(config["backbone"['name']])(**kwargs)
+        # SyntaxWarning: str indices must be integers or slices, not str; perhaps you missed a comma?
+        # emb_func = eval(config["backbone"['name']])(**kwargs)
+        emb_func = eval(config["backbone"]['name'])(**kwargs)
     except NameError:
         raise ("{} is not implemented".format(config["backbone"]['name']))
     

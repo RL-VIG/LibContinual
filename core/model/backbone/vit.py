@@ -40,6 +40,7 @@ class Mlp(nn.Module):
 class Attention(nn.Module):
     def __init__(self, dim, num_heads=8, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0.):
         super().__init__()
+        self.dim = dim
         self.num_heads = num_heads
         head_dim = dim // num_heads
         # NOTE scale factor was wrong in my original version, can set manually to be compat with prev weights
@@ -51,6 +52,13 @@ class Attention(nn.Module):
         self.attn_gradients = None
         self.attention_map = None
         
+    
+    # For PEFT implementation
+    @property
+    def weight(self):
+        return self.qkv.weight
+
+
     def save_attn_gradients(self, attn_gradients):
         self.attn_gradients = attn_gradients
         
@@ -104,8 +112,8 @@ class Block(nn.Module):
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
 
-    def forward(self, x, register_hook=False, prompt=None):
-        x = x + self.drop_path(self.attn(self.norm1(x), register_hook=register_hook, prompt=prompt))
+    def forward(self, x, register_hook=False, prompt=None, **kwargs):
+        x = x + self.drop_path(self.attn(self.norm1(x), register_hook=register_hook, prompt=prompt, **kwargs))
         x = x + self.drop_path(self.mlp(self.norm2(x)))
         return x
 
@@ -176,7 +184,7 @@ class VisionTransformer(nn.Module):
     def no_weight_decay(self):
         return {'pos_embed', 'cls_token'}
 
-    def forward(self, x, register_blk=-1, prompt=None, q=None, train=False, task_id=None):
+    def forward(self, x, register_blk=-1, prompt=None, q=None, train=False, task_id=None, **kwargs):
         B = x.shape[0]
         x = self.patch_embed(x)
 
@@ -198,7 +206,7 @@ class VisionTransformer(nn.Module):
             else:
                 p_list = None
 
-            x = blk(x, register_blk==i, prompt=p_list)
+            x = blk(x, register_blk==i, prompt=p_list, task_id=task_id, **kwargs)
             # if i == 11: x = x.detach()
 
         x = self.norm(x)
@@ -355,20 +363,26 @@ class ViTZoo(nn.Module):
         
         
     # pen: get penultimate features    
-    def forward(self, x, pen=False, train=False):
+    def forward(self, x, pen=False, train=False,  **kwargs):
         # print(x.shape)
         if self.prompt is not None:
             with torch.no_grad():
                 q, _ = self.feat(x)
                 q = q[:,0,:]
-            out, prompt_loss = self.feat(x, prompt=self.prompt, q=q, train=train, task_id=self.task_id)
+            out, prompt_loss = self.feat(x, prompt=self.prompt, q=q, train=train, task_id=kwargs["task_id"], **kwargs)
             out = out[:,0,:]
         else:
-            out, _ = self.feat(x)
+            # DEBUG
+            # out, _ = self.feat(x, **kwargs)
+            out, prompt_loss = self.feat(x, **kwargs)
             out = out[:,0,:]
         out = out.view(out.size(0), -1)
         # if not pen:
         #     out = self.last(out)
+
+        # DEBUG
+        return out, prompt_loss
+
         if self.prompt is not None and train:
             return out, prompt_loss
         else:
