@@ -16,7 +16,6 @@ from torch.optim.lr_scheduler import MultiStepLR
 import torch.optim as optim
 from copy import deepcopy
 from pprint import pprint
-
 from core.scheduler import CosineSchedule
 
 class Trainer(object):
@@ -391,7 +390,6 @@ class Trainer(object):
                 
                 meter.update("acc1", 100 * acc)
                 meter.update("loss", loss.item())
-
 
         return meter
 

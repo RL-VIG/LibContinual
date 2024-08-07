@@ -179,10 +179,6 @@ class GradualWarmupScheduler(_LRScheduler):
 
 
 def count_parameters(model):
-
-    # DEBUG delete
-    print(sum(p.numel() for p in model.parameters() if not p.requires_grad))
-
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 def fmt_date_str(date=None, fmt="%y-%m-%d-%H-%M-%S"):

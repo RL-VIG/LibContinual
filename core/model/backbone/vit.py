@@ -14,6 +14,7 @@ from timm.models.layers import trunc_normal_, DropPath
 from timm.models.helpers import named_apply, adapt_input_conv
 
 from .prompt import L2P, CodaPrompt, DualPrompt
+
 # source code from https://github.com/GT-RIPL/CODA-Prompt
 
 class Mlp(nn.Module):
@@ -96,7 +97,6 @@ class Attention(nn.Module):
         x = self.proj_drop(x)
         return x
 
-
 class Block(nn.Module):
 
     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
@@ -162,7 +162,7 @@ class VisionTransformer(nn.Module):
         self.blocks = nn.ModuleList([
             Block(
                 dim=embed_dim, num_heads=num_heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias, qk_scale=qk_scale,
-                drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer,
+                drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer
                 )
             for i in range(depth)])
         self.norm = norm_layer(embed_dim)
@@ -363,13 +363,13 @@ class ViTZoo(nn.Module):
         
         
     # pen: get penultimate features    
-    def forward(self, x, pen=False, train=False,  **kwargs):
+    def forward(self, x, pen=False, train=False, **kwargs):
         # print(x.shape)
         if self.prompt is not None:
             with torch.no_grad():
                 q, _ = self.feat(x)
                 q = q[:,0,:]
-            out, prompt_loss = self.feat(x, prompt=self.prompt, q=q, train=train, task_id=kwargs["task_id"], **kwargs)
+            out, prompt_loss = self.feat(x, prompt=self.prompt, q=q, train=train, **kwargs)
             out = out[:,0,:]
         else:
             # DEBUG

@@ -65,23 +65,18 @@ class Attention_InfLoRA(nn.Module):
             nn.init.zeros_(self.lora_B_k[t].weight)
             nn.init.zeros_(self.lora_B_v[t].weight)
 
-    # TODO: remove get_feat and get_cur_feat after knowing they are not used
-    def forward(self, x, register_hook=False, update_feat = False, update_cur_feat = False, **kwargs):
-        task_id = kwargs["task_id"]
-        if update_feat:
-            self.matrix = (self.matrix*self.n_matrix + torch.bmm(x.detach().permute(0, 2, 1), x.detach()).sum(dim=0).cpu())/(self.n_matrix + x.shape[0]*x.shape[1])
-            self.n_matrix += x.shape[0]*x.shape[1]
-
+    def forward(self, x, register_hook=False, update_cur_feat = False, task_id = -1, **kwargs):
         if update_cur_feat:
             self.cur_matrix = (self.cur_matrix*self.n_cur_matrix + torch.bmm(x.detach().permute(0, 2, 1), x.detach()).sum(dim=0).cpu())/(self.n_cur_matrix + x.shape[0]*x.shape[1])
             self.n_cur_matrix += x.shape[0]*x.shape[1]
+            return 0
 
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
         q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
 
         # insert lora
-        if task_id > -0.5:
+        if task_id > -1:
             weight_k = torch.stack([torch.mm(self.lora_B_k[t].weight, self.lora_A_k[t].weight) for t in range(task_id+1)], dim=0).sum(dim=0)
             weight_v = torch.stack([torch.mm(self.lora_B_v[t].weight, self.lora_A_v[t].weight) for t in range(task_id+1)], dim=0).sum(dim=0)
             
@@ -114,22 +109,24 @@ class Sinet(nn.Module):
         super().__init__()
 
         self._cur_task_id = -1
+        self._peft_implementation = True
 
-        lora_config = LoraConfig(
-            target_modules = [n for n, m in backbone.named_modules() if isinstance(m, Attention)], # modules to add LoRA modules and train the LoRA modules
-            inference_mode=False, 
-            r = kwargs["rank"], 
-            lora_alpha = 32, 
-            lora_dropout = 0.1
-        )
+        if self._peft_implementation:
+            lora_config = LoraConfig(
+                target_modules = [n for n, m in backbone.named_modules() if isinstance(m, Attention)], # modules to add LoRA modules and train the LoRA modules
+                inference_mode=False, 
+                r = kwargs["rank"], 
+                lora_alpha = 1, 
+                lora_dropout = 0.0
+            )
+            lora_config._register_custom_module({
+                    # Usually replace Linear layers for minor change to the whole structure
+                    Attention : dispatch_inflora
+                }) # specifying replace key class modules with value class modules
+            self.backbone = get_peft_model(backbone, lora_config)
+        else:
+            self.backbone = backbone
 
-        lora_config._register_custom_module({
-                # Usually replace Linear layers for minor change to the whole structure
-                Attention : dispatch_inflora
-            }) # specifying replace key class modules with value class modules
-
-        self.backbone = get_peft_model(backbone, lora_config)
-        
         self.classifier_pool = nn.ModuleList([
             nn.Linear(kwargs["embd_dim"], kwargs["init_cls_num"], bias=True)
             for _ in range(kwargs["task_num"])
@@ -157,9 +154,6 @@ class Sinet(nn.Module):
             'features': features,
             'prompt_loss': prompt_loss
         }
-
-    def update_feat(self, x):
-        self.backbone(x, task_id = self._cur_task_id, update_feat = True)
 
     def update_cur_feat(self, x):
         self.backbone(x, task_id = self._cur_task_id, update_cur_feat = True)
@@ -194,12 +188,6 @@ class InfLoRA(nn.Module):
 
     def before_task(self, task_idx, buffer, train_loader, test_loaders):
 
-        # DEBUG delete
-        self.train_pred = set()
-        self.train_targ = set()
-        self.test_pred = set()
-        self.test_targ = set()
-
         if task_idx == 1:
             self._known_classes = self.init_cls_num
         elif task_idx > 1:
@@ -223,38 +211,39 @@ class InfLoRA(nn.Module):
         print("Current task : " + str(task_idx) + ", Parameters to be updated: " + str(len(unfrezeed_params)))
         print(",".join(unfrezeed_params))
 
-        for batch_idx, batch in enumerate(train_loader):
-            inputs = batch['image'].to(self.device)
-            self.model.update_cur_feat(inputs)
+        with torch.no_grad():
+            for batch_idx, batch in enumerate(train_loader):
+                inputs = batch['image'].to(self.device)
+                self.model.update_cur_feat(inputs)
 
-        # Initialize LoRA A
-        if task_idx == 0: # first task
-            for module in self.model.backbone.modules():
-                if isinstance(module, Attention_InfLoRA):
-                    cur_matrix = module.cur_matrix
-                    U, S, V = torch.linalg.svd(cur_matrix)
-                    module.lora_A_k[task_idx].weight.data.copy_(U[:,:module.rank].T/math.sqrt(3))
-                    module.lora_A_v[task_idx].weight.data.copy_(U[:,:module.rank].T/math.sqrt(3))
-                    module.cur_matrix.zero_()
-                    module.n_cur_matrix = 0
-        else: 
-            kk = 0
-            for module in self.model.backbone.modules():
-                if isinstance(module, Attention_InfLoRA):
-                    cur_matrix = module.cur_matrix
-                    if self.project_type[kk] == 'remove':
-                        cur_matrix = cur_matrix - torch.mm(self.feature_mat[kk],cur_matrix)
-                    elif self.project_type[kk] == 'retain':
-                        cur_matrix = torch.mm(self.feature_mat[kk],cur_matrix)
-                    else:
-                        raise ValueError(f'project_type should be remove or retain, not {self.project_type[kk]}')
+            # Initialize LoRA A
+            if task_idx == 0: # first task
+                for module in self.model.backbone.modules():
+                    if isinstance(module, Attention_InfLoRA):
+                        cur_matrix = module.cur_matrix
+                        U, S, V = torch.linalg.svd(cur_matrix)
+                        module.lora_A_k[task_idx].weight.data.copy_(U[:,:module.rank].T/math.sqrt(3))
+                        module.lora_A_v[task_idx].weight.data.copy_(U[:,:module.rank].T/math.sqrt(3))
+                        module.cur_matrix.zero_()
+                        module.n_cur_matrix = 0
+            else: 
+                kk = 0
+                for module in self.model.backbone.modules():
+                    if isinstance(module, Attention_InfLoRA):
+                        cur_matrix = module.cur_matrix
+                        if self.project_type[kk] == 'remove':
+                            cur_matrix = cur_matrix - torch.mm(self.feature_mat[kk],cur_matrix)
+                        elif self.project_type[kk] == 'retain':
+                            cur_matrix = torch.mm(self.feature_mat[kk],cur_matrix)
+                        else:
+                            raise ValueError(f'project_type should be remove or retain, not {self.project_type[kk]}')
 
-                    cU, cS, cV = torch.linalg.svd(cur_matrix, full_matrices=False)
-                    module.lora_A_k[task_idx].weight.data.copy_(cU[:,:module.rank].T/math.sqrt(3))
-                    module.lora_A_v[task_idx].weight.data.copy_(cU[:,:module.rank].T/math.sqrt(3))
-                    module.cur_matrix.zero_()
-                    module.n_cur_matrix = 0
-                    kk += 1
+                        cU, cS, cV = torch.linalg.svd(cur_matrix, full_matrices=False)
+                        module.lora_A_k[task_idx].weight.data.copy_(cU[:,:module.rank].T/math.sqrt(3))
+                        module.lora_A_v[task_idx].weight.data.copy_(cU[:,:module.rank].T/math.sqrt(3))
+                        module.cur_matrix.zero_()
+                        module.n_cur_matrix = 0
+                        kk += 1
 
     def observe(self, data):
 
@@ -273,15 +262,6 @@ class InfLoRA(nn.Module):
 
         acc = round(correct / total, 4)
 
-        print("acc : " + str(acc))
-
-        # DEBUG delete
-        def tensor2numpy(tensor):
-            return tensor.detach().cpu().numpy()
-
-        self.train_pred |= set(list(tensor2numpy(preds) + self._known_classes))
-        self.train_targ |= set(list(tensor2numpy(targets) + self._known_classes))
-
         return preds, acc, loss
 
     def inference(self, data):
@@ -290,19 +270,10 @@ class InfLoRA(nn.Module):
         logits = self.model(inputs, inference = True)['logits']
         _, preds = torch.max(logits, dim=1)
 
-        # DEBUG replace
-        # correct = ((preds % self.class_num).cpu() == (targets % self.class_num)).sum()
         correct = preds.cpu().eq(targets.expand_as(preds)).sum().item()
         total = len(targets)
 
         acc = round(correct / total, 4)
-
-        # DEBUG delete
-        def tensor2numpy(tensor):
-            return tensor.detach().cpu().numpy()
-
-        self.test_pred |= set(list(tensor2numpy(preds)))
-        self.test_targ |= set(list(tensor2numpy(targets)))
 
         return logits, acc
 
@@ -331,13 +302,6 @@ class InfLoRA(nn.Module):
 
         # TODO: clustering
         self.clustering(train_loader)
-
-        # DEBUG delete
-        print("Task " + str(task_idx) + " complete")
-        print("train_pred : " + str(self.train_pred))
-        print("train_targ : " + str(self.train_targ))
-        print("test_pred : " + str(self.test_pred))
-        print("test_targ : " + str(self.test_targ))
 
     def clustering(self, dataloader):
         features = []

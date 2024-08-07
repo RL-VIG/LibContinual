@@ -9,8 +9,8 @@ task_num: &task_num 10
 task_num: *task_num
 init_cls_num: *init_cls_num
 inc_cls_num: *inc_cls_num
-init_epoch: 5 # 20
-epoch: 5 # 20
+init_epoch: 20 # 20
+epoch: 20 # 20
 batch_size: 128
 val_per_epoch: 20
 workers: 16
@@ -20,7 +20,7 @@ device_ids: 0
 optimizer:
   name: Adam
   kwargs:
-    lr: 0.05
+    lr: 0.0005
     weight_decay: 0.0
 
 
@@ -41,9 +41,10 @@ buffer:
 backbone:
   name: vit_pt_imnet
   kwargs:
-    num_heads: 12
+    # num_heads: 12
     num_classes: *num_classes
     pretrain: True
+    attention: Attention_InfLoRA
 
 classifier:
   name: InfLoRA
