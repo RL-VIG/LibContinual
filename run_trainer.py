@@ -17,7 +17,11 @@ def main(rank, config):
 if __name__ == "__main__":
     # config = Config("./config/der.yaml").get_config_dict()
     # config = Config("./config/eraml.yaml").get_config_dict()
-    config = Config("./config/erace.yaml").get_config_dict()
+    # config = Config("./config/erace.yaml").get_config_dict()
+    
+    # config = Config("./config/icarl.yaml").get_config_dict()
+    # config = Config("./config/InfLoRA.yaml").get_config_dict()    
+    config = Config("./config/PRAKA.yaml").get_config_dict()    
 
     if config["n_gpu"] > 1:
         pass

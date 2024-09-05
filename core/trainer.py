@@ -148,8 +148,12 @@ class Trainer(object):
             )
 
         
-        scheduler = get_instance(
-            torch.optim.lr_scheduler, "lr_scheduler", config, optimizer=optimizer)
+        # Check if the learning rate scheduler specified in the configuration is "CosineSchedule"
+        if config['lr_scheduler']['name'] == "CosineSchedule":
+            scheduler = CosineSchedule(optimizer, K=config['lr_scheduler']['kwargs']['K'])
+        else:
+            scheduler = get_instance(
+                torch.optim.lr_scheduler, "lr_scheduler", config, optimizer=optimizer)
 
 
         if 'init_epoch' in config.keys():

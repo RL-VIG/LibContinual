@@ -1,0 +1,73 @@
+includes:
+  - headers/data.yaml
+  - headers/device.yaml
+  - headers/model.yaml
+  # - headers/optimizer.yaml
+  - backbones/resnet12.yaml
+
+data_root: /home/chenyiyang/dataset/cifar100
+image_size: 32
+save_path: ./
+# data
+init_cls_num: 50  # 50  50
+inc_cls_num: 5   # 5   10
+task_num: 11       # 11  6
+deterministic: True
+batch_size: 16
+epoch: 100
+
+
+device_ids: 7
+n_gpu: 1
+val_per_epoch: 10
+seed: 82209
+
+
+optimizer:
+  name: Adam
+  kwargs:
+    lr: 0.001
+    betas: [0.9, 0.999]
+    weight_decay: 2e-4
+    eps: 1e-8
+
+
+lr_scheduler:
+  name: CosineAnnealingLR
+  kwargs:
+    T_max: 100
+
+
+backbone:
+  name: resnet18_cbam
+  kwargs:
+    num_classes: 100
+    args:
+      dataset: cifar100
+
+
+buffer:
+  name: LinearBuffer
+  kwargs:
+    buffer_size: 0
+    batch_size: 32
+    strategy: None     # random, equal_random, reservoir, herding
+
+classifier:
+  name: PRAKA
+  kwargs:
+    num_class: 100
+    feat_dim: 512
+    init_cls_num: 50   # 50
+    inc_cls_num: 5    # 5
+
+
+    root: bata
+    log_root: log
+    total_nc: 100
+    protoAug_weight: 15.0
+    kd_weight: 15.0
+    temp: 0.1
+    output_dims:
+      - fc: 100
+      - classifier: 50

@@ -28,10 +28,15 @@ class AverageMeter(object):
         if self.writer is not None:
             tag = "{}/{}".format(self.name, key)
             self.writer.add_scalar(tag, value)
-        self._data.last_value[key] = value
-        self._data.total[key] += value * n
-        self._data.counts[key] += n
-        self._data.average[key] = self._data.total[key] / self._data.counts[key]
+        # self._data.last_value[key] = value
+        # self._data.total[key] += value * n
+        # self._data.counts[key] += n
+        # self._data.average[key] = self._data.total[key] / self._data.counts[key]
+        self._data.loc[key, 'last_value'] = value
+        self._data.loc[key, 'total'] += value * n
+        self._data.loc[key, 'counts'] += n
+        self._data.loc[key, 'average'] = self._data.loc[key, 'total'] / self._data.loc[key, 'counts']
+
 
     def avg(self, key):
         return self._data.average[key]
