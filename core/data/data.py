@@ -3,7 +3,7 @@ from torchvision import transforms
 
 class CIFARTransform:
     MEAN = [0.5071,  0.4866,  0.4409]
-    STD = [0.2009,  0.1984,  0.2023]
+    STD = [0.2675, 0.2565, 0.2761]
     
     common_trfs = [transforms.ToTensor(),
                    transforms.Normalize(mean=MEAN, std=STD)]
