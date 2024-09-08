@@ -31,8 +31,8 @@ If you use this code for your research, please consider citing:
     python run_trainer.py
     ```
 
-| Dataset  | Num of Tasks | Buffer Size | Reported Average Accuracy | Reproduced Average Accuracy |
-| :------: | :----------: | :---------: | :-----------------------: | :-------------------------: |
-| CIFAR100 |      5       |      0      |           69.54           |            70.02            |
-| CIFAR100 |      10      |      0      |           67.12           |            68.86            |
+| Dataset  | Num of Tasks | Buffer Size | Reproduced Average Accuracy | Reported Average Accuracy |
+| :------: | :----------: | :---------: | :-------------------------: | :-----------------------: |
+| CIFAR100 |      5       |      0      |            69.54            |           70.02           |
+| CIFAR100 |      10      |      0      |            67.12            |           68.86           |
 

@@ -32,7 +32,7 @@ Continual learning requires the model to learn multiple tasks sequentially. In c
 
 ## Results
 
-| Dataset  |  Backbone  | Num of tasks | Buffer size | Reproduced Accuracy | Reported Accuracy |
-| :------: |:---------: | :----------: | :---------: | :-----------------: | :---------------: |
-| CIFAR100 |      SiNet      |      10      |    0    |        87.09        |       $86.51 \pm 0.73$(the 10th task)      |
-| CIFAR100 |      SiNet      |      10      |    0    |        91.37        |       $91.70 \pm 0.32$(the average of 10 tasks)      |
+| Dataset  | Backbone | Num of tasks | Buffer size | Reproduced Accuracy |             Reported Accuracy             |
+| :------: | :------: | :----------: | :---------: | :-----------------: | :---------------------------------------: |
+| CIFAR100 |  SiNet   |      10      |      0      |        87.09        |      $86.51 \pm 0.73$(the 10th task)      |
+| CIFAR100 |  SiNet   |      10      |      0      |        91.37        | $91.70 \pm 0.32$(the average of 10 tasks) |
