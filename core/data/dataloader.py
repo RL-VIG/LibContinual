@@ -1,4 +1,4 @@
-from torchvision import transforms
+from torchvision import datasets, transforms
 # from .augments import *
 import os
 import numpy as np

@@ -208,7 +208,6 @@ class VisionTransformer(nn.Module):
     @torch.jit.ignore()
     def load_pretrained(self, checkpoint_path, prefix=''):
         _load_weights(self, checkpoint_path, prefix)
-        
 
 @torch.no_grad()
 def _load_weights(model: VisionTransformer, checkpoint_path: str, prefix: str = ''):
@@ -315,9 +314,6 @@ def interpolate_pos_embed(pos_embed_checkpoint, visual_encoder):
 class ViTZoo(nn.Module):
     def __init__(self, num_classes=10, pretrain=False, **kwargs):
         super(ViTZoo, self).__init__()
-
-        # get last layer
-        # self.last = nn.Linear(512, num_classes)
         
         self.task_id = None
         self.feat_dim = 768
@@ -364,8 +360,9 @@ class ViTZoo(nn.Module):
             out, prompt_loss = self.feat(x, prompt=self.prompt, q=q, train=train, task_id=self.task_id)
             out = out[:,0,:]
         else:
-            out, _ = self.feat(x)
+            out, _ = self.feat(x) 
             out = out[:,0,:]
+            
         out = out.view(out.size(0), -1)
         # if not pen:
         #     out = self.last(out)
@@ -374,7 +371,78 @@ class ViTZoo(nn.Module):
         else:
             return out
             
+
+class ViT_in21k_adapter(nn.Module):
+    def __init__(self, num_classes=10, pretrain=False, **kwargs):
+        super(ViT_in21k_adapter, self).__init__()
+
+        self.task_id = None
+        self.feat_dim = 768
+        # get feature encoder
+        if pretrain:
+            print("Using pretrained model")
+            from core.model.backbone.petl import vision_transformer_adapter
+            from easydict import EasyDict
+
+            tuning_config = EasyDict(
+                # AdaptFormer
+                ffn_adapt=True,
+                ffn_option="parallel",
+                ffn_adapter_layernorm_option="none",
+                ffn_adapter_init_option="lora",
+                ffn_adapter_scalar="0.1",
+                ffn_num=64,
+                d_model=768,
+                # VPT related
+                vpt_on=False,
+                vpt_num=0,
+            )
+
+            zoo_model = vision_transformer_adapter.vit_base_patch16_224_in21k_adapter(num_classes=0,
+                    global_pool=False, drop_path_rate=0.0, tuning_config=tuning_config)
+            zoo_model.out_dim=768
+            zoo_model.eval()
+
+        self.prompt = None
         
+        # feature encoder changes if transformer vs resnet
+        self.feat = zoo_model
+        
+        
+    def create_prompt(self, prompt_flag, **kwargs):
+        self.prompt_flag = prompt_flag
+        # self.prompt_param = prompt_param
+        # create prompting module
+        if self.prompt_flag == 'l2p':
+            self.prompt = L2P(768, **kwargs)
+        elif self.prompt_flag == 'dual':
+            self.prompt = DualPrompt(768, **kwargs)
+        elif self.prompt_flag == 'coda':
+            self.prompt = CodaPrompt(768, **kwargs)
+        
+        
+    # pen: get penultimate features    
+    def forward(self, x, pen=False, train=False):
+        if self.prompt is not None:
+            with torch.no_grad():
+                q, _ = self.feat(x)
+                q = q[:,0,:]
+            out, prompt_loss = self.feat(x, prompt=self.prompt, q=q, train=train, task_id=self.task_id)
+            out = out[:,0,:]
+        else:
+            out = self.feat(x) # This implementation of adapter vit doesn't return prompt loss
+            
+        out = out.view(out.size(0), -1)
+        # if not pen:
+        #     out = self.last(out)
+        if self.prompt is not None and train:
+            return out, prompt_loss
+        else:
+            return out
+
+
 def vit_pt_imnet(pretrained=False, **kwargs):
     return ViTZoo(**kwargs)
 
+def vit_pt_imnet_in21k_adapter(pretrained=False, **kwargs):
+    return ViT_in21k_adapter(**kwargs)
