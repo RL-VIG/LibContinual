@@ -155,7 +155,6 @@ class Trainer(object):
             scheduler = get_instance(
                 torch.optim.lr_scheduler, "lr_scheduler", config, optimizer=optimizer)
 
-
         if 'init_epoch' in config.keys():
             init_epoch = config['init_epoch']
         else:
@@ -261,6 +260,8 @@ class Trainer(object):
             best_acc = 0.
             for epoch_idx in range(self.init_epoch if task_idx == 0 else self.inc_epoch):
 
+
+
                 print("learning rate: {}".format(self.scheduler.get_last_lr()))
                 print("================ Train on the train set ================")
                 train_meter = self._train(epoch_idx, dataloader)
@@ -278,6 +279,10 @@ class Trainer(object):
                     )
             
                 self.scheduler.step()
+
+
+
+
 
             if hasattr(self.model, 'after_task'):
                 self.model.after_task(task_idx, self.buffer, self.train_loader.get_loader(task_idx), self.test_loader.get_loader(task_idx))
@@ -381,20 +386,22 @@ class Trainer(object):
         meter = deepcopy(self.train_meter)
         meter.reset()
 
+
         with tqdm(total=len(dataloader)) as pbar:
             for batch_idx, batch in enumerate(dataloader):
+
+                # Measure time for observing
                 output, acc, loss = self.model.observe(batch)
 
                 self.optimizer.zero_grad()
 
                 loss.backward()
-
                 self.optimizer.step()
+
                 pbar.update(1)
-                
+
                 meter.update("acc1", 100 * acc)
                 meter.update("loss", loss.item())
-
 
         return meter
 

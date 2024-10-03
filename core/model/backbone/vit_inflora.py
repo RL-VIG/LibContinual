@@ -705,6 +705,9 @@ def _create_vision_transformer(variant, pretrained=False, **kwargs):
         _logger.warning("Removing representation layer for fine-tuning.")
         repr_size = None
 
+    if pretrained_cfg:
+        del kwargs['pretrained_cfg']
+
     model = build_model_with_cfg(
         VisionTransformer, variant, pretrained,
         pretrained_cfg=pretrained_cfg,

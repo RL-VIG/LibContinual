@@ -3,7 +3,7 @@ import torch.nn as nn
 import copy
 
 from .vit_inflora import VisionTransformer, PatchEmbed, Block, resolve_pretrained_cfg, build_model_with_cfg, checkpoint_filter_fn
-
+#from .vit_inflora_opt import VisionTransformer, PatchEmbed, Block, resolve_pretrained_cfg, build_model_with_cfg, checkpoint_filter_fn
 
 class ViT_lora_co(VisionTransformer):
     def __init__(

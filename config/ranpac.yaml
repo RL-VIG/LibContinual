@@ -1,0 +1,60 @@
+save_path : ""
+data_root: "/home/lvqiexuan/temp_data/cifar100/"
+
+init_cls_num: &init_cls_num 10 # 第一次任务的分类数量
+inc_cls_num: &inc_cls_num 10   # 之后每次任务的分类数量
+total_cls_num: &total_cls_num 100
+num_classes: &num_classes 100 
+task_num: &task_num 10
+
+task_num: *task_num
+init_cls_num: *init_cls_num
+inc_cls_num: *inc_cls_num
+total_cls_num: *total_cls_num
+init_epoch: 20 # 20
+epoch: 1 # 20
+batch_size: 48 # 128
+val_per_epoch: 20
+workers: 16
+
+device_ids: 2
+
+optimizer:
+  name: SGD # Adam
+  kwargs:
+    momentum: 0.9
+    lr: 0.01
+    weight_decay: 0.0005
+
+lr_scheduler:
+  name: CosineAnnealingLR # StepLR
+  kwargs:
+    #gamma: 0.5 
+    #step_size: 10
+    T_max: 20
+    eta_min: 0.0
+
+# buffer is not used in this method
+buffer:
+  name: LinearBuffer
+  kwargs:
+    buffer_size: 0
+    strategy: None
+    batch_size: 
+
+backbone:
+  name: vit_pt_imnet_in21k_adapter
+  kwargs:
+    pretrain: True
+
+classifier:
+  name: RanPAC
+  kwargs:
+    use_RP: True
+    M: 10000
+    first_session_training: True
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    task_num: *task_num
+    total_cls_num: *total_cls_num
+    embd_dim: 768

@@ -1,8 +1,11 @@
 from .resnet import *
 from .vit import vit_pt_imnet
+from .vit import vit_pt_imnet_in21k_adapter
 from .SiNet import SiNet_vit
 from .vit_inflora import Attention_LoRA
 from .resnet_cbam import *
+from .alexnet import AlexNet
+from .alexnet_trgp import AlexNet_TRGP
 
 def get_backbone(config):
     """
