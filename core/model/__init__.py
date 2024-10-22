@@ -18,3 +18,8 @@ from .codaprompt import CodaPrompt
 from .InfLoRA import InfLoRA
 from .praka import PRAKA
 from .ranpac import RanPAC
+
+from .InfLoRA_trgp import InfLoRA_TRGP
+from .InfLoRA_trgp2 import InfLoRA_TRGP2
+from .trgp import TRGP
+from .InfLoRA_opt import InfLoRA_OPT

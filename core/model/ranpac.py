@@ -6,11 +6,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import transforms
 
-# the acc of in-epoch test beside task 0 is low bcs the model classifier head never being train, 
-# it is only train in after_task, so only last test acc is high
-
-# changing trfm in before_task only change the trfm in before_task, not in traning steps
-# and theres no way to change the trfm in training step other than directly chaning in data.py 
+'''Note
+The accuracy of in-epoch test beside task 0 is low because the model classifier head is only being trained in after_task
+'''
 
 class CosineLinear(nn.Module):
     def __init__(self, in_features, out_features):

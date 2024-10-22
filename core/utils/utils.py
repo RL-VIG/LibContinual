@@ -46,6 +46,9 @@ class AverageMeter(object):
 
     def last(self, key):
         return self._data.last_value[key]
+
+    def total(self, key):
+        return self._data.total[key]
     
 
 

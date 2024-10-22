@@ -27,7 +27,7 @@ import numpy as np
 from tqdm import tqdm
 from sklearn.cluster import KMeans
 
-from .backbone import Attention_LoRA
+from .backbone.vit_inflora import Attention_LoRA
 from copy import deepcopy
 import math
 from  .finetune import Finetune
@@ -112,6 +112,7 @@ class InfLoRA(Finetune):
         Code Reference:
         https://github.com/gydpku/OCM/blob/main/test_cifar10.py
         '''
+
         # Update some variables
         self._known_classes = self._total_classes       
         self._cur_task += 1

@@ -38,6 +38,7 @@ The environment can be configured in any of the following ways:
     torchvision==0.13.1
     tqdm==4.64.1
     python==3.8.0
+    timm=0.6.7
     ```
 
 ## Test the installation

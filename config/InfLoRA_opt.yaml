@@ -11,33 +11,37 @@ task_num: *task_num
 init_cls_num: *init_cls_num
 inc_cls_num: *inc_cls_num
 total_cls_num: *total_cls_num
-init_epoch: 200 # 200
-epoch: 200 # 200
-batch_size: 64 
-val_per_epoch: 200
+init_epoch: 20 # 20
+epoch: 20 # 20
+val_per_epoch: 20
 workers: 16
+
+batch_size: 128
 
 device_ids: 0
 
-setting: task-aware
+setting: task-agnostic # not require task id during inference
+# or task-aware, require task id during inference
 
 optimizer:
-  name: SGD
+  name: Adam
   kwargs:
-    lr: 0.01
+    lr: 0.0005
     weight_decay: 0
+    betas: [0.9, 0.999]
 
-# make it constant to 0.01
 lr_scheduler:
-  name: PatienceSchedule
+  name: CosineSchedule
   kwargs:
-    patience: 6
-    factor: 2
-    stopping_lr: 1e-5
+    K: 20
 
 backbone:
-  name: AlexNet_TRGP
+  name: vit_pt_imnet_in21k_lora
   kwargs:
+    pretrained: True
+    rank: 10
+    
+
 
 buffer:
   name: LinearBuffer
@@ -47,8 +51,16 @@ buffer:
     strategy: herding     # random, equal_random, reservoir, herding
 
 classifier:
-  name: TRGP
+  name: InfLoRA_OPT
   kwargs:
     init_cls_num: 10
     inc_cls_num: 10
     task_num: 10
+    lame: 1.0
+    lamb: 0.95
+    embd_dim: 768
+
+
+
+
+

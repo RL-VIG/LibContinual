@@ -13,77 +13,45 @@ class Conv2d(nn.Conv2d):
                 dilation=1,
                 groups=1,                                                   
                 bias=True):
-        super(Conv2d, self).__init__(in_channels, out_channels,
-              kernel_size, stride=stride, padding=padding, bias=bias)
-        # define the scale v
-        size = self.weight.size(1) * self.weight.size(2) * self.weight.size(3)
-        scale = self.weight.data.new(size, size)
-        scale.fill_(0.)
-        # initialize the diagonal as 1
-        scale.fill_diagonal_(1.)
-        # self.scale1 = scale.cuda()
-        self.scale1 = nn.Parameter(scale, requires_grad = True)
-        self.scale2 = nn.Parameter(scale, requires_grad = True)
-        self.noise = False
-        if self.noise:
-            self.alpha_w1 = nn.Parameter(torch.ones(self.out_channels).view(-1,1,1,1)*0.02, requires_grad = True)
-            self.alpha_w2 = nn.Parameter(torch.ones(self.out_channels).view(-1,1,1,1)*0.02, requires_grad = True)
+        super(Conv2d, self).__init__(in_channels, out_channels, kernel_size, stride=stride, padding=padding, bias=bias)
 
-    def forward(self, input, space1=None, space2=None):
+        # define the scale V
+        size = self.weight.shape[1] * self.weight.shape[2] * self.weight.shape[3]
+        self.identity_matrix = torch.eye(size, device = self.weight.device)
+
+        self.space = []
+        self.scale_param = nn.ParameterList()
+
+        self.scale1 = nn.Parameter(self.identity_matrix, requires_grad = True)
+        self.scale2 = nn.Parameter(self.identity_matrix, requires_grad = True)
+
+    def enable_scale(self, space):
+        self.space = space
+        self.scale_param = nn.ParameterList([nn.Parameter(self.identity_matrix).to(self.weight.device) for _ in self.space])
+
+    def disable_scale(self):
+        self.space = []
+        self.scale_param = nn.ParameterList()
+
+    def forward(self, input, compute_input_matrix = False):
            
-        self.input_matrix = input # save input_matrix here
+        # this should be only called once for each task
+        if compute_input_matrix:
+            self.input_matrix = input
 
-        if self.noise:
-            with torch.no_grad():
-                std = self.weight.std().item()
-                noise = self.weight.clone().normal_(0,std)
-        if space1 is not None or space2 is not None:
-            sz =  self.weight.grad.data.size(0)
+        sz = self.weight.shape[0]
 
-            if space2 is None:
-                real_scale1 = self.scale1[:space1.size(1), :space1.size(1)]
-                norm_project = torch.mm(torch.mm(space1, real_scale1), space1.transpose(1, 0))
-                #[chout, chinxkxk]  [chinxkxk, chinxkxk]
-                proj_weight = torch.mm(self.weight.view(sz,-1),norm_project).view(self.weight.size())
-                diag_weight = torch.mm(self.weight.view(sz,-1),torch.mm(space1, space1.transpose(1,0))).view(self.weight.size())
-                if self.noise and self.training:
-                    masked_weight = proj_weight + self.weight - diag_weight + self.alpha_w2 * noise * self.noise
-                else:
-                    masked_weight = proj_weight + self.weight - diag_weight 
+        masked_weight = self.weight
 
-            if space1 is None:
+        for scale, space in zip(self.scale_param, self.space):
 
-                real_scale2 = self.scale2[:space2.size(1), :space2.size(1)]
-                norm_project = torch.mm(torch.mm(space2, real_scale2), space2.transpose(1, 0))
-     
-                proj_weight = torch.mm(self.weight.view(sz,-1),norm_project).view(self.weight.size())
-                diag_weight = torch.mm(self.weight.view(sz,-1),torch.mm(space2, space2.transpose(1,0))).view(self.weight.size())
+            cropped_scale = scale[:space.size(1), :space.size(1)]
+            cropped_identity_matrix = self.identity_matrix[:space.shape[1], :space.shape[1]].to(self.weight.device)
 
-                if self.noise:
-                    masked_weight = proj_weight + self.weight - diag_weight + self.alpha_w2 * noise * self.noise
-                else:
-                    masked_weight = proj_weight + self.weight - diag_weight 
-            if space1 is not None and space2 is not None:
-                real_scale1 = self.scale1[:space1.size(1), :space1.size(1)]
-                norm_project1 = torch.mm(torch.mm(space1, real_scale1), space1.transpose(1, 0))
-                proj_weight1 = torch.mm(self.weight.view(sz,-1),norm_project1).view(self.weight.size())
-                diag_weight1 = torch.mm(self.weight.view(sz,-1),torch.mm(space1, space1.transpose(1,0))).view(self.weight.size())
+            masked_weight = masked_weight + (self.weight.view(sz, -1) @ space @ (cropped_scale - cropped_identity_matrix) @ space.T).\
+                                            view(self.weight.shape)
 
-                real_scale2 = self.scale2[:space2.size(1), :space2.size(1)]
-                norm_project2 = torch.mm(torch.mm(space2, real_scale2), space2.transpose(1, 0))
-                proj_weight2 = torch.mm(self.weight.view(sz,-1),norm_project2).view(self.weight.size())
-                diag_weight2 = torch.mm(self.weight.view(sz,-1),torch.mm(space2, space2.transpose(1,0))).view(self.weight.size())
-
-                if self.noise:
-                    masked_weight = proj_weight1 - diag_weight1 + proj_weight2 - diag_weight2 + self.weight + ((self.alpha_w2 + self.alpha_w1)/2) * noise * self.noise
-                else:
-                    masked_weight = proj_weight1 - diag_weight1 + proj_weight2 - diag_weight2 + self.weight
-       
-        else:
-            masked_weight = self.weight
-
-        return F.conv2d(input, masked_weight, self.bias, self.stride,
-                        self.padding, self.dilation, self.groups)
+        return F.conv2d(input, masked_weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
 
 class Linear(nn.Linear):
 
@@ -91,60 +59,34 @@ class Linear(nn.Linear):
         super(Linear, self).__init__(in_features, out_features, bias = bias)
 
         # define the scale Q
-        scale = self.weight.data.new(self.weight.size(1), self.weight.size(1))
-        scale.fill_(0.)
-        scale.fill_diagonal_(1.)
+        self.identity_matrix = torch.eye(self.weight.shape[1], device = self.weight.device)
 
-        self.scale1 = nn.Parameter(scale, requires_grad = True)
-        self.scale2 = nn.Parameter(scale, requires_grad = True)
+        self.space = []
+        self.scale_param = nn.ParameterList()
 
-        self.input_matrix = torch.zeros(125 ,1024) # harcoded
+    def enable_scale(self, space):
+        self.space = space
+        self.scale_param = nn.ParameterList([nn.Parameter(self.identity_matrix).to(self.weight.device) for _ in self.space])
 
-    def forward(self, input, space1 = None, space2 = None, compute_input_matrix = False):
+    def disable_scale(self):
+        self.space = []
+        self.scale_param = nn.ParameterList()
 
-        self.input_matrix = input # save input_matrix here
-
-        if input.dim() > 2:
-            input = input.view(input.size(0), -1)
+    def forward(self, input, compute_input_matrix = False):
 
         # this should be only called once for each task
         if compute_input_matrix:
-            self.input_matrix = input
+            self.input_matrix = input # save input_matrix here
             
-        if space1 is not None and space2 is not None:
-            real_scale1 = self.scale1[:space1.size(1), :space1.size(1)]
-            norm_project1 = torch.mm(torch.mm(space1, real_scale1), space1.transpose(1, 0))
-            proj_weight1 = torch.mm(self.weight,norm_project1)
-            diag_weight1 = torch.mm(self.weight,torch.mm(space1, space1.transpose(1,0)))
- 
-            real_scale2 = self.scale2[:space2.size(1), :space2.size(1)]
-            norm_project2 = torch.mm(torch.mm(space2, real_scale2), space2.transpose(1, 0))
-            proj_weight2 = torch.mm(self.weight,norm_project2)
-            diag_weight2 = torch.mm(self.weight,torch.mm(space2, space2.transpose(1,0)))
+        masked_weight = self.weight
 
-            masked_weight = proj_weight1 - diag_weight1 + proj_weight2 - diag_weight2 + self.weight
+        for scale, space in zip(self.scale_param, self.space):
 
-        elif space1 is not None:
-            real_scale1 = self.scale1[:space1.size(1), :space1.size(1)]
-            norm_project = torch.mm(torch.mm(space1, real_scale1), space1.transpose(1, 0))
+            cropped_scale = scale[:space.shape[1], :space.shape[1]]
+            cropped_identity_matrix = self.identity_matrix[:space.shape[1], :space.shape[1]].to(self.weight.device)
 
-            proj_weight = torch.mm(self.weight,norm_project)
+            masked_weight = masked_weight + self.weight @ space @ (cropped_scale - cropped_identity_matrix) @ space.T
 
-            diag_weight = torch.mm(self.weight,torch.mm(space1, space1.transpose(1,0)))
-            masked_weight = proj_weight + self.weight - diag_weight 
-
-        elif space2 is not None:
-            real_scale2 = self.scale2[:space2.size(1), :space2.size(1)]
-            norm_project = torch.mm(torch.mm(space2, real_scale2), space2.transpose(1, 0))
-    
-            proj_weight = torch.mm(self.weight,norm_project)
-            diag_weight = torch.mm(self.weight,torch.mm(space2, space2.transpose(1,0)))
-
-            masked_weight = proj_weight + self.weight - diag_weight 
-
-        else:
-            masked_weight = self.weight
-        
         return F.linear(input, masked_weight, self.bias)
 
 class AlexNet_TRGP(nn.Module):
@@ -153,38 +95,58 @@ class AlexNet_TRGP(nn.Module):
 
         super().__init__()
 
-        self.net = nn.ModuleList([
-            Conv2d(in_channels = 3, out_channels = 64, kernel_size = 4, bias = False),
-            nn.BatchNorm2d(64, track_running_stats = False),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate_1),
-            nn.MaxPool2d(kernel_size = 2),
-            Conv2d(in_channels = 64, out_channels = 128, kernel_size = 3, bias = False),
-            nn.BatchNorm2d(128, track_running_stats = False),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate_1),
-            nn.MaxPool2d(kernel_size = 2),
-            Conv2d(in_channels = 128, out_channels = 256, kernel_size = 2, bias = False),
-            nn.BatchNorm2d(256, track_running_stats = False),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate_2),
-            nn.MaxPool2d(kernel_size = 2),
-            Linear(in_features = 1024, out_features = 2048, bias = False),
-            nn.BatchNorm1d(2048, track_running_stats = False),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate_2),
-            Linear(in_features = 2048, out_features = 2048, bias=False),
-            nn.BatchNorm1d(2048, track_running_stats = False),
-            nn.ReLU(),
-            nn.Dropout(dropout_rate_2)]
-        )
+        self.conv1 = Conv2d(in_channels = 3, out_channels = 64, kernel_size = 4, bias = False)
+        self.bn1 = nn.BatchNorm2d(64, track_running_stats = False)
+        
+        self.conv2 = Conv2d(in_channels = 64, out_channels = 128, kernel_size = 3, bias = False)
+        self.bn2 = nn.BatchNorm2d(128, track_running_stats = False)
 
-    def forward(self, x, space1, space2):
+        self.conv3 = Conv2d(in_channels = 128, out_channels = 256, kernel_size = 2, bias = False)
+        self.bn3 = nn.BatchNorm2d(256, track_running_stats = False)
 
-        for module in self.net:
-            if isinstance(module, Conv2d) or isinstance(module, Linear):
-                x = module(x, space1, space2)
-            else:
-                x = module(x)
+        self.fc1 = Linear(in_features = 1024, out_features = 2048, bias = False)
+        self.bn4 = nn.BatchNorm1d(2048, track_running_stats = False)
+
+        self.fc2 = Linear(in_features = 2048, out_features = 2048, bias=False)
+        self.bn5 = nn.BatchNorm1d(2048, track_running_stats = False)
+
+        # common use
+        self.relu = nn.ReLU()
+        self.dropout1 = nn.Dropout(dropout_rate_1)
+        self.dropout2 = nn.Dropout(dropout_rate_2)
+        self.maxpool = nn.MaxPool2d(kernel_size = 2)
+
+    def forward(self, x, compute_input_matrix):
+
+        x = self.conv1(x, compute_input_matrix)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.dropout1(x)
+        x = self.maxpool(x)
+        
+        x = self.conv2(x, compute_input_matrix)
+        x = self.bn2(x)
+        x = self.relu(x)
+        x = self.dropout1(x)
+        x = self.maxpool(x)
+
+        x = self.conv3(x, compute_input_matrix)
+        x = self.bn3(x)
+        x = self.relu(x)
+        x = self.dropout2(x)
+        x = self.maxpool(x)
+
+        x = x.view(x.size(0), -1)
+
+        x = self.fc1(x, compute_input_matrix)
+        x = self.bn4(x)
+        x = self.relu(x)
+        x = self.dropout2(x)
+
+        x = self.fc2(x, compute_input_matrix)
+        x = self.bn5(x)
+        x = self.relu(x)
+        x = self.dropout2(x)
 
         return x
+

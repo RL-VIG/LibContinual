@@ -12,12 +12,12 @@ from torch.utils.data import DataLoader
 import numpy as np
 import sys
 from core.utils import Logger, fmt_date_str
-from torch.optim.lr_scheduler import MultiStepLR
+from torch.optim.lr_scheduler import MultiStepLR, LambdaLR
 import torch.optim as optim
 from copy import deepcopy
 from pprint import pprint
 
-from core.scheduler import CosineSchedule
+from core.scheduler import CosineSchedule, PatienceSchedule
 
 class Trainer(object):
     """
@@ -102,7 +102,6 @@ class Trainer(object):
 
         return device
 
-
     def _init_files(self, config):
         pass
 
@@ -146,11 +145,12 @@ class Trainer(object):
             optimizer = get_instance(
                 torch.optim, "optimizer", config, params=self.model.get_parameters(config)
             )
-
         
         # Check if the learning rate scheduler specified in the configuration is "CosineSchedule"
         if config['lr_scheduler']['name'] == "CosineSchedule":
             scheduler = CosineSchedule(optimizer, K=config['lr_scheduler']['kwargs']['K'])
+        elif config['lr_scheduler']['name'] == "PatienceSchedule":
+            scheduler = PatienceSchedule(optimizer, patience = config['lr_scheduler']['kwargs']['patience'], factor = config['lr_scheduler']['kwargs']['factor'])
         else:
             scheduler = get_instance(
                 torch.optim.lr_scheduler, "lr_scheduler", config, optimizer=optimizer)
@@ -233,7 +233,7 @@ class Trainer(object):
                 self.optimizer,
                 self.scheduler,
             ) = self._init_optim(self.config)
-                
+
             dataloader = self.train_loader.get_loader(task_idx)
 
             if isinstance(self.buffer, (LinearBuffer, LinearHerdingBuffer)) and task_idx != 0:
@@ -260,17 +260,23 @@ class Trainer(object):
             best_acc = 0.
             for epoch_idx in range(self.init_epoch if task_idx == 0 else self.inc_epoch):
 
-
-
                 print("learning rate: {}".format(self.scheduler.get_last_lr()))
                 print("================ Train on the train set ================")
+                
                 train_meter = self._train(epoch_idx, dataloader)
+                    
                 print("Epoch [{}/{}] |\tLoss: {:.4f} \tAverage Acc: {:.2f} ".format(epoch_idx, self.init_epoch if task_idx == 0 else self.inc_epoch, train_meter.avg('loss'), train_meter.avg("acc1")))
 
                 if (epoch_idx+1) % self.val_per_epoch == 0 or (epoch_idx+1)==self.inc_epoch:
                     print("================ Test on the test set ================")
-                    test_acc = self._validate(task_idx)
-                    best_acc = max(test_acc["avg_acc"], best_acc)
+
+                    # disable in-epoch test/validate for method trgp
+                    if self.config["classifier"]["name"] == "TRGP" or self.config["classifier"]["name"] == "InfLoRA_TRGP" or self.config["classifier"]["name"] == "InfLoRA_TRGP2":
+                        test_acc, best_acc = {"avg_acc": 0., "per_task_acc": 0.}, 0. 
+                    else:
+                        test_acc = self._validate(task_idx)
+                        best_acc = max(test_acc["avg_acc"], best_acc)
+                    
                     print(
                     " * Average Acc: {:.2f} Best acc {:.2f}".format(test_acc["avg_acc"], best_acc)
                     )
@@ -278,16 +284,16 @@ class Trainer(object):
                     " * Per-Task Acc:{}".format(test_acc['per_task_acc'])
                     )
             
-                self.scheduler.step()
-
-
-
-
+                if self.config['lr_scheduler']['name'] == "PatienceSchedule":
+                    self.scheduler.step(train_meter.avg('loss'))
+                    if self.scheduler.get_last_lr() < self.config['lr_scheduler']['kwargs']['stopping_lr']:
+                        print(f"{self.scheduler.get_last_lr()} < {self.config['lr_scheduler']['kwargs']['stopping_lr']}, stopping this task now")
+                        break
+                else:
+                    self.scheduler.step()
 
             if hasattr(self.model, 'after_task'):
                 self.model.after_task(task_idx, self.buffer, self.train_loader.get_loader(task_idx), self.test_loader.get_loader(task_idx))
-
-
 
             # stage_2  train
             if self.config["classifier"]["name"] == "bic" and task_idx != 0:
@@ -330,7 +336,6 @@ class Trainer(object):
                 elif self.buffer.strategy == 'random':
                     random_update(self.train_loader.get_loader(task_idx).dataset, self.buffer)
                 
-
             print("================Task {} Testing!================".format(task_idx))
             test_acc = self._validate(task_idx)
             best_acc = max(test_acc["avg_acc"], best_acc)
@@ -371,7 +376,6 @@ class Trainer(object):
 
         return meter
 
-
     def _train(self, epoch_idx, dataloader):
         """
         The train stage.
@@ -386,26 +390,21 @@ class Trainer(object):
         meter = deepcopy(self.train_meter)
         meter.reset()
 
-
-        with tqdm(total=len(dataloader)) as pbar:
-            for batch_idx, batch in enumerate(dataloader):
-
-                # Measure time for observing
-                output, acc, loss = self.model.observe(batch)
-
+        for batch in tqdm(dataloader):
+            if self.config["classifier"]["name"] == "TRGP":
                 self.optimizer.zero_grad()
-
+                output, acc, loss = self.model.observe(batch)
+            else:
+                output, acc, loss = self.model.observe(batch)
+                self.optimizer.zero_grad()
                 loss.backward()
-                self.optimizer.step()
 
-                pbar.update(1)
+            self.optimizer.step()
 
-                meter.update("acc1", 100 * acc)
-                meter.update("loss", loss.item())
+            meter.update("acc1", 100 * acc)
+            meter.update("loss", loss.item())
 
         return meter
-
-
 
     def _validate(self, task_idx):
         dataloaders = self.test_loader.get_loader(task_idx)
@@ -421,14 +420,16 @@ class Trainer(object):
         with torch.no_grad():
             for t, dataloader in enumerate(dataloaders):
                 meter.reset()
-                for batch_idx, batch in enumerate(dataloader):
-                    output, acc = self.model.inference(batch)
+
+                for batch in tqdm(dataloader, desc=f"Testing on Task {t} data"):
+                    if self.config["setting"] == "task-aware":
+                        output, acc = self.model.inference(batch, t)
+                    elif self.config['setting'] == 'task-agnostic':
+                        output, acc = self.model.inference(batch)
+                    
                     meter.update("acc1", 100 * acc)
                     total_meter.update("acc1", 100 * acc)
 
                 per_task_acc.append(round(meter.avg("acc1"), 2))
         
         return {"avg_acc" : round(total_meter.avg("acc1"), 2), "per_task_acc" : per_task_acc}
-    
-
-
