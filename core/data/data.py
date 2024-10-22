@@ -32,7 +32,7 @@ class CIFARTransform:
         transforms.ToTensor(),
         transforms.Normalize(dset_mean, dset_std),
     ])
-    
+
     @staticmethod
     def get_transform(model_type, mode):
         if model_type == 'resnet':
