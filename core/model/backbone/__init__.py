@@ -1,11 +1,16 @@
 from .resnet import *
 from .vit import vit_pt_imnet
 from .vit import vit_pt_imnet_in21k_adapter
+
 from .SiNet import SiNet_vit
-from .vit_inflora import Attention_LoRA
+
 from .resnet_cbam import *
 from .alexnet import AlexNet
 from .alexnet_trgp import AlexNet_TRGP
+
+from .vit_inflora_opt import vit_pt_imnet_in21k_lora
+from .vit_inflora_trgp import vit_pt_imnet_in21k_lora_trgp
+from .vit_inflora_trgp2 import vit_pt_imnet_in21k_lora_trgp2
 
 def get_backbone(config):
     """
@@ -20,7 +25,7 @@ def get_backbone(config):
     kwargs = dict()
     kwargs.update(config['backbone']['kwargs'])
     try:
-        emb_func = eval(config["backbone"['name']])(**kwargs)
+        emb_func = eval(config["backbone"]['name'])(**kwargs)
     except NameError:
         raise ("{} is not implemented".format(config["backbone"]['name']))
     

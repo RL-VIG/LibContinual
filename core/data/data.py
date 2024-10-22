@@ -24,14 +24,24 @@ class CIFARTransform:
         transforms.RandomResizedCrop(224),
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
-        transforms.Normalize(dset_mean, dset_std),
-    ])
+        transforms.Normalize(dset_mean, dset_std)])
     
     vit_test_transform = transforms.Compose([
         transforms.Resize(224),
         transforms.ToTensor(),
-        transforms.Normalize(dset_mean, dset_std),
-    ])
+        transforms.Normalize(dset_mean, dset_std)])
+
+    # from trust region gradient projection
+    mean=[x/255 for x in [125.3,123.0,113.9]]
+    std=[x/255 for x in [63.0,62.1,66.7]]
+
+    alexnet_train_transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean,std)])
+
+    alexnet_test_transform = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean,std)])
 
     @staticmethod
     def get_transform(model_type, mode):
@@ -45,6 +55,11 @@ class CIFARTransform:
                 return CIFARTransform.vit_train_transform
             elif mode == 'test':
                 return CIFARTransform.vit_test_transform
+        elif model_type == 'alexnet':
+            if mode == 'train':
+                return CIFARTransform.alexnet_train_transform
+            elif mode == 'test':
+                return CIFARTransform.alexnet_test_transform
         else:
             raise ValueError("Unsupported model type")
     

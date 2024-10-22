@@ -19,9 +19,13 @@ Continual learning requires the model to learn multiple tasks sequentially. In c
 }
 ```
 
-## How to Reproduce LUCIR
+## Optimizing InfLoRA
 
-- **Step1: Set the path in `run_trainer.py` with `./config/InfLoRA.yaml`**
+InfloRA_opt is a variant of InfLoRA that uses a more efficient optimization algorithm. It merge the lora module into weight after every task, reducing the computational cost and improving the performance.
+
+## How to Reproduce InfLoRA
+
+- **Step1: Set the path in `run_trainer.py` with `./config/InfLoRA.yaml` or `./config/InfLoRA_opt.yaml`**
   ```python
   config = Config("./config/InfLoRA.yaml").get_config_dict()
   ```

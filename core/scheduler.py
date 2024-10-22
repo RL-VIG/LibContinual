@@ -16,7 +16,7 @@ class _LRScheduler(object):
                     raise KeyError("param 'initial_lr' is not specified "
                                    "in param_groups[{}] when resuming an optimizer".format(i))
         self.base_lrs = list(map(lambda group: group['initial_lr'], optimizer.param_groups))
-        self.step(last_epoch + 1)
+        self.step(epoch = last_epoch + 1)
         self.last_epoch = last_epoch
 
     def state_dict(self):
@@ -58,3 +58,38 @@ class CosineSchedule(_LRScheduler):
     
     def get_last_lr(self):
         return self.get_lr()
+
+class PatienceSchedule(_LRScheduler):
+
+    def __init__(self, optimizer, patience, factor):
+        self.factor = factor      # Factor to reduce the learning rate
+        self.patience = patience   # Number of epochs with no improvement
+        self.best_loss = float('inf')  # Best loss seen so far
+        self.counter = 0            # Counter for patience
+
+        super().__init__(optimizer, -1)
+
+    def step(self, current_loss = None, **kwargs):
+        # Some scheduler step function is called with parameter epoch
+        # use kwargs to save it and don't do anything to it
+
+        if current_loss is None:
+            return 0
+        
+        # Check if the current loss improved
+        if current_loss < self.best_loss:
+            self.best_loss = current_loss  # Update the best loss
+            self.counter = 0  # Reset counter since we have an improvement
+        else:
+            
+            self.counter += 1  # Increment counter if no improvement
+        
+        # If patience is exhausted, reduce the learning rate
+        if self.counter >= self.patience:
+            for param_group in self.optimizer.param_groups:
+                param_group['lr'] /= self.factor  # Reduce learning rate by the factor
+            print(f"Reducing learning rate to {self.optimizer.param_groups[0]['lr']:.5f}")
+            self.counter = 0  # Reset counter after reducing learning rate
+
+    def get_last_lr(self):
+        return self.optimizer.param_groups[0]['lr']

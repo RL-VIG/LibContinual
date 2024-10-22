@@ -23,6 +23,8 @@ def get_augment(config, mode='train'):
         d['dataset'] = config['dataset']
     if 'vit' in config['backbone']['name'].lower():
         d['backbone'] = 'vit'
+    if 'alexnet' in config['backbone']['name'].lower():
+        d['backbone'] = 'alexnet'
         
     return transform_classes[d['dataset']].get_transform(d['backbone'], d['mode'])
     

@@ -1,9 +1,12 @@
-data_root: /data/cifar100
+save_path : ""
+data_root: "/home/lvqiexuan/temp_data/cifar100/"
+
 image_size: 224
 save_path: ./
 init_cls_num: 10
 inc_cls_num: 10
 task_num: 10
+val_per_epoch: 20
 
 
 epoch: 20
