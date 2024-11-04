@@ -8,14 +8,11 @@ Continual learning (CL) aims to incrementally learn different tasks (such as cla
 ## Citation
 
 ```bibtex
-@misc{mcdonnell2024ranpacrandomprojectionspretrained,
-      title={RanPAC: Random Projections and Pre-trained Models for Continual Learning}, 
-      author={Mark D. McDonnell and Dong Gong and Amin Parveneh and Ehsan Abbasnejad and Anton van den Hengel},
-      year={2024},
-      eprint={2307.02251},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2307.02251}, 
+@article{zhou2023revisiting,
+    author = {Zhou, Da-Wei and Ye, Han-Jia and Zhan, De-Chuan and Liu, Ziwei},
+    title = {Revisiting Class-Incremental Learning with Pre-Trained Models: Generalizability and Adaptivity are All You Need},
+    journal = {arXiv preprint arXiv:2303.07338},
+    year = {2023}
 }
 ```
 
@@ -34,5 +31,5 @@ Continual learning (CL) aims to incrementally learn different tasks (such as cla
 
 | Dataset  | Backbone | Num of tasks | Buffer size | Reproduced Accuracy |  Reported Accuracy  |
 | :------: | :------: | :----------: | :---------: | :-----------------: | :-----------------: |
-| CIFAR100 |    ViT   |      10      |      0      |        91.74        |        92.11        |
+| CIFAR100 |    ViT   |      10      |      0      |        92.22        |        92.11        |
 

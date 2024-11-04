@@ -34,11 +34,10 @@ class SiNet(nn.Module):
         self._cur_task_id = -1
         self.backbone = backbone
 
-        assert kwargs["init_cls_num"] == kwargs["inc_cls_num"]
         self.classifier_pool = nn.ModuleList([
-            nn.Linear(kwargs["embd_dim"], kwargs["init_cls_num"], bias=True)
-            for _ in range(kwargs["task_num"])
-        ])
+            nn.Linear(kwargs["embd_dim"], kwargs['init_cls_num'], bias=True)] + 
+            [nn.Linear(kwargs["embd_dim"], kwargs['inc_cls_num'], bias=True) for _ in range(kwargs['task_num'] - 1)]
+        )
 
     def update_fc(self):
         self._cur_task_id += 1
@@ -80,10 +79,7 @@ class InfLoRA_OPT(nn.Module):
 
         self._network = SiNet(backbone, **kwargs)
 
-        self.attention_modules = []
-        for module in self._network.modules():
-            if isinstance(module, Attention_LoRA):
-                self.attention_modules.append(module)
+        self.attention_modules = [module for module in self._network.modules() if isinstance(module, Attention_LoRA)]
 
         self._network.to(self.device)
 
@@ -92,7 +88,6 @@ class InfLoRA_OPT(nn.Module):
         Called during the training phase, it inputs a batch of training examples and returns the prediction, accuracy, and forward loss.
         '''
 
-        # Masked Learned Classes
         x, y = data['image'].to(self.device), data['label'].to(self.device) - self._known_classes
 
         logits = self._network(x)
@@ -137,21 +132,12 @@ class InfLoRA_OPT(nn.Module):
         unfrezeed_params = []
         for name, param in self._network.named_parameters():
             param.requires_grad_(False)
-            
-            # impl 2
             if "classifier_pool." + str(task_idx) in name or "lora_B" in name:
                 param.requires_grad_(True)
                 unfrezeed_params.append(name)
-            
-
-            ''' impl 1
-            if "classifier_pool." + str(task_idx) in name or "lora_B_k." + str(task_idx) in name or "lora_B_v." + str(task_idx) in name:
-                param.requires_grad_(True)
-                unfrezeed_params.append(name)
-            '''
 
         print(f"Current task : {task_idx}, Parameters to be updated: {len(unfrezeed_params)}")
-        print(",".join(unfrezeed_params))
+        print(",\n".join(unfrezeed_params))
 
         with torch.no_grad():
             for batch in tqdm(train_loader, desc="Forwarding to get input matrix"):
@@ -181,7 +167,6 @@ class InfLoRA_OPT(nn.Module):
                 module.lora_A_v.weight.data.copy_(U[:,:module.rank].T/math.sqrt(3))
                 module.reset_input_matrix()
     
-
     def after_task(self, task_idx, buffer, train_loader, test_loaders):
         '''
         Called after each task before final testing, it is used to perform preliminary operations on the mapping matrix to facilitate the update of lora_a layer in the next round of before_task
@@ -207,7 +192,7 @@ class InfLoRA_OPT(nn.Module):
 
         if task_idx == 0:
             for module in self.attention_modules:
-                activation = module.cur_matrix
+                activation = module.cur_matrix.detach().numpy()
                 U, S, _ = np.linalg.svd(activation, full_matrices=False)
                 sval_total = (S**2).sum()
                 sval_ratio = (S**2)/sval_total
@@ -221,12 +206,12 @@ class InfLoRA_OPT(nn.Module):
                 module.reset_input_matrix()
         else:
             for i, module in enumerate(self.attention_modules):
-                activation = module.cur_matrix
+                activation = module.cur_matrix.detach().numpy()
                 _, S, _ = np.linalg.svd(activation, full_matrices = False)
                 sval_total = (S**2).sum()
 
                 if self.project_type[i] == 'remove':
-                    act_hat = activation - torch.Tensor(self.feature_list[i] @ self.feature_list[i].T) @ activation
+                    act_hat = activation - self.feature_list[i] @ self.feature_list[i].T @ activation
                     U, S, _ = np.linalg.svd(act_hat, full_matrices = False)
                     sval_hat = (S**2).sum()
                     sval_ratio = (S**2)/sval_total               
@@ -240,7 +225,7 @@ class InfLoRA_OPT(nn.Module):
                         self.feature_list[i] = Ui[:, :min(Ui.shape[0], Ui.shape[1])]
             
                 else:
-                    act_hat = torch.Tensor(self.feature_list[i] @ self.feature_list[i].T) @ activation
+                    act_hat = self.feature_list[i] @ self.feature_list[i].T @ activation
                     U, S, _ = np.linalg.svd(act_hat, full_matrices = False)
                     sval_hat = (S**2).sum()
                     sval_ratio = (S**2)/sval_total        

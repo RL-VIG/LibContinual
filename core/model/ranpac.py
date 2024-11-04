@@ -1,3 +1,19 @@
+'''
+@article{zhou2023revisiting,
+    author = {Zhou, Da-Wei and Ye, Han-Jia and Zhan, De-Chuan and Liu, Ziwei},
+    title = {Revisiting Class-Incremental Learning with Pre-Trained Models: Generalizability and Adaptivity are All You Need},
+    journal = {arXiv preprint arXiv:2303.07338},
+    year = {2023}
+}
+
+Code Reference:
+https://github.com/RanPAC/RanPAC
+
+Note:
+* The accuracy of in-epoch test beside task 0 is low because the model classifier head is only being trained in after_task
+* If you want to use transformation of dataset in original ranpac implementation, which result in better performance, set the attribute '_use_org_trfms' to be True
+'''
+
 import copy
 import math
 import numpy as np
@@ -5,10 +21,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torchvision import transforms
-
-'''Note
-The accuracy of in-epoch test beside task 0 is low because the model classifier head is only being trained in after_task
-'''
 
 class CosineLinear(nn.Module):
     def __init__(self, in_features, out_features):
@@ -35,8 +47,9 @@ class CosineLinear(nn.Module):
             out = F.linear(F.normalize(input, p=2, dim=1), F.normalize(self.weight, p=2, dim=1))
         else:
             if self.W_rand is not None:
-                inn = torch.nn.functional.relu(input @ self.W_rand)
+                inn = F.relu(input @ self.W_rand)
             else:
+                assert 0, 'should not reach here, for now'
                 inn = input
             out = F.linear(inn, self.weight)
 
@@ -86,95 +99,16 @@ class RanPAC(nn.Module):
         self.inc_cls_num = kwargs["inc_cls_num"]
         self.total_cls_num = kwargs['total_cls_num']
         self.task_num = kwargs["task_num"]
-        self.use_RP = kwargs["use_RP"]
+        #self.use_RP = kwargs["use_RP"]
         self.M = kwargs['M']
 
         self._known_classes = 0
         self._classes_seen_so_far = 0
-        self._train_flag = False # flag to indicate if the model should do training
-        self._use_trfm_org = False # use transformation of data in originial code
-
-        '''
-        If you want to use transformation of dataset in original ranpac implementation, which result in better performance, 
-        replace the 'vit_train_transform' and 'vit_test_transform' in core/data/data.py with code below.
-
-        vit_train_transform = transforms.Compose([
-            transforms.RandomResizedCrop(224, scale=(0.05, 1.0), ratio=(3. / 4., 4. / 3.)),
-            transforms.RandomHorizontalFlip(p=0.5),
-            transforms.ToTensor()
-        ])
-
-        vit_test_transform = transforms.Compose([
-            transforms.Resize(224, interpolation=transforms.InterpolationMode.BICUBIC),
-            transforms.CenterCrop(224),
-            transforms.ToTensor()
-        ])
-
-        and set the 'self._use_trfm_org' be True
-        '''
+        self._use_org_trfms = True # set to True if you want to use original implementation transforms of data
+        self._skip_train = False # this flag is used to skip training
+        self._skip_test = False # this flag is used to skip in-epoch test
 
         self._network.to(self.device)
-
-    def freeze_backbone(self):
-
-        for name, param in self._network.backbone.named_parameters():
-            param.requires_grad = False
-
-    def setup_RP(self):
-
-        self._network.classifier.use_RP=True
-
-        self._network.classifier.weight = nn.Parameter(torch.Tensor(self._network.classifier.out_features, self.M).to(self.device)) #num classes in task x M
-        self._network.classifier.reset_parameters()
-
-        self._network.classifier.W_rand=torch.randn(self._network.classifier.in_features, self.M).to(self.device)
-        self.W_rand = copy.deepcopy(self._network.classifier.W_rand)
-        self.Q = torch.zeros(self.M, self.total_cls_num)
-        self.G = torch.zeros(self.M, self.M)
-    
-    def update_classifier(self, train_loader):
-
-        self._network.eval() 
-
-        self._network.classifier.use_RP=True
-        self._network.classifier.W_rand = self.W_rand
-
-        feature_list, label_list = [], []
-        for batch_idx, batch in enumerate(train_loader):
-            x, y = batch['image'].to(self.device), batch['label']
-            feature_list.append(self._network.get_feature(x).cpu())
-            label_list.append(y)
-            
-        feature_list, label_list = torch.cat(feature_list, dim=0), torch.cat(label_list, dim=0)
-
-        def target2onehot(targets, num_classes):
-            onehot = torch.zeros(targets.shape[0], num_classes).to(targets.device)
-            onehot.scatter_(dim=1, index=targets.long().view(-1, 1), value=1.0)
-            return onehot
-        
-        label_list = target2onehot(label_list, self.total_cls_num)
-        proj_feature_list = torch.nn.functional.relu(feature_list @ self._network.classifier.W_rand.cpu())
-
-        self.Q += proj_feature_list.T @ label_list
-        self.G += proj_feature_list.T @ proj_feature_list
-
-        def optimise_ridge_parameter(features, labels):
-            ridges = 10.0**np.arange(-8,9)
-            num_val_samples = int(features.shape[0]*0.8)
-            losses = []
-            Q_val = features[:num_val_samples,:].T @ labels[:num_val_samples,:]
-            G_val = features[:num_val_samples,:].T @ features[:num_val_samples,:]
-            for ridge in ridges:
-                Wo = torch.linalg.solve(G_val + ridge * torch.eye(G_val.size(dim=0)), Q_val).T #better nmerical stability than .inv
-                Y_train_pred = features[num_val_samples::,:] @ Wo.T
-                losses.append(F.mse_loss(Y_train_pred, labels[num_val_samples::,:]))
-            ridge = ridges[np.argmin(np.array(losses))]
-            print(f"Optimal lambda: {ridge}")
-            return ridge
-
-        ridge = optimise_ridge_parameter(proj_feature_list, label_list)
-        Wo = torch.linalg.solve(self.G + ridge * torch.eye(self.G.size(dim=0)), self.Q).T #better nmerical stability than .inv
-        self._network.classifier.weight.data = Wo[0:self._network.classifier.weight.shape[0],:].to(self.device)
 
     def before_task(self, task_idx, buffer, train_loader, test_loaders):
 
@@ -186,30 +120,33 @@ class RanPAC(nn.Module):
         self._network.update_classifer(self._classes_seen_so_far)
 
         if task_idx == 0 and self.first_session_training:
-            self._train_flag = True
-
-        if task_idx == 1 and self.first_session_training:
-            #for name, param in self._network.named_parameters():
-            #    param.requires_grad = False
-            self._train_flag = False
-
-        if not self._train_flag:
+            self._skip_train = False
+        else:
+            self._skip_train = True
             print(f"Not training on task {task_idx}")
+
+        self._skip_test = True
+
+        if self._use_org_trfms:
+            train_loader.dataset.trfms = transforms.Compose([
+                transforms.RandomResizedCrop(224, scale=(0.05, 1.0), ratio=(3. / 4., 4. / 3.)),
+                transforms.RandomHorizontalFlip(p=0.5),
+                transforms.ToTensor()
+            ])
+            for loader in test_loaders:
+                loader.dataset.trfms = transforms.Compose([
+                    transforms.Resize(224, interpolation=transforms.InterpolationMode.BICUBIC),
+                    transforms.CenterCrop(224),
+                    transforms.ToTensor()
+                ])
 
     def observe(self, data):
 
-        if not self._train_flag:
+        if self._skip_train:
             # set required_grad be True so that it can call backward() but don't do anything
-            empty_loss = torch.tensor(0.0, device=self.device, requires_grad=True)
-            return None, 0., empty_loss
+            return None, 0., torch.tensor(0.0, device = self.device, requires_grad = True)
 
-        self._network.train()
-
-        # Mask learned classes, leaving only unlearned classes
-        inputs, targets = data['image'].to(self.device), data['label'].to(self.device)
-        mask = (targets >= self._known_classes).nonzero().view(-1)
-        inputs = torch.index_select(inputs, 0, mask)
-        targets = torch.index_select(targets, 0, mask) - self._known_classes
+        inputs, targets = data['image'].to(self.device), data['label'].to(self.device) - self._known_classes
 
         logits = self._network(inputs)['logits']
         loss = F.cross_entropy(logits, targets)
@@ -224,6 +161,9 @@ class RanPAC(nn.Module):
 
     def inference(self, data):
 
+        if self._skip_test:
+            return None, 0.
+
         inputs, targets = data['image'].to(self.device), data['label']
         logits = self._network(inputs)['logits']
         _, preds = torch.max(logits, dim=1)
@@ -237,26 +177,58 @@ class RanPAC(nn.Module):
 
     def after_task(self, task_idx, buffer, train_loader, test_loaders):
 
+        self._skip_test = False
         self._known_classes = self._classes_seen_so_far
 
         if task_idx == 0:
-            self.freeze_backbone()
-            self.setup_RP()
+            
+            # Initialize attribute for random projection classifier
+            self.W_rand = torch.randn(self._network.classifier.in_features, self.M) 
+            self.Q = torch.zeros(self.M, self.init_cls_num)
+            self.G = torch.zeros(self.M, self.M)
 
-        # Changing the transformation of data in train_loader to transformation of test data
-        if self._use_trfm_org:
-            train_loader.trfms = transforms.Compose([
-                transforms.Resize(224, interpolation=transforms.InterpolationMode.BICUBIC),
-                transforms.CenterCrop(224),
-                transforms.ToTensor()])
         else:
-            train_loader.trfms = transforms.Compose([
-                transforms.Resize(224),
-                transforms.ToTensor(),
-                transforms.Normalize((0., 0., 0.), (1., 1., 1.))])
+            self.Q = torch.cat((self.Q, torch.zeros(self.M, self.inc_cls_num)), dim=1)
 
-        # train_loader is now train_loader_for_CPs
-        self.update_classifier(train_loader)
+        self.update_rp_classifier(train_loader, test_loaders[0].dataset.trfms)
+
+    @torch.no_grad()
+    def update_rp_classifier(self, train_loader, test_trfms):
+
+        self._network.eval()
+        train_loader.dataset.trfms = test_trfms
+
+        self._network.classifier.use_RP = True
+        self._network.classifier.W_rand = self.W_rand.to(self.device) # feature_dim x M
+
+        feature_list, label_list = [], []
+        for batch in train_loader:
+            x, y = batch['image'].to(self.device), batch['label']
+            feature_list.append(self._network.get_feature(x).cpu())
+            label_list.append(y)
+        feature_list, label_list = torch.cat(feature_list, dim = 0), torch.cat(label_list, dim = 0)
+        
+        label_list = F.one_hot(label_list, self._classes_seen_so_far).to(torch.float32) 
+        
+        proj_feature_list = F.relu(feature_list @ self.W_rand)
+
+        self.Q += proj_feature_list.T @ label_list
+        self.G += proj_feature_list.T @ proj_feature_list
+        
+        ridges = 10.0**np.arange(-8,9)
+        num_val_samples = int(proj_feature_list.shape[0] * 0.8)
+        losses = []
+        Q_val = proj_feature_list[:num_val_samples, :].T @ label_list[:num_val_samples, :]
+        G_val = proj_feature_list[:num_val_samples, :].T @ proj_feature_list[:num_val_samples, :]
+        for ridge in ridges:
+            Wo = torch.linalg.solve(G_val + ridge * torch.eye(self.M), Q_val).T #better nmerical stability than .inv
+            Y_train_pred = proj_feature_list[num_val_samples:, :] @ Wo.T
+            losses.append(F.mse_loss(Y_train_pred, label_list[num_val_samples:, :]))
+        ridge = ridges[np.argmin(np.array(losses))]
+        print(f"Optimal lambda: {ridge}")
+
+        Wo = torch.linalg.solve(self.G + ridge * torch.eye(self.M), self.Q).T #better nmerical stability than .inv
+        self._network.classifier.weight.data = Wo[:self._network.classifier.weight.shape[0], :].to(self.device) # num_classes x M
 
     def get_parameters(self, config):
         return self._network.parameters()

@@ -21,7 +21,7 @@ Continual learning requires the model to learn multiple tasks sequentially. In c
 
 ## Optimizing InfLoRA
 
-InfloRA_opt is a variant of InfLoRA that uses a more efficient optimization algorithm. It merge the lora module into weight after every task, reducing the computational cost and improving the performance.
+InfLoRA_opt is an optimized version of InfLoRA . It merges the lora module into weight after every task, reducing the computational cost and improving the performance.
 
 ## How to Reproduce InfLoRA
 
