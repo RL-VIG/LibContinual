@@ -1,30 +1,59 @@
-import torch
-import numpy as np
-import torch.nn.functional as F
+# -*- coding: utf-8 -*-
+"""
+@article{lin2022trgp,
+  title={TRGP: Trust Region Gradient Projection for Continual Learning},
+  author={Lin, Sen and Yang, Li and Fan, Deliang and Zhang, Junshan},
+  journal={arXiv preprint arXiv:2202.02931},
+  year={2022}
+}
 
-from torch import nn
-from collections import OrderedDict
-from collections.abc import Iterable
+Code Reference:
+https://github.com/LYang-666/TRGP
+"""
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
 
 from .backbone.alexnet_trgp import Conv2d, Linear
 
-Epsilon_1 = 0.5
+Epsilon = 0.5
+
+class TopK:
+
+    '''
+    A class to maintain a collection of the top K items based on a specified attribute.
+
+    This class allows for the dynamic addition of items, each represented as a dictionary, 
+    where each dictionary must have a key 'proj_norm' that represents the value used 
+    to determine the ranking. The class keeps track of the top K items with the highest 
+    'proj_norm' values.
+    '''
+
+    def __init__(self, k):
+        self.k = k
+        self.top_k_list = []
+
+    def add(self, dict):
+        if len(self.top_k_list) < self.k:
+            self.top_k_list.append(dict)
+        elif dict['proj_norm'] > min(self.top_k_list, key=lambda x: x['proj_norm'])['proj_norm']:
+            self.top_k_list.remove(min(self.top_k_list, key=lambda x: x['proj_norm']))
+            self.top_k_list.append(dict)
+
+    def get_top_k(self):
+        return self.top_k_list
 
 class Network(nn.Module):
     def __init__(self, backbone, **kwargs):
         super().__init__()
         self.backbone = backbone
 
-        self.classifiers = nn.ModuleList([])
-        self.classifiers.append(
-            nn.Linear(2048, kwargs['init_cls_num'], bias = False)
+        self.classifiers = nn.ModuleList([
+            nn.Linear(2048, kwargs['init_cls_num'], bias = False)] + 
+            [nn.Linear(2048, kwargs['inc_cls_num'], bias = False) for _ in range(kwargs['task_num'] - 1)]
         )
-
-        for _ in range(kwargs['task_num'] - 1):
-            self.classifiers.append(
-                nn.Linear(2048, kwargs['inc_cls_num'], bias = False)
-            )
-
 
     def return_hidden(self, data):
         return self.backbone(data)
@@ -36,7 +65,6 @@ class Network(nn.Module):
             logits.append(classifier(image_features))
 
         return logits
-        #return torch.cat(logits, dim=1)
 
 class TRGP(nn.Module):
 
@@ -48,22 +76,19 @@ class TRGP(nn.Module):
         self.task_num = kwargs["task_num"]
         self.init_cls_num = kwargs["init_cls_num"]
         self.inc_cls_num = kwargs["inc_cls_num"]
-        self.number_of_layer = 5 # hardcoded for alexnet
         self._known_classes = 0
 
         self.feature_list = []
-        self.feature_list_each_tasks = [[np.zeros((1)) for _ in range(self.number_of_layer)] for _ in range(self.task_num)]
-        self.scale_param_each_tasks_each_layers = [[np.zeros((1)) for _ in range(self.number_of_layer)] for _ in range(self.task_num)]
-        self.all_space = [[np.zeros((1)) for _ in range(self.number_of_layer)] for _ in range(self.task_num)]
-
         self.feature_mat = []
 
         self.layers = [] # 3 Conv2d, Then 2 Linear
         for module in self.network.modules():
-            if isinstance(module, Conv2d):
+            if isinstance(module, Conv2d) or isinstance(module, Linear):
                 self.layers.append(module)
-            if isinstance(module, Linear):
-                self.layers.append(module)
+
+        self.feature_list_each_tasks = [[np.zeros((1)) for _ in range(len(self.layers))] for _ in range(self.task_num)]
+        self.scale_param_each_tasks_each_layers = [[np.zeros((1)) for _ in range(len(self.layers))] for _ in range(self.task_num)]
+        self.all_space = [[np.zeros((1)) for _ in range(len(self.layers))] for _ in range(self.task_num)]
 
         self.network.to(self.device)
 
@@ -81,18 +106,15 @@ class TRGP(nn.Module):
         loss.backward()
         
         if self.cur_task > 0:
-            kk = 0 
-            for name, param in self.network.named_parameters():
-                if ('fc' in name or 'conv' in name) and 'weight' in name:
-                    sz =  param.grad.data.size(0)
-                    param.grad.data = param.grad.data - (param.grad.data.view(sz,-1) @ self.feature_mat[kk]).view(param.size())
-                    kk +=1
+            for i, module in enumerate(self.layers):
+                sz = module.weight.grad.data.shape[0]
+                module.weight.grad.data = module.weight.grad.data - (module.weight.grad.data.view(sz,-1) @ self.feature_mat[i]).view(module.weight.shape)
 
         return preds, acc, loss
     
     def inference(self, data, task_id):
 
-        x, y = data['image'].to(self.device), data['label'].to(self.device)
+        x, y = data['image'].to(self.device), data['label'].to(self.device) - task_id * 10
 
         for i, module in enumerate(self.layers):
             module.scale_param = nn.ParameterList([
@@ -103,7 +125,6 @@ class TRGP(nn.Module):
         logits = self.network(x)
 
         preds = logits[task_id].max(1)[1]
-        preds += task_id * 10
 
         correct_count = preds.eq(y).sum().item()
         acc = correct_count / y.size(0)
@@ -122,24 +143,16 @@ class TRGP(nn.Module):
         if task_idx > 0:
 
             # temp compute and save them for training later
-            self.feature_mat = [torch.Tensor(feat @ feat.T).to(self.device) for feat in self.feature_list] 
+            self.feature_mat = [torch.tensor(feat @ feat.T, dtype=torch.float32, device=self.device) for feat in self.feature_list] 
 
             optimizer = torch.optim.SGD(self.network.parameters(), lr = 0.0005) # lr hardcoded
 
-            x, y = None, None
-            for batch_idx, batch in enumerate(train_loader):
+            x, y = [], []
+            for batch in train_loader:
+                x.append(batch['image'].to(self.device))
+                y.append(batch['label'].to(self.device) - self._known_classes)
 
-                image, label = batch['image'].to(self.device), batch['label'].to(self.device) - self._known_classes
-
-                if x is not None:
-                    x = torch.cat((x, image), dim=0)
-                else:
-                    x = image
-
-                if y is not None:
-                    y = torch.cat((y, label), dim=0)
-                else:
-                    y = label
+            x, y = torch.cat(x, dim = 0), torch.cat(y, dim = 0)
 
             indices = torch.randperm(x.size(0))
             selected_indices = indices[:125]
@@ -149,45 +162,24 @@ class TRGP(nn.Module):
             loss = F.cross_entropy(logits[self.cur_task], y)
             loss.backward()  
 
-            grad_list = []
-
-            for name, param in self.network.named_parameters():
-                if 'conv' in name and 'weight' in name: # weight of conv
-                    grad = param.grad.data.detach().cpu().numpy()
-                    grad = grad.reshape(grad.shape[0], grad.shape[1] * grad.shape[2] * grad.shape[3])
-                    grad_list.append(grad)
-                if 'fc' in name and 'weight' in name: # weight of linear
-                    grad = param.grad.data.detach().cpu().numpy()
-                    grad_list.append(grad)
-            
-            class TopK:
-                def __init__(self, k):
-                    self.k = k
-                    self.top_k_list = []
-
-                def add(self, dict):
-                    if len(self.top_k_list) < self.k:
-                        self.top_k_list.append(dict)
-                    elif dict['proj_norm'] > min(self.top_k_list, key=lambda x: x['proj_norm'])['proj_norm']:
-                        self.top_k_list.remove(min(self.top_k_list, key=lambda x: x['proj_norm']))
-                        self.top_k_list.append(dict)
-
-                def get_top_k(self):
-                    return self.top_k_list
-
             for i, module in enumerate(self.layers):
 
                 topk = TopK(2)
 
+                if isinstance(module, Conv2d):
+                    grad = module.weight.grad.data.detach().cpu().numpy() # weight of conv
+                    grad = grad.reshape(grad.shape[0], -1)
+                elif isinstance(module, Linear):
+                    grad = module.weight.grad.data.detach().cpu().numpy() # weight of linear
+
                 for task_id in range(task_idx):
 
-                    grad = grad_list[i]
                     proj = grad @ self.feature_list_each_tasks[task_id][i] @ self.feature_list_each_tasks[task_id][i].T
                     proj_norm = np.linalg.norm(proj)
 
-                    print(f'Layer {i} of {task_idx} to {task_id} : {proj_norm:.4f}/{np.linalg.norm(grad):.4f} ({proj_norm > Epsilon_1 * np.linalg.norm(grad)})')
+                    print(f'Layer {i} of {task_idx} to {task_id} : {proj_norm:.4f}/{np.linalg.norm(grad):.4f} ({proj_norm > Epsilon * np.linalg.norm(grad)})')
 
-                    if proj_norm > Epsilon_1 * np.linalg.norm(grad):
+                    if proj_norm > Epsilon * np.linalg.norm(grad):
                         topk.add({'proj_norm':proj_norm, 'task_id': task_id})
 
                 final_decision = [dic['task_id'] for dic in topk.get_top_k()]
@@ -198,27 +190,21 @@ class TRGP(nn.Module):
 
     def after_task(self, task_idx, buffer, train_loader, test_loaders):
 
-    # Save the scale param
+        # Save the scale param
         for i, module in enumerate(self.layers):
             print(f'layer {i} of task {task_idx} has scale {[scale_param.data for scale_param in module.scale_param]}')
             self.scale_param_each_tasks_each_layers[task_idx][i] = [scale_param.data for scale_param in module.scale_param] # top2
             self.all_space[task_idx][i] = module.space # top2
             module.disable_scale()
 
-        mat_list = [] # representation (activation) of each layer
+        x = []
+        for batch in train_loader:
+            x.append(batch['image'].to(self.device))
 
-        x = None
-
-        for batch_idx, batch in enumerate(train_loader):
-
-            if x is not None:
-                x = torch.cat((x, batch['image'].to(self.device)), dim=0)
-            else:
-                x = batch['image'].to(self.device)
+        x = torch.cat(x, dim = 0)
 
         # hardcoded, choose 125 input from it
-        num_inputs = x.size(0)
-        indices = torch.randperm(num_inputs)
+        indices = torch.randperm(x.size(0))
         selected_indices = indices[:125]
         x = x[selected_indices]
 
@@ -231,19 +217,19 @@ class TRGP(nn.Module):
         conv_output_size = [29, 12, 5] # output size of each conv layer
         in_channel = [3, 64, 128] # input channel of each conv layer
 
+        mat_list = [] # representation (activation) of each layer
+
         for i, module in enumerate(self.layers):
-            k=0
+            
             if isinstance(module, Conv2d):
-                bsz = batch_list[i]
-                ksz = ksize[i]
-                s = conv_output_size[i]
-                inc = in_channel[i]
+                bsz, ksz, s, inc = batch_list[i], ksize[i], conv_output_size[i], in_channel[i]
 
                 # act is the input of each layer (both conv and linear)
 
                 mat = np.zeros((ksz * ksz * inc, s * s * bsz))
                 act = module.input_matrix.detach().cpu().numpy()
 
+                k = 0
                 for kk in range(bsz):
                     for ii in range(s):
                         for jj in range(s):
@@ -259,11 +245,9 @@ class TRGP(nn.Module):
         # get the space for each layer
         if task_idx == 0:
 
-            for i in range(self.number_of_layer):
+            for i, activation in enumerate(mat_list):
 
-                # same with dualgpm
-                activation = mat_list[i]
-                U, S, _ = np.linalg.svd(activation, full_matrices=False)
+                U, S, _ = np.linalg.svd(activation, full_matrices = False)
                 # criteria (Eq-5)
                 sval_total = (S**2).sum()
                 sval_ratio = (S**2)/sval_total
@@ -273,21 +257,12 @@ class TRGP(nn.Module):
                 self.feature_list.append(U[:, :r]) # space_list_all in trgp original code
         else:
 
-            for i in range(self.number_of_layer):
+            for i, activation in enumerate(mat_list):
 
-                activation = mat_list[i]
-                _, S, _=np.linalg.svd(activation, full_matrices = False)
+                _, S, _ = np.linalg.svd(activation, full_matrices = False)
                 sval_total = (S**2).sum()
-
-                # compute the projection using previous space (feature_list)
                 
-                R2 = activation @ activation.T
-                delta = []
-
-                for k in range(self.feature_list[i].shape[1]):
-                    space = self.feature_list[i][:, k] # each column
-                    delta.append(space.T @ R2 @ space)
-                delta = np.array(delta) # (self.feature_list[i].shape[1] ,1)
+                delta = (self.feature_list[i].T @ activation @ activation.T @ self.feature_list[i]).diagonal()
 
                 # following the GPM to get the sigma (S**2)
 
@@ -295,27 +270,25 @@ class TRGP(nn.Module):
                 U, S, _ = np.linalg.svd(act_hat, full_matrices=False)
                 sigma = S**2
 
-                # stack delta and sigma in a same list, then sort in descending order
-
-                stack = np.hstack((delta, sigma))  #[0,..30, 31..99]
-                stack_index = np.argsort(stack)[::-1]   #[99, 0, 4,7...]
-                stack = np.sort(stack)[::-1]
+                # stack delta and sigma, then sort in descending order
+                stack = np.hstack((delta, sigma))
+                stack_index = np.argsort(stack)[::-1] # the index of each element in descending sorted array
+                stack = np.sort(stack)[::-1] # descending sorted array
 
                 if threshold * sval_total <= 0:
                     r = 0
                 else:
                     r = min(np.sum(np.cumsum(stack) < threshold * sval_total) + 1, activation.shape[0])
 
-                #=5 save the corresponding space
                 Ui = np.hstack((self.feature_list[i], U))
-
                 self.feature_list_each_tasks[task_idx][i] = Ui[:, stack_index < r]
 
-                # calculate how many space from current new task
+                # update the overall space without overlap
                 sel_index_from_U = stack_index[len(delta):] < r
                 if np.any(sel_index_from_U):
-                    # update the overall space without overlap
-                    self.feature_list[i] = np.hstack((self.feature_list[i], U[:, sel_index_from_U] ))
+                    self.feature_list[i] = np.hstack((self.feature_list[i], U[:, sel_index_from_U]))
+                else:
+                    print (f'Skip Updating Space for layer: {i+1}')
 
     def get_parameters(self, config):
         return self.network.parameters()

@@ -421,7 +421,7 @@ class Trainer(object):
             for t, dataloader in enumerate(dataloaders):
                 meter.reset()
 
-                for batch in tqdm(dataloader, desc=f"Testing on Task {t} data"):
+                for batch in tqdm(dataloader, desc = f"Testing on Task {t} data"):
                     if self.config["setting"] == "task-aware":
                         output, acc = self.model.inference(batch, t)
                     elif self.config['setting'] == 'task-agnostic':

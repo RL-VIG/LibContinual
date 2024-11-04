@@ -22,8 +22,8 @@ class Conv2d(nn.Conv2d):
         self.space = []
         self.scale_param = nn.ParameterList()
 
-        self.scale1 = nn.Parameter(self.identity_matrix, requires_grad = True)
-        self.scale2 = nn.Parameter(self.identity_matrix, requires_grad = True)
+        #self.scale1 = nn.Parameter(self.identity_matrix, requires_grad = True)
+        #self.scale2 = nn.Parameter(self.identity_matrix, requires_grad = True)
 
     def enable_scale(self, space):
         self.space = space
