@@ -17,6 +17,9 @@ class CIFARTransform:
     
     resnet_test_transform = transforms.Compose([*common_trfs])
     
+    # To Reproduce ERAML, ERACE
+    #resnet_train_transform = transforms.Compose([*common_trfs])
+
     # from 
     dset_mean = (0., 0., 0.)
     dset_std = (1., 1., 1.)

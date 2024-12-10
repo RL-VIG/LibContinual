@@ -3,6 +3,7 @@ Code Reference:
 Adapted from https://github.com/GT-RIPL/CODA-Prompt
 '''
 
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -36,10 +37,10 @@ class Mlp(nn.Module):
         x = self.drop(x)
         return x
 
-
 class Attention(nn.Module):
     def __init__(self, dim, num_heads=8, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0.):
         super().__init__()
+        self.dim = dim
         self.num_heads = num_heads
         head_dim = dim // num_heads
         # NOTE scale factor was wrong in my original version, can set manually to be compat with prev weights
@@ -50,6 +51,7 @@ class Attention(nn.Module):
         self.proj_drop = nn.Dropout(proj_drop)
         self.attn_gradients = None
         self.attention_map = None
+
         
     def save_attn_gradients(self, attn_gradients):
         self.attn_gradients = attn_gradients
@@ -63,7 +65,7 @@ class Attention(nn.Module):
     def get_attention_map(self):
         return self.attention_map
     
-    def forward(self, x, register_hook=False, prompt=None):
+    def forward(self, x, register_hook=False, prompt=None, **kwargs):
         B, N, C = x.shape
         qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
         q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
@@ -88,6 +90,79 @@ class Attention(nn.Module):
         x = self.proj_drop(x)
         return x
 
+class Attention_LoRA(Attention):
+    def __init__(self, attn, rank):
+
+        super().__init__(attn.dim)
+        self.num_heads = attn.num_heads
+        self.scale = attn.scale
+        self.qkv = attn.qkv
+        self.attn_drop = attn.attn_drop
+        self.proj = attn.proj
+        self.proj_drop = attn.proj_drop
+        self.attn_gradients = attn.attn_gradients
+        self.attention_map = attn.attention_map
+
+        self.rank = rank
+
+        self.lora_A_k = nn.Linear(self.dim, self.rank, bias=False)
+        self.lora_B_k = nn.Linear(self.rank, self.dim, bias=False)
+        self.lora_A_v = nn.Linear(self.dim, self.rank, bias=False)
+        self.lora_B_v = nn.Linear(self.rank, self.dim, bias=False)        
+
+        self.cur_matrix = torch.zeros(self.dim ,self.dim)
+        self.n_cur_matrix = 0
+
+    def init_param(self):
+        
+        nn.init.kaiming_uniform_(self.lora_A_k.weight, a=math.sqrt(5))
+        nn.init.kaiming_uniform_(self.lora_A_v.weight, a=math.sqrt(5))
+        nn.init.zeros_(self.lora_B_k.weight)
+        nn.init.zeros_(self.lora_B_v.weight)
+
+        self.apply_lora = True
+
+    def merge_weight(self):
+        q_weight, k_weight, v_weight = self.qkv.weight.chunk(3, dim=0)
+        k_weight = k_weight + self.lora_B_k.weight @ self.lora_A_k.weight
+        v_weight = v_weight + self.lora_B_v.weight @ self.lora_A_v.weight
+        self.qkv.weight.data = torch.cat([q_weight, k_weight, v_weight], dim=0)
+        self.apply_lora = False
+
+    def reset_input_matrix(self):
+        self.cur_matrix.zero_()
+        self.n_cur_matrix = 0
+
+    def forward(self, x, task_id = -1, expert_id=0, register_hook=False, prompt=None, get_input_matrix = False):
+    
+        if get_input_matrix:
+            self.cur_matrix = (self.cur_matrix*self.n_cur_matrix + torch.bmm(x.detach().permute(0, 2, 1), x.detach()).sum(dim=0).cpu())/(self.n_cur_matrix + x.shape[0]*x.shape[1])
+            self.n_cur_matrix += x.shape[0]*x.shape[1]
+            
+        B, N, C = x.shape
+
+        q_weight, k_weight, v_weight = self.qkv.weight.chunk(3, dim=0)
+
+        if task_id > -1 and self.apply_lora:
+            k_weight = k_weight + self.lora_B_k.weight @ self.lora_A_k.weight
+            v_weight = v_weight + self.lora_B_v.weight @ self.lora_A_v.weight
+        
+        qkv = F.linear(x, torch.cat([q_weight, k_weight, v_weight], dim=0), self.qkv.bias.data).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        
+        q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
+
+        attn = (q @ k.transpose(-2, -1)) * self.scale
+        attn = attn.softmax(dim=-1)
+        attn = self.attn_drop(attn)
+                
+        if register_hook:
+            self.save_attention_map(attn)
+            attn.register_hook(self.save_attn_gradients)        
+
+        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        x = self.proj(x)
+        x = self.proj_drop(x)
+        return x
 
 class Block(nn.Module):
 
@@ -104,12 +179,11 @@ class Block(nn.Module):
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
 
-    def forward(self, x, register_hook=False, prompt=None):
-        x = x + self.drop_path(self.attn(self.norm1(x), register_hook=register_hook, prompt=prompt))
+    def forward(self, x, register_hook=False, prompt=None, **kwargs):
+        x = x + self.drop_path(self.attn(self.norm1(x), register_hook=register_hook, prompt=prompt, **kwargs))
         x = x + self.drop_path(self.mlp(self.norm2(x)))
         return x
 
-    
 class VisionTransformer(nn.Module):
     """ Vision Transformer
     A PyTorch impl of : `An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale`  -
@@ -176,7 +250,7 @@ class VisionTransformer(nn.Module):
     def no_weight_decay(self):
         return {'pos_embed', 'cls_token'}
 
-    def forward(self, x, register_blk=-1, prompt=None, q=None, train=False, task_id=None):
+    def forward(self, x, register_blk=-1, prompt=None, q=None, train=False, task_id=-1, **kwargs):
         B = x.shape[0]
         x = self.patch_embed(x)
 
@@ -198,8 +272,7 @@ class VisionTransformer(nn.Module):
             else:
                 p_list = None
 
-            x = blk(x, register_blk==i, prompt=p_list)
-            # if i == 11: x = x.detach()
+            x = blk(x, register_blk==i, prompt=p_list, task_id=task_id, **kwargs)
 
         x = self.norm(x)
         
@@ -283,7 +356,6 @@ def _load_weights(model: VisionTransformer, checkpoint_path: str, prefix: str = 
         block.norm2.weight.copy_(_n2p(w[f'{block_prefix}LayerNorm_2/scale']))
         block.norm2.bias.copy_(_n2p(w[f'{block_prefix}LayerNorm_2/bias']))
 
-            
 def interpolate_pos_embed(pos_embed_checkpoint, visual_encoder):        
     # interpolate position embedding
     embedding_size = pos_embed_checkpoint.shape[-1]
@@ -309,25 +381,30 @@ def interpolate_pos_embed(pos_embed_checkpoint, visual_encoder):
         return new_pos_embed    
     else:
         return pos_embed_checkpoint
-    
-    
+        
 class ViTZoo(nn.Module):
-    def __init__(self, num_classes=10, pretrain=False, **kwargs):
+    def __init__(self, pretrained = False, model_name='vit_base_patch16_224', **kwargs):
         super(ViTZoo, self).__init__()
         
         self.task_id = None
         self.feat_dim = 768
-        # get feature encoder
-        if pretrain:
-            print("Using pretrained model")
-            zoo_model = VisionTransformer(img_size=224, patch_size=16, embed_dim=768, depth=12,
-                                        num_heads=12, ckpt_layer=0,
-                                        drop_path_rate=0
-                                        )
-            from timm.models import vit_base_patch16_224
-            load_dict = vit_base_patch16_224(pretrained=True).state_dict()
-            del load_dict['head.weight']; del load_dict['head.bias']
-            zoo_model.load_state_dict(load_dict)
+
+        self.feat = VisionTransformer(img_size=224, patch_size=16, embed_dim=768, depth=12,
+                                    num_heads=12, ckpt_layer=0,
+                                    drop_path_rate=0
+                                    )
+
+        if pretrained:
+            print(f'Using pretrained model : {model_name}')
+
+            import timm
+            load_dict = timm.create_model(model_name, pretrained = pretrained).state_dict()
+            self.feat.load_state_dict(load_dict, strict = False)
+
+        # Inject LoRA
+        if kwargs.get('lora_tuning', False):
+            for block in self.feat.blocks:
+                block.attn = Attention_LoRA(block.attn, kwargs.get('lora_rank', 0))
 
         # classifier
         # self.last = nn.Linear(768, num_classes)
@@ -335,7 +412,7 @@ class ViTZoo(nn.Module):
         self.prompt = None
         
         # feature encoder changes if transformer vs resnet
-        self.feat = zoo_model
+        # 
         
         
     def create_prompt(self, prompt_flag, **kwargs):
@@ -351,8 +428,8 @@ class ViTZoo(nn.Module):
         
         
     # pen: get penultimate features    
-    def forward(self, x, pen=False, train=False):
-        # print(x.shape)
+    def forward(self, x, pen=False, train=False, **kwargs):
+
         if self.prompt is not None:
             with torch.no_grad():
                 q, _ = self.feat(x)
@@ -360,7 +437,7 @@ class ViTZoo(nn.Module):
             out, prompt_loss = self.feat(x, prompt=self.prompt, q=q, train=train, task_id=self.task_id)
             out = out[:,0,:]
         else:
-            out, _ = self.feat(x) 
+            out, _ = self.feat(x, **kwargs) 
             out = out[:,0,:]
             
         out = out.view(out.size(0), -1)
@@ -442,7 +519,7 @@ class ViT_in21k_adapter(nn.Module):
 
 
 def vit_pt_imnet(pretrained=False, **kwargs):
-    return ViTZoo(**kwargs)
+    return ViTZoo(pretrained, **kwargs)
 
 def vit_pt_imnet_in21k_adapter(pretrained=False, **kwargs):
     return ViT_in21k_adapter(**kwargs)

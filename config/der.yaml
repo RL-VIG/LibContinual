@@ -5,7 +5,6 @@ includes:
   - headers/optimizer.yaml
   - backbones/resnet12.yaml
 
-data_root: /home/liwenbin/yangyan/data/cifar100
 image_size: 32
   
 save_path: ./
@@ -15,11 +14,11 @@ inc_cls_num: 10
 task_num: 10
 
 # init_epoch can be none
-init_epoch: 2 #200
-epoch: 3 #170
+init_epoch: 170 #200
+epoch: 170 #170
 device_ids: 2
 n_gpu: 1
-val_per_epoch: 10
+val_per_epoch: 170
 
 batch_size: 128
 

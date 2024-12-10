@@ -1,5 +1,7 @@
-data_root: xxxxxx
+data_root: /home/lvqiexuan/temp_data/cifar100/
 image_size: 32
 pin_memory: False
 augment: True
-workers: 8
+workers: 24
+
+save_path: ''

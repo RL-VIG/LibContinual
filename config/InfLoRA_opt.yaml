@@ -1,27 +1,21 @@
-save_path : ""
-data_root: "/home/lvqiexuan/temp_data/cifar100/"
-
-init_cls_num: &init_cls_num 10 # 第一次任务的分类数量
-inc_cls_num: &inc_cls_num 10   # 之后每次任务的分类数量
+init_cls_num: &init_cls_num 20 # 第一次任务的分类数量
+inc_cls_num: &inc_cls_num 20   # 之后每次任务的分类数量
 total_cls_num: &total_cls_num 100
 num_classes: &num_classes 100 
-task_num: &task_num 10
+task_num: &task_num 5
 
 task_num: *task_num
 init_cls_num: *init_cls_num
 inc_cls_num: *inc_cls_num
 total_cls_num: *total_cls_num
-init_epoch: 20 # 20
-epoch: 20 # 20
+init_epoch: 2 # 20
+epoch: 2 # 20
 val_per_epoch: 20
-workers: 16
+image_size: 224
 
 batch_size: 128
 
-device_ids: 0
-
-setting: task-agnostic # not require task id during inference
-# or task-aware, require task id during inference
+setting: task-agnostic 
 
 optimizer:
   name: Adam
@@ -36,11 +30,12 @@ lr_scheduler:
     K: 20
 
 backbone:
-  name: vit_pt_imnet_in21k_lora
+  name: vit_pt_imnet
   kwargs:
     pretrained: True
-    rank: 10
-    
+    model_name : vit_base_patch16_224_in21k
+    lora_tuning: True
+    lora_rank: 10
 
 
 buffer:
@@ -53,9 +48,9 @@ buffer:
 classifier:
   name: InfLoRA_OPT
   kwargs:
-    init_cls_num: 10
-    inc_cls_num: 10
-    task_num: 10
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    task_num: *task_num
     lame: 1.0
     lamb: 0.95
     embd_dim: 768

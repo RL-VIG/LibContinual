@@ -53,14 +53,12 @@ class Trainer(object):
             self.scheduler,
         ) = self._init_optim(config)
 
-        self.train_meter, self.test_meter = self._init_meter()
+        self.train_meter, self.test_meter, self.overall_test_meter = self._init_meter()
 
         self.val_per_epoch = config['val_per_epoch']
 
-        
         if self.config["classifier"]["name"] == "bic":
             self.stage2_epoch = config['stage2_epoch']
-
 
     def _init_logger(self, config, mode='train'):
         '''
@@ -98,7 +96,22 @@ class Trainer(object):
             device: a device.
         """
         init_seed(config['seed'], config['deterministic'])
-        device = torch.device("cuda:{}".format(config['device_ids']))
+
+        if config['device_ids'] == 'auto':
+
+            least_utilized_device = 0
+            most_free_mem_perc = float('-inf')
+
+            for device_id in range(torch.cuda.device_count()):
+                free_mem, total_mem = torch.cuda.mem_get_info(device_id)
+                if free_mem/total_mem > most_free_mem_perc:
+                    least_utilized_device = device_id
+                    most_free_mem_perc = free_mem/total_mem
+
+            device = torch.device(f'cuda:{least_utilized_device}')
+
+        else:
+            device = torch.device("cuda:{}".format(config['device_ids']))
 
         return device
 
@@ -125,7 +138,12 @@ class Trainer(object):
             ["batch_time", "data_time", "calc_time", "acc1"],
         )
 
-        return train_meter, test_meter
+        overall_test_meter = AverageMeter(
+            "overall_test",
+            ["acc1"],
+        )
+
+        return train_meter, test_meter, overall_test_meter
 
     def _init_optim(self, config, stage2=False):
         """
@@ -151,9 +169,10 @@ class Trainer(object):
             scheduler = CosineSchedule(optimizer, K=config['lr_scheduler']['kwargs']['K'])
         elif config['lr_scheduler']['name'] == "PatienceSchedule":
             scheduler = PatienceSchedule(optimizer, patience = config['lr_scheduler']['kwargs']['patience'], factor = config['lr_scheduler']['kwargs']['factor'])
+        elif config['lr_scheduler']['name'] == "Constant":
+            scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda e: config['lr_scheduler']['kwargs']['lr'])
         else:
-            scheduler = get_instance(
-                torch.optim.lr_scheduler, "lr_scheduler", config, optimizer=optimizer)
+            scheduler = get_instance(torch.optim.lr_scheduler, "lr_scheduler", config, optimizer=optimizer)
 
         if 'init_epoch' in config.keys():
             init_epoch = config['init_epoch']
@@ -221,6 +240,11 @@ class Trainer(object):
         The norm train loop:  before_task, train, test, after_task
         """
         experiment_begin = time()
+        accumulated_acc = 0.
+
+        # DEBUG
+        acc_table = []
+
         for task_idx in range(self.task_num):
             self.task_idx = task_idx
             print("================Task {} Start!================".format(task_idx))
@@ -270,19 +294,24 @@ class Trainer(object):
                 if (epoch_idx+1) % self.val_per_epoch == 0 or (epoch_idx+1)==self.inc_epoch:
                     print("================ Test on the test set ================")
 
-                    # disable in-epoch test/validate for method trgp
-                    if self.config["classifier"]["name"] == "TRGP" or self.config["classifier"]["name"] == "InfLoRA_TRGP" or self.config["classifier"]["name"] == "InfLoRA_TRGP2":
-                        test_acc, best_acc = {"avg_acc": 0., "per_task_acc": 0.}, 0. 
+                    # Disable in-epoch test/validate for some method
+                    if self.config['classifier']['name'] in ['TRGP', 'MInfLoRA']:
+                        test_acc = {"avg_acc": 0., "per_task_acc": [0.]}
                     else:
                         test_acc = self._validate(task_idx)
-                        best_acc = max(test_acc["avg_acc"], best_acc)
-                    
-                    print(
-                    " * Average Acc: {:.2f} Best acc {:.2f}".format(test_acc["avg_acc"], best_acc)
-                    )
-                    print(
-                    " * Per-Task Acc:{}".format(test_acc['per_task_acc'])
-                    )
+
+                    avg_acc, per_task_acc = test_acc['avg_acc'], test_acc['per_task_acc']
+                    best_acc = max(avg_acc, best_acc)
+
+                    if task_idx > 0:
+                        bwt = sum(per_task_acc[:-1]) - accumulated_acc
+                        bwt /= task_idx
+                    else:
+                        bwt = 0.
+
+                    print(f" * Average Acc : {avg_acc:.2f} Best Acc : {best_acc:.2f}")
+                    print(f" * Per-Task Acc : {per_task_acc}")
+                    print(f" * Backward Transfer : {bwt:.2f}")
             
                 if self.config['lr_scheduler']['name'] == "PatienceSchedule":
                     self.scheduler.step(train_meter.avg('loss'))
@@ -335,12 +364,32 @@ class Trainer(object):
                     hearding_update(self.train_loader.get_loader(task_idx).dataset, self.buffer, self.model.backbone, self.device)
                 elif self.buffer.strategy == 'random':
                     random_update(self.train_loader.get_loader(task_idx).dataset, self.buffer)
-                
-            print("================Task {} Testing!================".format(task_idx))
+            
+            print(f"================Task {task_idx} Testing!================")
+
             test_acc = self._validate(task_idx)
-            best_acc = max(test_acc["avg_acc"], best_acc)
-            print(" * Average Acc: {:.2f} Best acc {:.2f}".format(test_acc["avg_acc"], best_acc))
-            print(" * Per-Task Acc:{}".format(test_acc['per_task_acc']))
+            avg_acc, per_task_acc = test_acc['avg_acc'], test_acc['per_task_acc']
+
+            best_acc = max(avg_acc, best_acc)
+            self.overall_test_meter.update('acc1', avg_acc)
+            overall_avg_acc = self.overall_test_meter.avg("acc1")
+
+            if task_idx > 0:
+                bwt = sum(per_task_acc[:-1]) - accumulated_acc
+                bwt /= task_idx
+            else:
+                bwt = 0.
+
+            accumulated_acc += per_task_acc[-1]
+
+            print(f" * Average Acc : {avg_acc:.2f} Best Acc : {best_acc:.2f}")
+            print(f" * Per-Task Acc : {per_task_acc}")
+            print(f" * Overall Avg Acc : {overall_avg_acc:.2f}")
+            print(f" * Backward Transfer : {bwt:.2f}")
+
+            # DEBUG
+            #acc_table.append(per_task_acc)
+            #print(acc_table)
                     
     def stage2_train(self, epoch_idx, dataloader):
         """
@@ -422,7 +471,8 @@ class Trainer(object):
                 meter.reset()
 
                 for batch in tqdm(dataloader, desc = f"Testing on Task {t} data"):
-                    if self.config["setting"] == "task-aware":
+
+                    if self.config['setting'] == 'task-aware':
                         output, acc = self.model.inference(batch, t)
                     elif self.config['setting'] == 'task-agnostic':
                         output, acc = self.model.inference(batch)
@@ -431,5 +481,6 @@ class Trainer(object):
                     total_meter.update("acc1", 100 * acc)
 
                 per_task_acc.append(round(meter.avg("acc1"), 2))
-        
-        return {"avg_acc" : round(total_meter.avg("acc1"), 2), "per_task_acc" : per_task_acc}
+
+        return {"avg_acc" : round(total_meter.avg("acc1"), 2), 
+                "per_task_acc" : per_task_acc}

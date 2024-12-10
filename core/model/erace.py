@@ -1,3 +1,17 @@
+# -*- coding: utf-8 -*-
+"""
+@misc{caccia2022new,
+    title={New Insights on Reducing Abrupt Representation Change in Online Continual Learning}, 
+    author={Lucas Caccia and Rahaf Aljundi and Nader Asadi and Tinne Tuytelaars and Joelle Pineau and Eugene Belilovsky},
+    year={2022},
+    eprint={2104.05025},
+    archivePrefix={arXiv},
+    primaryClass={cs.LG}
+}
+
+Adapted from https://github.com/pclucas14/AML
+"""
+
 import torch
 import numpy as np
 import torch.nn.functional as F
@@ -41,8 +55,11 @@ class ERACE(nn.Module):
 
         self.buffer_exists = False
 
+        self.model.to(self.device)
+
     def process_inc(self, inc_data):
         """ get loss from incoming data """
+
         present = inc_data['y'].unique()
         self.seen_so_far = torch.cat([self.seen_so_far, present]).unique()
 

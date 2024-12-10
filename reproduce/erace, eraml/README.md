@@ -7,6 +7,7 @@ In the online continual learning paradigm, agents must learn from a changing dis
 Based on this empirical analysis, we propose a new method which mitigates this issue by shielding the learned representations from drastic adaptation to accommodate new classes. We show that using an asymmetric update rule pushes new classes to adapt to the older ones (rather than the reverse), which is more effective especially at task boundaries, where much of the forgetting typically occurs.
 
 ## Citation
+
 ```bibtex
 @misc{caccia2022new,
       title={New Insights on Reducing Abrupt Representation Change in Online Continual Learning}, 
@@ -20,14 +21,12 @@ Based on this empirical analysis, we propose a new method which mitigates this i
 
 ## How to Reproduce ERACE, ERAML
 
-- **Step1: Set the path in `run_trainer.py` with `./config/erace.yaml` or `./config/eraml.yaml`**
+- **Step 1 : Configure `./config/erace.yaml` and `./config/eraml.yaml`**
+
+- **Step 2 : Run command**
     ```python
-    config = Config("./config/erace.yaml").get_config_dict()
-    config = Config("./config/eraml.yaml").get_config_dict()
-    ```
-- **Step2: Run command**
-    ```python
-    python run_trainer.py
+    python run_trainter.py --config_name erace
+    python run_trainter.py --config_name eraml
     ```
 
 ## Results

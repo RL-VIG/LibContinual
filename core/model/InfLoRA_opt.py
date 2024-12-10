@@ -1,19 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-@inproceedings{arXiv:2404.00228v3,
-  title        = {InfLoRA: Interference-Free Low-Rank Adaptation for Continual Learning},
-  author       = {Yan-Shuo Liang and Wu-Jun Li},
-  booktitle    = {{IEEE/CVF} Conference on Computer Vision and Pattern Recognition, {CVPR} 2024, Seattle, Washington},
-  publisher    = {Computer Vision Foundation / {IEEE}},
-  year         = {2024},
-  url          = {https://arxiv.org/abs/2404.00228v3},
+@inproceedings{liang2024inflora,
+    title={InfLoRA: Interference-Free Low-Rank Adaptation for Continual Learning},
+    author={Liang, Yan-Shuo and Li, Wu-Jun},
+    booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
+    pages={23638--23647},
+    year={2024}
 }
-https://openaccess.thecvf.com/content_CVPR_2019/html/Hou_Learning_a_Unified_Classifier_Incrementally_via_Rebalancing_CVPR_2019_paper.html
 
-Adapted from https://github.com/liangyanshuo/InfLoRA?utm_source=catalyzex.com
-
-Code Reference:
-https://github.com/liangyanshuo/InfLoRA/blob/main/methods/inflora.py
+Adapted from https://github.com/liangyanshuo/InfLoRA
 """
 
 import math
@@ -25,7 +20,8 @@ from torch import optim
 from torch.nn import functional as F
 from torch.nn.parameter import Parameter
 from tqdm import tqdm
-from .backbone.vit_inflora_opt import Attention_LoRA
+
+from .backbone.vit import Attention_LoRA
 
 class SiNet(nn.Module):
     def __init__(self, backbone, **kwargs):

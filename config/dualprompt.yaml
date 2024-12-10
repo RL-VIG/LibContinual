@@ -40,7 +40,8 @@ backbone:
   name: vit_pt_imnet
   kwargs:
     num_classes: 100
-    pretrain: true
+    pretrained: true
+    model_name : vit_base_patch16_224
 
 
 

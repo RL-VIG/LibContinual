@@ -1,23 +1,20 @@
 save_path : ""
 data_root: "/home/lvqiexuan/temp_data/cifar100/"
 
-init_cls_num: &init_cls_num 10 # 第一次任务的分类数量
-inc_cls_num: &inc_cls_num 10   # 之后每次任务的分类数量
+init_cls_num: &init_cls_num 20
+inc_cls_num: &inc_cls_num 20
 total_cls_num: &total_cls_num 100
 num_classes: &num_classes 100 
-task_num: &task_num 10
+task_num: &task_num 5
 
 task_num: *task_num
 init_cls_num: *init_cls_num
 inc_cls_num: *inc_cls_num
 total_cls_num: *total_cls_num
-init_epoch: 200 # 200
-epoch: 200 # 200
+init_epoch: 2 # 200
+epoch: 2 # 200
 batch_size: 64 
 val_per_epoch: 200
-workers: 16
-
-device_ids: 0
 
 setting: task-aware
 
@@ -25,9 +22,7 @@ optimizer:
   name: SGD
   kwargs:
     lr: 0.01
-    weight_decay: 0
 
-# make it constant to 0.01
 lr_scheduler:
   name: PatienceSchedule
   kwargs:
@@ -49,6 +44,6 @@ buffer:
 classifier:
   name: TRGP
   kwargs:
-    init_cls_num: 10
-    inc_cls_num: 10
-    task_num: 10
+    init_cls_num: *init_cls_num
+    inc_cls_num: *init_cls_num
+    task_num: *task_num

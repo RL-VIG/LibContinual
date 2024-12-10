@@ -1,8 +1,23 @@
+# -*- coding: utf-8 -*-
+"""
+@misc{caccia2022new,
+    title={New Insights on Reducing Abrupt Representation Change in Online Continual Learning}, 
+    author={Lucas Caccia and Rahaf Aljundi and Nader Asadi and Tinne Tuytelaars and Joelle Pineau and Eugene Belilovsky},
+    year={2022},
+    eprint={2104.05025},
+    archivePrefix={arXiv},
+    primaryClass={cs.LG}
+}
+
+Adapted from https://github.com/pclucas14/AML
+"""
+
 import torch
 import numpy as np
 import torch.nn.functional as F
+import torch.nn as nn
 
-from torch import nn
+#from torch import nn
 from collections import OrderedDict
 from collections.abc import Iterable
 
@@ -39,6 +54,8 @@ class ERAML(nn.Module):
         }
 
         self.buffer_exists = False
+
+        self.model.to(self.device) # This is not working
 
     def normalize(self, x):
         x_norm = torch.norm(x, p=2, dim=1).unsqueeze(1).expand_as(x)
@@ -111,7 +128,10 @@ class ERAML(nn.Module):
 
         n_fwd = 0
         correct_count = 0
-        logits = self.model(inc_data['x'])
+
+        x, y = inc_data['x'].to(self.device), inc_data['y'].to(self.device)
+
+        logits = self.model(x)
         pred   = logits.max(1)[1]
 
         # If task_based, see if task id >= 1
@@ -134,7 +154,7 @@ class ERAML(nn.Module):
             pos_hid, neg_hid = all_hid[:, ~invalid_idx]        
 
             if (~invalid_idx).any():
-                inc_y = inc_data['y'][~invalid_idx]             
+                inc_y = y[~invalid_idx]             
                 pos_y = pos_y[~invalid_idx]                    
                 neg_y = neg_y[~invalid_idx]                   
                 hid_all = torch.cat((pos_hid, neg_hid), dim=0)
@@ -152,15 +172,16 @@ class ERAML(nn.Module):
 
         else:
             # do regular training at the start
-            loss = self.loss(logits, inc_data['y'].long())
+            loss = self.loss(logits, y.long())
 
 
-        correct_count = pred.eq(inc_data['y']).sum().item()
+        correct_count = pred.eq(y).sum().item()
 
         return pred, correct_count, loss
 
     def process_re(self, re_data):
         logits = self.model(re_data['x'])
+
         loss = self.loss(logits, re_data['y'].long())
         pred   = logits.max(1)[1]
         correct_count = pred.eq(re_data['y']).sum().item()
@@ -171,10 +192,10 @@ class ERAML(nn.Module):
 
         inc_correct_counts, inc_total_counts, re_correct_counts, re_total_counts  = 0, 0, 0, 0
 
-        x, y = data['image'], data['label']
-
-        if self.device.type == 'cuda':
-            x, y = x.cuda(non_blocking=True), y.cuda(non_blocking=True)
+        x, y = data['image'].to(self.device), data['label'].to(self.device)
+        
+        #if self.device.type == 'cuda':
+        #    x, y = x.cuda(non_blocking=True), y.cuda(non_blocking=True)
 
         self.inc_data = {'x': x, 'y': y, 't': self.cur_task_idx}
 
@@ -202,10 +223,10 @@ class ERAML(nn.Module):
     
     def inference(self, data):
 
-        x, y = data['image'], data['label']
+        x, y = data['image'].to(self.device), data['label'].to(self.device)
 
-        if self.device.type == 'cuda':
-            x, y = x.cuda(non_blocking=True), y.cuda(non_blocking=True)
+        #if self.device.type == 'cuda':
+        #    x, y = x.cuda(non_blocking=True), y.cuda(non_blocking=True)
 
         logits = self.model(x)
         pred   = logits.max(1)[1]
