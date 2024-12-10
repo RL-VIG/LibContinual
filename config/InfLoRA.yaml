@@ -1,5 +1,4 @@
 save_path : ""
-data_root: "/home/lvqiexuan/temp_data/cifar100/"
 
 image_size: 224
 save_path: ./
@@ -10,7 +9,6 @@ val_per_epoch: 20
 
 
 epoch: 20
-device_ids: 2
 n_gpu: 1
 seed: 42069
 

@@ -114,7 +114,7 @@ class TRGP(nn.Module):
     
     def inference(self, data, task_id):
 
-        x, y = data['image'].to(self.device), data['label'].to(self.device) - task_id * 10
+        x, y = data['image'].to(self.device), data['label'].to(self.device) - task_id * self.inc_cls_num
 
         for i, module in enumerate(self.layers):
             module.scale_param = nn.ParameterList([
@@ -133,6 +133,10 @@ class TRGP(nn.Module):
 
     def before_task(self, task_idx, buffer, train_loader, test_loaders):
 
+        for module in self.layers:
+            for scalep in module.scale_param:
+                print(scalep)
+
         self.cur_task = task_idx
 
         if task_idx == 1:
@@ -145,7 +149,7 @@ class TRGP(nn.Module):
             # temp compute and save them for training later
             self.feature_mat = [torch.tensor(feat @ feat.T, dtype=torch.float32, device=self.device) for feat in self.feature_list] 
 
-            optimizer = torch.optim.SGD(self.network.parameters(), lr = 0.0005) # lr hardcoded
+            optimizer = torch.optim.SGD(self.network.parameters(), lr = 0.01) # lr hardcoded
 
             x, y = [], []
             for batch in train_loader:
@@ -192,7 +196,7 @@ class TRGP(nn.Module):
 
         # Save the scale param
         for i, module in enumerate(self.layers):
-            print(f'layer {i} of task {task_idx} has scale {[scale_param.data for scale_param in module.scale_param]}')
+            #print(f'layer {i} of task {task_idx} has scale {[scale_param.data for scale_param in module.scale_param]}')
             self.scale_param_each_tasks_each_layers[task_idx][i] = [scale_param.data for scale_param in module.scale_param] # top2
             self.all_space[task_idx][i] = module.space # top2
             module.disable_scale()
@@ -281,14 +285,18 @@ class TRGP(nn.Module):
                     r = min(np.sum(np.cumsum(stack) < threshold * sval_total) + 1, activation.shape[0])
 
                 Ui = np.hstack((self.feature_list[i], U))
-                self.feature_list_each_tasks[task_idx][i] = Ui[:, stack_index < r]
+                sel_each = stack_index[:r]
+                sel_overall = sel_each[sel_each > len(delta)] # without overlap
 
-                # update the overall space without overlap
-                sel_index_from_U = stack_index[len(delta):] < r
-                if np.any(sel_index_from_U):
-                    self.feature_list[i] = np.hstack((self.feature_list[i], U[:, sel_index_from_U]))
-                else:
-                    print (f'Skip Updating Space for layer: {i+1}')
+                #print(sel_each[sel_each >= len(delta)])
+                #print(sel_each[sel_each > len(delta)])
+                #print('-----')
+
+                self.feature_list[i] = np.hstack((self.feature_list[i], Ui[:, sel_overall]))
+                self.feature_list_each_tasks[task_idx][i] = Ui[:, sel_each]
+
+                if sel_overall.shape[0] == 0:
+                    print(f'Skip Updating Space for layer: {i+1}')
 
     def get_parameters(self, config):
         return self.network.parameters()

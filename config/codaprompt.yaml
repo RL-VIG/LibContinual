@@ -5,7 +5,7 @@ includes:
   # - headers/optimizer.yaml
   # - backbones/resnet12.yaml
 
-data_root: /data/fanzhichen/continual/cifar100
+data_root: "/home/lvqiexuan/temp_data/cifar100/"
 image_size: 32
 save_path: ./
 # data
@@ -13,8 +13,7 @@ init_cls_num: 10
 inc_cls_num: 10
 task_num: 10
 
-
-epoch: 10 #160
+epoch: 1 #160 # 10
 device_ids: 2
 n_gpu: 1
 val_per_epoch: 5
@@ -40,7 +39,8 @@ backbone:
   name: vit_pt_imnet
   kwargs:
     num_classes: 100
-    pretrain: true
+    pretrained: true
+    model_name : vit_base_patch16_224
 
 
 

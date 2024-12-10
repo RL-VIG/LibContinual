@@ -45,8 +45,8 @@ class LWF(Finetune):
         self.total_cls_num = self.init_cls_num + self.task_idx*self.inc_cls_num
         self.update_fc()
         self.loss_fn = nn.CrossEntropyLoss()
-        if task_idx!=0:
-            self.old_backbone = self.freeze(self.copy(self.backbone)).to(self.device)
+        if task_idx != 0:
+            self.old_backbone = self.freeze(copy.deepcopy(self.backbone)).to(self.device)
 
 
     def observe(self, data):

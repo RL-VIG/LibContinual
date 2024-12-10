@@ -4,7 +4,6 @@ optimizer:
   kwargs:
     lr: 0.1
   
-
 # lr_scheduler info
 lr_scheduler:
   name: StepLR
