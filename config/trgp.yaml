@@ -1,18 +1,18 @@
 save_path : ""
 data_root: "/home/lvqiexuan/temp_data/cifar100/"
 
-init_cls_num: &init_cls_num 20
-inc_cls_num: &inc_cls_num 20
+init_cls_num: &init_cls_num 10
+inc_cls_num: &inc_cls_num 10
 total_cls_num: &total_cls_num 100
 num_classes: &num_classes 100 
-task_num: &task_num 5
+task_num: &task_num 10
 
 task_num: *task_num
 init_cls_num: *init_cls_num
 inc_cls_num: *inc_cls_num
 total_cls_num: *total_cls_num
-init_epoch: 2 # 200
-epoch: 2 # 200
+init_epoch: 1 # 200
+epoch: 1 # 200
 batch_size: 64 
 val_per_epoch: 200
 
@@ -33,13 +33,6 @@ lr_scheduler:
 backbone:
   name: AlexNet_TRGP
   kwargs:
-
-buffer:
-  name: LinearBuffer
-  kwargs:
-    buffer_size: 0
-    batch_size: 128
-    strategy: herding     # random, equal_random, reservoir, herding
 
 classifier:
   name: TRGP

@@ -4,6 +4,7 @@ import torch
 from datetime import datetime
 import numpy as np
 import random
+from time import time
 from torch.optim.lr_scheduler import _LRScheduler
 
 
@@ -182,6 +183,9 @@ class GradualWarmupScheduler(_LRScheduler):
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
+def count_all_parameters(model):
+    return sum(p.numel() for p in model.parameters())
+
 def fmt_date_str(date=None, fmt="%y-%m-%d-%H-%M-%S"):
     """Format date to string.
 
@@ -194,3 +198,27 @@ def fmt_date_str(date=None, fmt="%y-%m-%d-%H-%M-%S"):
     if date is None:
         date = datetime.now()
     return date.strftime(fmt)
+
+def compute_fps(model, config):
+    model.eval()
+
+    # assert image_size in config is Correct, check ranpac
+
+    data = {
+        'image' : torch.rand((2, 3, config['image_size'], config['image_size'])).cuda(),
+        'label' : torch.zeros((2))
+    }
+
+    t_all = []
+
+    for i in range(100):
+        t1 = time()
+        if config['setting'] == 'task-aware':
+            model.inference(data, random.randint(0, config['task_num'] - 1))
+        elif config['setting'] == 'task-agnostic':
+            model.inference(data)
+        t2 = time()
+        t_all.append(t2 - t1)
+
+    return {'avg_fps' : 1 / np.mean(t_all),
+            'best_fps' : 1 / min(t_all)}
