@@ -1,15 +1,15 @@
-init_cls_num: &init_cls_num 20 # 第一次任务的分类数量
-inc_cls_num: &inc_cls_num 20   # 之后每次任务的分类数量
+init_cls_num: &init_cls_num 10 # 第一次任务的分类数量
+inc_cls_num: &inc_cls_num 10   # 之后每次任务的分类数量
 total_cls_num: &total_cls_num 100
 num_classes: &num_classes 100 
-task_num: &task_num 5
+task_num: &task_num 10
 
 task_num: *task_num
 init_cls_num: *init_cls_num
 inc_cls_num: *inc_cls_num
 total_cls_num: *total_cls_num
-init_epoch: 2 # 20
-epoch: 2 # 20
+init_epoch: 1 # 20
+epoch: 1 # 20
 val_per_epoch: 20
 image_size: 224
 
@@ -37,14 +37,6 @@ backbone:
     lora_tuning: True
     lora_rank: 10
 
-
-buffer:
-  name: LinearBuffer
-  kwargs:
-    buffer_size: 0
-    batch_size: 128
-    strategy: herding     # random, equal_random, reservoir, herding
-
 classifier:
   name: InfLoRA_OPT
   kwargs:
@@ -54,8 +46,3 @@ classifier:
     lame: 1.0
     lamb: 0.95
     embd_dim: 768
-
-
-
-
-

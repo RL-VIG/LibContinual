@@ -30,6 +30,7 @@ class Conv2d(nn.Conv2d):
         self.scale_param = nn.ParameterList([nn.Parameter(self.identity_matrix).to(self.weight.device) for _ in self.space])
 
     def disable_scale(self):
+
         self.space = []
         self.scale_param = nn.ParameterList()
 
@@ -69,6 +70,7 @@ class Linear(nn.Linear):
         self.scale_param = nn.ParameterList([nn.Parameter(self.identity_matrix).to(self.weight.device) for _ in self.space])
 
     def disable_scale(self):
+
         self.space = []
         self.scale_param = nn.ParameterList()
 

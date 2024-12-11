@@ -4,7 +4,7 @@ from torch import nn
 from time import time
 from tqdm import tqdm
 from core.data import get_dataloader
-from core.utils import init_seed, AverageMeter, get_instance, GradualWarmupScheduler, count_parameters
+from core.utils import *
 import core.model as arch
 from core.model.buffer import *
 from core.model import bic
@@ -200,8 +200,7 @@ class Trainer(object):
 
         model = get_instance(arch, "classifier", config, **dic)
         print(backbone)
-        print("Trainable params in the model: {}".format(count_parameters(model)))
-
+        
         model = model.to(self.device)
         return model
     
@@ -240,18 +239,18 @@ class Trainer(object):
         The norm train loop:  before_task, train, test, after_task
         """
         experiment_begin = time()
-        accumulated_acc = 0.
 
-        # DEBUG
-        acc_table = []
+        avg_acc_table = np.zeros((self.task_num, self.task_num)) # A numpy array with shape [task_num, task_num], where [i, j] is avg acc of model on task j after learning task i
 
         for task_idx in range(self.task_num):
             self.task_idx = task_idx
-            print("================Task {} Start!================".format(task_idx))
+            print(f"================Task {task_idx} Start!================")
             self.buffer.total_classes += self.init_cls_num if task_idx == 0 else self.inc_cls_num
             if hasattr(self.model, 'before_task'):
                 self.model.before_task(task_idx, self.buffer, self.train_loader.get_loader(task_idx), self.test_loader.get_loader(task_idx))
             
+            print(f"Trainable Parameters for Task {task_idx} : {count_parameters(self.model)} / {count_all_parameters(self.model)} ({count_parameters(self.model)*100/count_all_parameters(self.model):.2f}%)")
+
             (
                 _, __,
                 self.optimizer,
@@ -278,40 +277,37 @@ class Trainer(object):
                     )
 
 
-            print("================Task {} Training!================".format(task_idx))
-            print("The training samples number: {}".format(len(dataloader.dataset)))
+            print(f"================Task {task_idx} Training!================")
+            print(f"The training samples number : {len(dataloader.dataset)}")
 
-            best_acc = 0.
+            best_avg_acc, best_bwt = 0., float('-inf')
             for epoch_idx in range(self.init_epoch if task_idx == 0 else self.inc_epoch):
 
-                print("learning rate: {}".format(self.scheduler.get_last_lr()))
-                print("================ Train on the train set ================")
-                
+                print(f"learning rate : {self.scheduler.get_last_lr()}")
+                print("================Train on train set================")
                 train_meter = self._train(epoch_idx, dataloader)
-                    
-                print("Epoch [{}/{}] |\tLoss: {:.4f} \tAverage Acc: {:.2f} ".format(epoch_idx, self.init_epoch if task_idx == 0 else self.inc_epoch, train_meter.avg('loss'), train_meter.avg("acc1")))
+                print(f"Epoch [{epoch_idx}/{self.init_epoch if task_idx == 0 else self.inc_epoch}] |\tLoss: {train_meter.avg('loss'):.4f} \tAverage Acc: {train_meter.avg('acc1'):.2f} ")
 
                 if (epoch_idx+1) % self.val_per_epoch == 0 or (epoch_idx+1)==self.inc_epoch:
-                    print("================ Test on the test set ================")
+                    print(f"================Validation on test set================")
 
-                    # Disable in-epoch test/validate for some method
-                    if self.config['classifier']['name'] in ['TRGP', 'MInfLoRA']:
-                        test_acc = {"avg_acc": 0., "per_task_acc": [0.]}
-                    else:
+                    # Disable validation for some method
+                    if self.config['classifier']['name'] not in ['TRGP', 'RanPAC', 'MInfLoRA']:
+                        
                         test_acc = self._validate(task_idx)
 
-                    avg_acc, per_task_acc = test_acc['avg_acc'], test_acc['per_task_acc']
-                    best_acc = max(avg_acc, best_acc)
+                        avg_acc, per_task_acc = test_acc['avg_acc'], test_acc['per_task_acc']
+                        best_avg_acc = max(avg_acc, best_avg_acc)
 
-                    if task_idx > 0:
-                        bwt = sum(per_task_acc[:-1]) - accumulated_acc
-                        bwt /= task_idx
+                        bwt = sum(per_task_acc[:-1] - np.diag(avg_acc_table)[:task_idx]) / task_idx if task_idx > 0 else 0.
+                        best_bwt = max(bwt, best_bwt)
+
+                        print(f" * Average Acc (Best Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
+                        print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
+                        print(f" * Per-Task Acc : {per_task_acc}")
+                        
                     else:
-                        bwt = 0.
-
-                    print(f" * Average Acc : {avg_acc:.2f} Best Acc : {best_acc:.2f}")
-                    print(f" * Per-Task Acc : {per_task_acc}")
-                    print(f" * Backward Transfer : {bwt:.2f}")
+                        print(f" * Disabled validation for this method")
             
                 if self.config['lr_scheduler']['name'] == "PatienceSchedule":
                     self.scheduler.step(train_meter.avg('loss'))
@@ -324,7 +320,7 @@ class Trainer(object):
             if hasattr(self.model, 'after_task'):
                 self.model.after_task(task_idx, self.buffer, self.train_loader.get_loader(task_idx), self.test_loader.get_loader(task_idx))
 
-            # stage_2  train
+            # stage_2 train
             if self.config["classifier"]["name"] == "bic" and task_idx != 0:
                 self.model.backbone.eval()
                 (_, __,
@@ -346,14 +342,18 @@ class Trainer(object):
 
                     if (epoch_idx+1) % self.val_per_epoch == 0 or (epoch_idx+1)==self.inc_epoch:
                         print("================ Test on the test set (stage2)================")
+
                         test_acc = self._validate(task_idx)
-                        best_acc = max(test_acc["avg_acc"], best_acc)
-                        print(
-                        " * Average Acc: {:.3f} Best acc {:.3f}".format(test_acc["avg_acc"], best_acc)
-                        )
-                        print(
-                        " * Per-Task Acc:{}".format(test_acc['per_task_acc'])
-                        )
+
+                        avg_acc, per_task_acc = test_acc['avg_acc'], test_acc['per_task_acc']
+                        best_avg_acc = max(avg_acc, best_avg_acc)
+
+                        bwt = sum(per_task_acc[:-1] - np.diag(acc_table)[:task_idx]) / task_idx if task_idx > 0 else 0.
+                        best_bwt = max(bwt, best_bwt)
+
+                        print(f" * Average Acc : {avg_acc:.2f} Best Acc : {best_avg_acc:.2f}")
+                        print(f" * Per-Task Acc : {per_task_acc}")
+                        print(f" * Backward Transfer : {bwt:.2f} Best Backward Transfer : {best_bwt:.2f}")
             
                     self.scheduler.step()
 
@@ -365,31 +365,46 @@ class Trainer(object):
                 elif self.buffer.strategy == 'random':
                     random_update(self.train_loader.get_loader(task_idx).dataset, self.buffer)
             
-            print(f"================Task {task_idx} Testing!================")
+            
+            testing_times = 10 # Taking Average of 10 testing, hardcoded for now
+            for test_idx in range(testing_times):
+                print(f"================Test {test_idx+1}/{testing_times} of Task {task_idx}!================")
 
-            test_acc = self._validate(task_idx)
-            avg_acc, per_task_acc = test_acc['avg_acc'], test_acc['per_task_acc']
+                test_acc = self._validate(task_idx)
+                avg_acc, per_task_acc = test_acc['avg_acc'], test_acc['per_task_acc']
+                best_avg_acc = max(avg_acc, best_avg_acc)
 
-            best_acc = max(avg_acc, best_acc)
-            self.overall_test_meter.update('acc1', avg_acc)
-            overall_avg_acc = self.overall_test_meter.avg("acc1")
+                bwt = sum(per_task_acc[:-1] - np.diag(avg_acc_table)[:task_idx]) / task_idx if task_idx > 0 else 0.
+                best_bwt = max(bwt, best_bwt)
 
-            if task_idx > 0:
-                bwt = sum(per_task_acc[:-1]) - accumulated_acc
-                bwt /= task_idx
-            else:
-                bwt = 0.
+                print(f" * Average Acc (Best Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
+                print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
+                print(f" * Per-Task Acc : {per_task_acc}")
 
-            accumulated_acc += per_task_acc[-1]
+                avg_acc_table[task_idx][:task_idx + 1] += np.array(per_task_acc)
 
-            print(f" * Average Acc : {avg_acc:.2f} Best Acc : {best_acc:.2f}")
-            print(f" * Per-Task Acc : {per_task_acc}")
-            print(f" * Overall Avg Acc : {overall_avg_acc:.2f}")
-            print(f" * Backward Transfer : {bwt:.2f}")
+            avg_acc_table[task_idx] /= testing_times
 
-            # DEBUG
-            #acc_table.append(per_task_acc)
-            #print(acc_table)
+            bwt = sum(avg_acc_table[task_idx][:task_idx] - np.diag(avg_acc_table)[:task_idx]) / task_idx if task_idx > 0 else 0.
+            avg_acc = np.mean(avg_acc_table[task_idx][:task_idx + 1])
+            ovr_avg_acc = np.sum(np.sum(avg_acc_table[:task_idx + 1], axis = 1) / np.arange(1, task_idx + 2)) / (task_idx + 1)
+
+            print(f"================Result of Task {task_idx} Testing!================")
+            print(f" * Average Acc (Best Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
+            print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
+            print(f" * Per-Task Acc : {avg_acc_table[task_idx][:task_idx + 1]}")
+
+        print(f"================Overall Result of {self.task_num} Tasks!================")
+        print(f" * Average Acc (Best Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
+        print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
+        print(f" * Overall Avg Acc : {ovr_avg_acc:.2f}")
+        print(f" * Average Acc Table : \n{avg_acc_table}")
+
+        print(f"================Model Performance Analysis================")
+        print(f" * Time Costs : {time() - experiment_begin}")
+        fps = compute_fps(self.model, self.config)
+        avg_fps, best_fps = fps['avg_fps'], fps['best_fps']
+        print(f" * Average FPS (Best FPS) : {avg_fps} ({best_fps})")
                     
     def stage2_train(self, epoch_idx, dataloader):
         """

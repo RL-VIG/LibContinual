@@ -450,13 +450,13 @@ class ViTZoo(nn.Module):
             
 
 class ViT_in21k_adapter(nn.Module):
-    def __init__(self, num_classes=10, pretrain=False, **kwargs):
+    def __init__(self, pretrained=False, **kwargs):
         super(ViT_in21k_adapter, self).__init__()
 
         self.task_id = None
         self.feat_dim = 768
         # get feature encoder
-        if pretrain:
+        if pretrained:
             print("Using pretrained model")
             from core.model.backbone.petl import vision_transformer_adapter
             from easydict import EasyDict
@@ -522,4 +522,4 @@ def vit_pt_imnet(pretrained=False, **kwargs):
     return ViTZoo(pretrained, **kwargs)
 
 def vit_pt_imnet_in21k_adapter(pretrained=False, **kwargs):
-    return ViT_in21k_adapter(**kwargs)
+    return ViT_in21k_adapter(pretrained, **kwargs)

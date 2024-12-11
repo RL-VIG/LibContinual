@@ -11,10 +11,8 @@ from core import Trainer
 
 
 def main(rank, config):
-    begin = time.time()
     trainer = Trainer(rank, config)
     trainer.train_loop()
-    print("Time cost : ",time.time()-begin)
 
 if __name__ == "__main__":
 
@@ -27,7 +25,7 @@ if __name__ == "__main__":
         config = Config(f'./config/{args.config}').get_config_dict()
     else:
         config = Config("./config/InfLoRA.yaml").get_config_dict()
-        
+
     if config["n_gpu"] > 1:
         pass
         os.environ["CUDA_VISIBLE_DEVICES"] = config["device_ids"]

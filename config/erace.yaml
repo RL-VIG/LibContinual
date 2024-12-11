@@ -14,7 +14,7 @@ init_epoch: 1
 epoch: 1
 val_per_epoch: 1
 
-batch_size: 10
+batch_size: 128 # 10
 
 device_ids: 0
 

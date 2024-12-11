@@ -85,13 +85,14 @@ class EWC(Finetune):
         x = x.to(self.device)
         y = y.to(self.device)
         logit = self.network(x)
+
         if self.task_idx == 0:
             loss = F.cross_entropy(logit, y)
         else:
             old_classes = self.network.classifier.out_features - self.kwargs['inc_cls_num']
             loss = F.cross_entropy(logit[:, old_classes:], y - old_classes)
             loss += self.lamda * self.compute_ewc()
-            
+
         pred = torch.argmax(logit, dim=1)
 
         acc = torch.sum(pred == y).item()

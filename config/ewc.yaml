@@ -5,21 +5,19 @@ includes:
   # - headers/optimizer.yaml
   - backbones/resnet12.yaml
 
-data_root: /data/fanzhichen/continual/cifar100
 image_size: 32
 
 
 save_path: ./
 # data
 init_cls_num: 50
-inc_cls_num: 50
-task_num: 2
+inc_cls_num: 25
+task_num: 3
 
-init_epoch: 200
-epoch: 180
-device_ids: 4
+init_epoch: 1 # 100
+epoch: 1 # 100
 n_gpu: 1
-val_per_epoch: 5
+val_per_epoch: 50
 
 
 batch_size: 128

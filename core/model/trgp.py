@@ -93,7 +93,7 @@ class TRGP(nn.Module):
         self.network.to(self.device)
 
     def observe(self, data):
-
+        
         x, y = data['image'].to(self.device), data['label'].to(self.device) - self._known_classes
 
         logits = self.network(x)
@@ -133,9 +133,9 @@ class TRGP(nn.Module):
 
     def before_task(self, task_idx, buffer, train_loader, test_loaders):
 
+        # Last task have leave scale_param and space, need to init again
         for module in self.layers:
-            for scalep in module.scale_param:
-                print(scalep)
+            module.disable_scale()
 
         self.cur_task = task_idx
 
@@ -164,7 +164,7 @@ class TRGP(nn.Module):
             optimizer.zero_grad()  
             logits = self.network(x)
             loss = F.cross_entropy(logits[self.cur_task], y)
-            loss.backward()  
+            loss.backward()
 
             for i, module in enumerate(self.layers):
 
@@ -266,7 +266,18 @@ class TRGP(nn.Module):
                 _, S, _ = np.linalg.svd(activation, full_matrices = False)
                 sval_total = (S**2).sum()
                 
-                delta = (self.feature_list[i].T @ activation @ activation.T @ self.feature_list[i]).diagonal()
+
+                delta = []
+                R2 = np.dot(activation,activation.transpose())
+                for ki in range(self.feature_list[i].shape[1]):
+                    space = self.feature_list[i].transpose()[ki]
+                    # print(space.shape)
+                    delta_i = np.dot(np.dot(space.transpose(), R2), space)
+                    # print(delta_i)
+                    delta.append(delta_i)
+                delta = np.array(delta)
+
+                #delta = (self.feature_list[i].T @ activation @ activation.T @ self.feature_list[i]).diagonal()
 
                 # following the GPM to get the sigma (S**2)
 
