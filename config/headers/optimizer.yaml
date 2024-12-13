@@ -5,10 +5,7 @@ optimizer:
     lr: 0.1
   
 # lr_scheduler info
-lr_scheduler:
-  name: StepLR
-  kwargs:
-    gamma: 1.0
-    step_size: 20
+lr_scheduler: # By Default, No LR Scheduler is used
+  name: Constant
 
 warmup: 3

@@ -1,5 +1,3 @@
-save_path : ""
-
 # 10-subsets on CiFar100
 #task_num: 10 
 #init_cls_num: 10 
@@ -21,15 +19,10 @@ optimizer:
   kwargs:
     lr: 0.1
 
-lr_scheduler:
-  name: Constant
-  kwargs:
-    lr: 0.1
-
 buffer:
   name: ERBuffer
   kwargs:
-    capacity: 2000 # num_classes * 20
+    capacity: 10000 # num_classes * 20
     input_size: (3, 32, 32)
 
 backbone: 

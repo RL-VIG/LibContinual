@@ -94,10 +94,7 @@ class ERACE(nn.Module):
 
         inc_correct_counts, inc_total_counts, re_correct_counts, re_total_counts = 0, 0, 0, 0
 
-        x, y = data['image'], data['label']
-
-        if self.device.type == 'cuda':
-            x, y = x.cuda(non_blocking=True), y.cuda(non_blocking=True)
+        x, y = data['image'].to(self.device), data['label'].to(self.device)
 
         self.inc_data = {'x': x, 'y': y, 't': self.cur_task_idx}
 
@@ -126,10 +123,7 @@ class ERACE(nn.Module):
 
     def inference(self, data):
 
-        x, y = data['image'], data['label']
-
-        if self.device.type == 'cuda':
-            x, y = x.cuda(non_blocking=True), y.cuda(non_blocking=True)
+        x, y = data['image'].to(self.device), data['label'].to(self.device)
 
         logits = self.model(x)
         pred   = logits.max(1)[1]

@@ -1,5 +1,3 @@
-save_path : ""
-
 # 10-subsets on CiFar100
 #task_num: 10 
 #init_cls_num: 10 
@@ -14,24 +12,17 @@ init_epoch: 1
 epoch: 1
 val_per_epoch: 1
 
-batch_size: 128 # 10
-
-device_ids: 0
+batch_size: 10 # 10, don't set too high, otherwise performance will drop
 
 optimizer:
   name: SGD
   kwargs:
-    lr: 0.1
-
-lr_scheduler:
-  name: Constant
-  kwargs:
-    lr: 0.1
+    lr: 0.01
 
 buffer:
   name: ERBuffer
   kwargs:
-    capacity: 2000 # num_classes * 20
+    capacity: 10000 # num_classes * 20
     input_size: (3, 32, 32)
 
 backbone: 
