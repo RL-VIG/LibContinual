@@ -27,6 +27,7 @@ class Trainer(object):
     """
 
     def __init__(self, rank, config):
+
         self.rank = rank
         self.config = config
         self.config['rank'] = rank
@@ -53,7 +54,7 @@ class Trainer(object):
             self.scheduler,
         ) = self._init_optim(config)
 
-        self.train_meter, self.test_meter, self.overall_test_meter = self._init_meter()
+        self.train_meter, self.test_meter = self._init_meter()
 
         self.val_per_epoch = config['val_per_epoch']
 
@@ -138,12 +139,7 @@ class Trainer(object):
             ["batch_time", "data_time", "calc_time", "acc1"],
         )
 
-        overall_test_meter = AverageMeter(
-            "overall_test",
-            ["acc1"],
-        )
-
-        return train_meter, test_meter, overall_test_meter
+        return train_meter, test_meter
 
     def _init_optim(self, config, stage2=False):
         """
@@ -170,7 +166,7 @@ class Trainer(object):
         elif config['lr_scheduler']['name'] == "PatienceSchedule":
             scheduler = PatienceSchedule(optimizer, patience = config['lr_scheduler']['kwargs']['patience'], factor = config['lr_scheduler']['kwargs']['factor'])
         elif config['lr_scheduler']['name'] == "Constant":
-            scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda e: config['lr_scheduler']['kwargs']['lr'])
+            scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda e: 1)
         else:
             scheduler = get_instance(torch.optim.lr_scheduler, "lr_scheduler", config, optimizer=optimizer)
 
@@ -241,6 +237,7 @@ class Trainer(object):
         experiment_begin = time()
 
         avg_acc_table = np.zeros((self.task_num, self.task_num)) # A numpy array with shape [task_num, task_num], where [i, j] is avg acc of model on task j after learning task i
+        bwt_list = []
 
         for task_idx in range(self.task_num):
             self.task_idx = task_idx
@@ -299,7 +296,7 @@ class Trainer(object):
                         avg_acc, per_task_acc = test_acc['avg_acc'], test_acc['per_task_acc']
                         best_avg_acc = max(avg_acc, best_avg_acc)
 
-                        bwt = sum(per_task_acc[:-1] - np.diag(avg_acc_table)[:task_idx]) / task_idx if task_idx > 0 else 0.
+                        bwt = sum(per_task_acc[:-1] - np.diag(avg_acc_table)[:task_idx]) / task_idx if task_idx > 0 else float('-inf')
                         best_bwt = max(bwt, best_bwt)
 
                         print(f" * Average Acc (Best Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
@@ -374,7 +371,7 @@ class Trainer(object):
                 avg_acc, per_task_acc = test_acc['avg_acc'], test_acc['per_task_acc']
                 best_avg_acc = max(avg_acc, best_avg_acc)
 
-                bwt = sum(per_task_acc[:-1] - np.diag(avg_acc_table)[:task_idx]) / task_idx if task_idx > 0 else 0.
+                bwt = sum(per_task_acc[:-1] - np.diag(avg_acc_table)[:task_idx]) / task_idx if task_idx > 0 else float('-inf')
                 best_bwt = max(bwt, best_bwt)
 
                 print(f" * Average Acc (Best Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
@@ -385,9 +382,11 @@ class Trainer(object):
 
             avg_acc_table[task_idx] /= testing_times
 
-            bwt = sum(avg_acc_table[task_idx][:task_idx] - np.diag(avg_acc_table)[:task_idx]) / task_idx if task_idx > 0 else 0.
+            bwt = sum(avg_acc_table[task_idx][:task_idx] - np.diag(avg_acc_table)[:task_idx]) / task_idx if task_idx > 0 else float('-inf')
+            bwt_list.append(bwt)
             avg_acc = np.mean(avg_acc_table[task_idx][:task_idx + 1])
             ovr_avg_acc = np.sum(np.sum(avg_acc_table[:task_idx + 1], axis = 1) / np.arange(1, task_idx + 2)) / (task_idx + 1)
+            ovr_bwt = np.mean(bwt_list)
 
             print(f"================Result of Task {task_idx} Testing!================")
             print(f" * Average Acc (Best Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
@@ -398,13 +397,14 @@ class Trainer(object):
         print(f" * Average Acc (Best Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
         print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
         print(f" * Overall Avg Acc : {ovr_avg_acc:.2f}")
+        print(f" * Overall BwT : {bwt:.2f}")
         print(f" * Average Acc Table : \n{avg_acc_table}")
 
         print(f"================Model Performance Analysis================")
-        print(f" * Time Costs : {time() - experiment_begin}")
+        print(f" * Time Costs : {(time() - experiment_begin):.2f} sec")
         fps = compute_fps(self.model, self.config)
         avg_fps, best_fps = fps['avg_fps'], fps['best_fps']
-        print(f" * Average FPS (Best FPS) : {avg_fps} ({best_fps})")
+        print(f" * Average FPS (Best FPS) : {avg_fps:.0f} ({best_fps:.0f})")
                     
     def stage2_train(self, epoch_idx, dataloader):
         """

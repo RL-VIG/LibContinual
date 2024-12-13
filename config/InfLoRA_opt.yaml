@@ -11,9 +11,9 @@ total_cls_num: *total_cls_num
 init_epoch: 1 # 20
 epoch: 1 # 20
 val_per_epoch: 20
-image_size: 224
+image_size: 224 # not being used
 
-batch_size: 128
+batch_size: 10 # 128
 
 setting: task-agnostic 
 

@@ -1,6 +1,3 @@
-save_path : ""
-data_root: "/home/lvqiexuan/temp_data/cifar100/"
-
 init_cls_num: &init_cls_num 10
 inc_cls_num: &inc_cls_num 10
 total_cls_num: &total_cls_num 100

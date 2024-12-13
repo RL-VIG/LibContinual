@@ -129,7 +129,7 @@ class ERAML(nn.Module):
         n_fwd = 0
         correct_count = 0
 
-        x, y = inc_data['x'].to(self.device), inc_data['y'].to(self.device)
+        x, y = inc_data['x'], inc_data['y']
 
         logits = self.model(x)
         pred   = logits.max(1)[1]
@@ -194,9 +194,6 @@ class ERAML(nn.Module):
 
         x, y = data['image'].to(self.device), data['label'].to(self.device)
         
-        #if self.device.type == 'cuda':
-        #    x, y = x.cuda(non_blocking=True), y.cuda(non_blocking=True)
-
         self.inc_data = {'x': x, 'y': y, 't': self.cur_task_idx}
 
         # keep track of current task for task-based methods
@@ -224,9 +221,6 @@ class ERAML(nn.Module):
     def inference(self, data):
 
         x, y = data['image'].to(self.device), data['label'].to(self.device)
-
-        #if self.device.type == 'cuda':
-        #    x, y = x.cuda(non_blocking=True), y.cuda(non_blocking=True)
 
         logits = self.model(x)
         pred   = logits.max(1)[1]
