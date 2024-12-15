@@ -17,7 +17,7 @@ import torch.optim as optim
 from copy import deepcopy
 from pprint import pprint
 
-from core.scheduler import CosineSchedule, PatienceSchedule
+from core.scheduler import CosineSchedule, PatienceSchedule, CosineAnnealingWarmUp
 
 class Trainer(object):
     """
@@ -151,6 +151,12 @@ class Trainer(object):
         Returns:
             tuple: A tuple of optimizer, scheduler.
         """
+
+        if 'init_epoch' in config.keys():
+            init_epoch = config['init_epoch']
+        else:
+            init_epoch = config['epoch']
+
         if stage2:
             optimizer = get_instance(
                 torch.optim, "optimizer", config, params=self.model.get_parameters(config, stage2=True)
@@ -167,14 +173,13 @@ class Trainer(object):
             scheduler = PatienceSchedule(optimizer, patience = config['lr_scheduler']['kwargs']['patience'], factor = config['lr_scheduler']['kwargs']['factor'])
         elif config['lr_scheduler']['name'] == "Constant":
             scheduler = optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda e: 1)
+        elif config['lr_scheduler']['name'] == "CosineAnnealingWarmUp":
+            T_max = len(self.train_loader.get_loader(self.task_idx))
+            T_max *= init_epoch if self.task_idx == 0 else config['epoch']
+            scheduler = CosineAnnealingWarmUp(optimizer, config['lr_scheduler']['kwargs']['warmup_length'], T_max)
         else:
             scheduler = get_instance(torch.optim.lr_scheduler, "lr_scheduler", config, optimizer=optimizer)
 
-        if 'init_epoch' in config.keys():
-            init_epoch = config['init_epoch']
-        else:
-            init_epoch = config['epoch']
-        
         return init_epoch, config['epoch'], optimizer, scheduler
 
     def _init_data(self, config):
@@ -191,13 +196,14 @@ class Trainer(object):
         Returns:
             tuple: A tuple of the model and model's type.
         """
-        backbone = get_instance(arch, "backbone", config)
-        dic = {"backbone": backbone, "device": self.device}
+        # TODO: For backward compatibility, some backbone initialization doesn't take device as argument
+        try:
+            backbone = get_instance(arch, "backbone", config, **{'device': self.device})
+        except TypeError:
+            backbone = get_instance(arch, "backbone", config)
 
-        model = get_instance(arch, "classifier", config, **dic)
-        print(backbone)
-        
-        model = model.to(self.device)
+        model = get_instance(arch, "classifier", config, **{'device': self.device, 'backbone': backbone}).to(self.device)
+
         return model
     
     def _init_dataloader(self, config):
@@ -237,7 +243,8 @@ class Trainer(object):
         experiment_begin = time()
 
         avg_acc_table = np.zeros((self.task_num, self.task_num)) # A numpy array with shape [task_num, task_num], where [i, j] is avg acc of model on task j after learning task i
-        bwt_list = []
+        bwt_list, frgt_list = [], []
+        testing_times = self.config['testing_times']
 
         for task_idx in range(self.task_num):
             self.task_idx = task_idx
@@ -248,15 +255,13 @@ class Trainer(object):
             
             print(f"Trainable Parameters for Task {task_idx} : {count_parameters(self.model)} / {count_all_parameters(self.model)} ({count_parameters(self.model)*100/count_all_parameters(self.model):.2f}%)")
 
-            (
-                _, __,
-                self.optimizer,
-                self.scheduler,
+            (_, __,
+             self.optimizer, self.scheduler,
             ) = self._init_optim(self.config)
 
             dataloader = self.train_loader.get_loader(task_idx)
 
-            if isinstance(self.buffer, (LinearBuffer, LinearHerdingBuffer)) and task_idx != 0:
+            if isinstance(self.buffer, (LinearBuffer, LinearHerdingBuffer)) and self.buffer.buffer_size > 0 and task_idx > 0:
 
                 if self.config['classifier']['name'] == "bic":
                     dataloader, val_dataloader = bic.split_data(copy.deepcopy(dataloader), copy.deepcopy(self.buffer), self.config['batch_size'], task_idx)
@@ -273,11 +278,10 @@ class Trainer(object):
                         num_workers = 8
                     )
 
-
             print(f"================Task {task_idx} Training!================")
             print(f"The training samples number : {len(dataloader.dataset)}")
 
-            best_avg_acc, best_bwt = 0., float('-inf')
+            best_avg_acc, best_bwt, best_frgt = 0., float('-inf'), float('inf')
             for epoch_idx in range(self.init_epoch if task_idx == 0 else self.inc_epoch):
 
                 print(f"learning rate : {self.scheduler.get_last_lr()}")
@@ -289,22 +293,21 @@ class Trainer(object):
                     print(f"================Validation on test set================")
 
                     # Disable validation for some method
-                    if self.config['classifier']['name'] not in ['TRGP', 'RanPAC', 'MInfLoRA']:
-                        
+                    if self.config['classifier']['name'] in ['TRGP', 'RanPAC', 'MInfLoRA']:
+                        print(f" * Disabled validation for this method")
+                    else:
                         test_acc = self._validate(task_idx)
 
                         avg_acc, per_task_acc = test_acc['avg_acc'], test_acc['per_task_acc']
                         best_avg_acc = max(avg_acc, best_avg_acc)
 
-                        bwt = sum(per_task_acc[:-1] - np.diag(avg_acc_table)[:task_idx]) / task_idx if task_idx > 0 else float('-inf')
-                        best_bwt = max(bwt, best_bwt)
+                        frgt, bwt = compute_frgt(avg_acc_table, per_task_acc, task_idx), compute_bwt(avg_acc_table, per_task_acc, task_idx)
+                        best_frgt, best_bwt = min(frgt, best_frgt), max(bwt, best_bwt)
 
                         print(f" * Average Acc (Best Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
+                        print(f" * Forgetting (Best Forgetting) : {frgt:.3f} ({best_frgt:.3f})")
                         print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
                         print(f" * Per-Task Acc : {per_task_acc}")
-                        
-                    else:
-                        print(f" * Disabled validation for this method")
             
                 if self.config['lr_scheduler']['name'] == "PatienceSchedule":
                     self.scheduler.step(train_meter.avg('loss'))
@@ -345,12 +348,16 @@ class Trainer(object):
                         avg_acc, per_task_acc = test_acc['avg_acc'], test_acc['per_task_acc']
                         best_avg_acc = max(avg_acc, best_avg_acc)
 
-                        bwt = sum(per_task_acc[:-1] - np.diag(acc_table)[:task_idx]) / task_idx if task_idx > 0 else 0.
+                        frgt = sum(np.diag(avg_acc_table)[:task_idx - 1] - per_task_acc[:-2]) / task_idx if task_idx > 1 else float('inf')
+                        best_frgt = min(frgt, best_frgt)
+
+                        bwt = sum(per_task_acc[:-1] - np.diag(acc_table)[:task_idx]) / task_idx if task_idx > 0 else float('-inf')
                         best_bwt = max(bwt, best_bwt)
 
-                        print(f" * Average Acc : {avg_acc:.2f} Best Acc : {best_avg_acc:.2f}")
+                        print(f" * Last Average Acc  (Best Last Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
+                        print(f" * Forgetting (Best Forgetting) : {frgt:.3f} ({best_frgt:.3f})")
+                        print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
                         print(f" * Per-Task Acc : {per_task_acc}")
-                        print(f" * Backward Transfer : {bwt:.2f} Best Backward Transfer : {best_bwt:.2f}")
             
                     self.scheduler.step()
 
@@ -361,9 +368,8 @@ class Trainer(object):
                     hearding_update(self.train_loader.get_loader(task_idx).dataset, self.buffer, self.model.backbone, self.device)
                 elif self.buffer.strategy == 'random':
                     random_update(self.train_loader.get_loader(task_idx).dataset, self.buffer)
+                  
             
-            
-            testing_times = 10 # Taking Average of 10 testing, hardcoded for now
             for test_idx in range(testing_times):
                 print(f"================Test {test_idx+1}/{testing_times} of Task {task_idx}!================")
 
@@ -371,33 +377,43 @@ class Trainer(object):
                 avg_acc, per_task_acc = test_acc['avg_acc'], test_acc['per_task_acc']
                 best_avg_acc = max(avg_acc, best_avg_acc)
 
-                bwt = sum(per_task_acc[:-1] - np.diag(avg_acc_table)[:task_idx]) / task_idx if task_idx > 0 else float('-inf')
-                best_bwt = max(bwt, best_bwt)
+                frgt, bwt = compute_frgt(avg_acc_table, per_task_acc, task_idx), compute_bwt(avg_acc_table, per_task_acc, task_idx)
+                best_frgt, best_bwt = min(frgt, best_frgt), max(bwt, best_bwt)
 
-                print(f" * Average Acc (Best Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
+                print(f" * Last Average Acc (Best Last Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
+                print(f" * Forgetting (Best Forgetting) : {frgt:.3f} ({best_frgt:.3f})")
                 print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
                 print(f" * Per-Task Acc : {per_task_acc}")
 
                 avg_acc_table[task_idx][:task_idx + 1] += np.array(per_task_acc)
 
-            avg_acc_table[task_idx] /= testing_times
+            avg_acc_table[task_idx] /= testing_times # Take mean of testing_times
 
-            bwt = sum(avg_acc_table[task_idx][:task_idx] - np.diag(avg_acc_table)[:task_idx]) / task_idx if task_idx > 0 else float('-inf')
-            bwt_list.append(bwt)
             avg_acc = np.mean(avg_acc_table[task_idx][:task_idx + 1])
-            ovr_avg_acc = np.sum(np.sum(avg_acc_table[:task_idx + 1], axis = 1) / np.arange(1, task_idx + 2)) / (task_idx + 1)
-            ovr_bwt = np.mean(bwt_list)
 
+            frgt, bwt = compute_frgt(avg_acc_table, avg_acc_table[task_idx], task_idx), compute_bwt(avg_acc_table, avg_acc_table[task_idx], task_idx)
+            best_frgt, best_bwt = min(frgt, best_frgt), max(bwt, best_bwt)
+            if task_idx > 1:
+                frgt_list.append(frgt)
+                bwt_list.append(bwt)
+                
             print(f"================Result of Task {task_idx} Testing!================")
-            print(f" * Average Acc (Best Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
+            print(f" * Last Average Acc (Best Last Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
+            print(f" * Forgetting (Best Forgetting) : {frgt:.3f} ({best_frgt:.3f})")
             print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
             print(f" * Per-Task Acc : {avg_acc_table[task_idx][:task_idx + 1]}")
 
+        ovr_avg_acc = np.sum(np.sum(avg_acc_table[:task_idx + 1], axis = 1) / np.arange(1, task_idx + 2)) / (task_idx + 1)
+        ovr_bwt = np.mean(bwt_list) if len(bwt_list) > 0 else float('-inf')
+        ovr_frgt = np.mean(frgt_list) if len(frgt_list) > 0 else float('inf')
+
         print(f"================Overall Result of {self.task_num} Tasks!================")
-        print(f" * Average Acc (Best Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
+        print(f" * Last Average Acc (Best Last Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
+        print(f" * Forgetting (Best Forgetting) : {frgt:.3f} ({best_frgt:.3f})")
         print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
         print(f" * Overall Avg Acc : {ovr_avg_acc:.2f}")
-        print(f" * Overall BwT : {bwt:.2f}")
+        print(f" * Overall Frgt : {ovr_frgt:.3f}")
+        print(f" * Overall BwT : {ovr_bwt:.2f}")
         print(f" * Average Acc Table : \n{avg_acc_table}")
 
         print(f"================Model Performance Analysis================")
@@ -453,8 +469,13 @@ class Trainer(object):
         self.model.train()
         meter = deepcopy(self.train_meter)
         meter.reset()
+        
+        for b, batch in tqdm(enumerate(dataloader), total=len(dataloader)):
 
-        for batch in tqdm(dataloader):
+            # This Method's Learning Rate is updated every iterations, not epochs
+            if self.config['classifier']['name'] == 'MOE_ADAPTER4CL':
+                self.scheduler.step(b)
+
             if self.config["classifier"]["name"] == "TRGP":
                 self.optimizer.zero_grad()
                 output, acc, loss = self.model.observe(batch)

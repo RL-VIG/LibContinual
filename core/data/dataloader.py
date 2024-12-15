@@ -1,20 +1,41 @@
-from torchvision import datasets, transforms
-# from .augments import *
 import os
 import numpy as np
-from .dataset import ContinualDatasets
+import core.data.custom_transforms as cstf
 
-# # MEAN = [120.39586422 / 255.0, 115.59361427 / 255.0, 104.54012653 / 255.0]
-# # STD = [70.68188272 / 255.0, 68.27635443 / 255.0, 72.54505529 / 255.0]
-# MEAN = [0.5071,  0.4866,  0.4409]
-# STD = [0.2009,  0.1984,  0.2023]
-# # WA
-# # MEAN = [0.5071, 0.4867, 0.4408]
-# # STD = [0.2675, 0.2565, 0.2761]
+from torchvision import datasets, transforms
+from .dataset import ContinualDatasets
 from .data import transform_classes
 
+def _create_transforms(cfg):
+    transform_list = []
+
+    for item in cfg:
+        for func_name, params in item.items():
+        
+            # Convert str to enum, if required
+            for k, v in params.items():
+                if isinstance(v, str):
+                    try:
+                        params[k] = transforms.InterpolationMode[v]
+                    except KeyError:
+                        pass
+
+            if func_name in cstf.custom_trfm_names:
+                transform = getattr(cstf, func_name)
+            else:
+                transform = getattr(transforms, func_name)(**params)
+
+            transform_list.append(transform)
+
+    return transforms.Compose(transform_list)
 
 def get_augment(config, mode='train'):
+
+    if f'{mode}_trfms' in config.keys():
+        return _create_transforms(config[f'{mode}_trfms'])
+
+    # TODO: currently keeping below part for backward compatibility, will be remove in future
+
     d = {'dataset': 'cifar', 
          'backbone': 'resnet',
          'mode': mode}
@@ -49,10 +70,11 @@ def get_dataloader(config, mode, cls_map=None):
     data_root = config['data_root']
 
     trfms = get_augment(config, mode)
-    # trfms = get_augment_method(config, mode)
-    # trfms_list.append(transforms.ToTensor())
-    # trfms_list.append(transforms.Normalize(mean=MEAN, std=STD))
-    # trfms = transforms.Compose(trfms_list)
+
+    if f'{mode}_batch_size' in config.keys():
+        batch_size = config[f'{mode}_batch_size']
+    else:
+        batch_size = config['batch_size']
 
     if cls_map is None:
         cls_list = os.listdir(os.path.join(data_root, mode))
@@ -61,10 +83,5 @@ def get_dataloader(config, mode, cls_map=None):
         for label, ori_label in enumerate(perm):
             cls_map[label] = cls_list[ori_label]
 
-    return ContinualDatasets(mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms, config['batch_size'])
-
-
-
-
-    
+    return ContinualDatasets(mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms, batch_size)
     

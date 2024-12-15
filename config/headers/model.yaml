@@ -3,6 +3,8 @@ epoch: 50
 batch_size: 64
 val_per_epoch: 1
 
+testing_times: 1
+
 setting: task-agnostic 
 # not require task id during inference
 # or task-aware, require task id during inference

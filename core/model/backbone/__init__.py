@@ -7,6 +7,7 @@ from .SiNet import SiNet_vit
 from .resnet_cbam import *
 from .alexnet import AlexNet
 from .alexnet_trgp import AlexNet_TRGP
+from .clip import clip
 
 #from .vit_inflora_opt import vit_pt_imnet_in21k_lora
 
