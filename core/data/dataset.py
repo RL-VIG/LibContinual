@@ -1,8 +1,8 @@
-from torch.utils.data import Dataset
+import os
 import PIL
 import numpy as np
-import os
-from torch.utils.data import DataLoader
+
+from torch.utils.data import Dataset, DataLoader
 
 
 class ContinualDatasets:
@@ -24,7 +24,7 @@ class ContinualDatasets:
             start_idx = 0 if i == 0 else (self.init_cls_num + (i-1) * self.inc_cls_num)
             end_idx = start_idx + (self.init_cls_num if i ==0 else self.inc_cls_num)
             self.dataloaders.append(DataLoader(
-                SingleDataseat(self.data_root, self.mode, self.cls_map, start_idx, end_idx, self.trfms),
+                SingleDataset(self.data_root, self.mode, self.cls_map, start_idx, end_idx, self.trfms),
                 shuffle = True,
                 batch_size = self.batchsize,
                 drop_last = False
@@ -37,10 +37,8 @@ class ContinualDatasets:
         else:
             return self.dataloaders[:task_idx+1]
         
-
-
     
-class SingleDataseat(Dataset):
+class SingleDataset(Dataset):
     def __init__(self, data_root, mode, cls_map, start_idx, end_idx, trfms):
         super().__init__()
         self.data_root = data_root
@@ -50,7 +48,7 @@ class SingleDataseat(Dataset):
         self.end_idx = end_idx
         self.trfms = trfms
 
-        self.images, self.labels = self._init_datalist()
+        self.images, self.labels, self.labels_name = self._init_datalist()
 
     def __getitem__(self, idx):
         img_path = self.images[idx]
@@ -63,16 +61,17 @@ class SingleDataseat(Dataset):
         return len(self.labels)
 
     def _init_datalist(self):
-        imgs, labels = [], []
+        imgs, labels, labels_name = [], [], []
         for id in range(self.start_idx, self.end_idx):
-            # print(id, self.cls_map[id])
             img_list = [self.cls_map[id] + '/' + pic_path for pic_path in os.listdir(os.path.join(self.data_root, self.mode, self.cls_map[id]))]
             imgs.extend(img_list)
             labels.extend([id for _ in range(len(img_list))])
+            labels_name.append(self.cls_map[id])
         
-        return imgs, labels
-        # return np.array(imgs), np.array(labels)
+        return imgs, labels, labels_name
 
+    def get_class_names(self):
+        return self.labels_name
     
 
 class BatchData(Dataset):

@@ -485,7 +485,6 @@ class ViT_in21k_adapter(nn.Module):
         # feature encoder changes if transformer vs resnet
         self.feat = zoo_model
         
-        
     def create_prompt(self, prompt_flag, **kwargs):
         self.prompt_flag = prompt_flag
         # self.prompt_param = prompt_param
@@ -496,7 +495,6 @@ class ViT_in21k_adapter(nn.Module):
             self.prompt = DualPrompt(768, **kwargs)
         elif self.prompt_flag == 'coda':
             self.prompt = CodaPrompt(768, **kwargs)
-        
         
     # pen: get penultimate features    
     def forward(self, x, pen=False, train=False):

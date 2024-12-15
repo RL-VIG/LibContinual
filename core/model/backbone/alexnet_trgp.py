@@ -93,7 +93,7 @@ class Linear(nn.Linear):
 
 class AlexNet_TRGP(nn.Module):
 
-    def __init__(self, dropout_rate_1 = 0.2, dropout_rate_2 = 0.5):
+    def __init__(self, dropout_rate_1 = 0.2, dropout_rate_2 = 0.5, **kwargs):
 
         super().__init__()
 

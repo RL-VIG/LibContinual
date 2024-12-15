@@ -199,6 +199,41 @@ def fmt_date_str(date=None, fmt="%y-%m-%d-%H-%M-%S"):
         date = datetime.now()
     return date.strftime(fmt)
 
+def compute_bwt(acc_table, curr_acc, task_idx):
+    '''
+    After training T tasks, $BWT = \frac{\sum_{i=3}^T\sum_{j=1}^{i-2}R_{i,j}-R{j,j}}{T(T-1)/2}$
+    Equivalent to Positive BwT of Continuum
+    https://arxiv.org/pdf/1810.13166
+    '''
+
+    if task_idx > 1:
+    
+        frgt = 0.
+        for i in range(2, task_idx):
+            for j in range(i - 1):
+                frgt += acc_table[i, j] - acc_table[j, j]
+
+        for j in range(task_idx - 1):
+            frgt += curr_acc[j] - acc_table[j, j]
+
+        return (frgt * 2) / (task_idx * (task_idx+1))
+
+    return 0.
+
+
+def compute_frgt(acc_table, curr_acc, task_idx):
+    '''
+    After training T tasks, $BWT = \frac{\sum_{j=1}^{T-2}R_{T-1,j}-R_{j,j}}{T-1}$
+    Equivalent to Forgetting of Continuum
+    '''
+
+    curr_acc = curr_acc[:task_idx+1]
+
+    if task_idx > 1:
+        return sum(np.diag(acc_table)[:task_idx - 1] - curr_acc[:-2]) / task_idx
+    return 0.
+
+
 def compute_fps(model, config):
     model.eval()
 

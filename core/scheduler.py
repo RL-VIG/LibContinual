@@ -59,6 +59,33 @@ class CosineSchedule(_LRScheduler):
     def get_last_lr(self):
         return self.get_lr()
 
+class CosineAnnealingWarmUp(_LRScheduler):
+
+    def __init__(self, optimizer, warmup_length, T_max = 0, last_epoch = -1):
+        self.warmup_length = warmup_length
+        self.T_max = T_max
+        self.last_epoch = last_epoch
+
+        super().__init__(optimizer, last_epoch)
+
+    def cosine_lr(self, base_lr):
+
+        return base_lr * 0.5 * (1 + math.cos(math.pi * self.last_epoch / self.T_max))
+
+    def warmup_lr(self, base_lr):
+
+        return base_lr * (self.last_epoch + 1) / self.warmup_length
+
+    def get_lr(self):
+        if self.last_epoch < self.warmup_length:
+            return [self.warmup_lr(base_lr) for base_lr in self.base_lrs]
+        else:
+            return [self.cosine_lr(base_lr) for base_lr in self.base_lrs]
+    
+    def get_last_lr(self):
+        assert self.T_max > 0, 'CosineAnnealingWarmUp is called with T_max <= 0, Check your code'
+        return self.get_lr()
+
 class PatienceSchedule(_LRScheduler):
 
     def __init__(self, optimizer, patience, factor):
