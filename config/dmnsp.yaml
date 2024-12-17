@@ -1,21 +1,21 @@
-init_cls_num: &init_cls_num 20 # 第一次任务的分类数量
-inc_cls_num: &inc_cls_num 20   # 之后每次任务的分类数量
+init_cls_num: &init_cls_num 10 # 第一次任务的分类数量
+inc_cls_num: &inc_cls_num 10   # 之后每次任务的分类数量
 total_cls_num: &total_cls_num 100
-task_num: &task_num 5
+task_num: &task_num 10
 image_size: &image_size 224
 
 task_num: *task_num
 init_cls_num: *init_cls_num
 inc_cls_num: *inc_cls_num
 total_cls_num: *total_cls_num
-epoch: 1 # 1
-val_per_epoch: 1 # 1
+epoch: 4 # 4
+val_per_epoch: 4 # 4
 image_size: *image_size # Never Being used
 
 train_batch_size: 128
 test_batch_size: 64
 
-testing_times: 10
+testing_times: 1
 
 setting: task-agnostic 
 
@@ -55,10 +55,10 @@ backbone:
   kwargs:
     model_name : ViT-B/16
     pretrained : True
-    experts_num: 2
+    experts_num: 1
 
 classifier:
-  name: MOE_ADAPTER4CL
+  name: DMNSP
   kwargs:
     init_cls_num: *init_cls_num
     inc_cls_num: *inc_cls_num

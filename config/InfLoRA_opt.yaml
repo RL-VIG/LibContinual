@@ -1,21 +1,40 @@
+dataset: &dataset cifar100
 init_cls_num: &init_cls_num 10 # 第一次任务的分类数量
 inc_cls_num: &inc_cls_num 10   # 之后每次任务的分类数量
 total_cls_num: &total_cls_num 100
-num_classes: &num_classes 100 
 task_num: &task_num 10
+image_size: &image_size 224
 
-task_num: *task_num
+dataset: *dataset
 init_cls_num: *init_cls_num
 inc_cls_num: *inc_cls_num
 total_cls_num: *total_cls_num
-init_epoch: 1 # 20
+task_num: *task_num
+
 epoch: 1 # 20
 val_per_epoch: 20
-image_size: 224 # not being used
+image_size: 224 # Never Being used
 
 batch_size: 10 # 128
 
 setting: task-agnostic 
+
+train_trfms:
+  - RandomResizedCrop:
+      size: *image_size
+  - RandomHorizontalFlip: {}
+  - ToTensor: {}
+  - Normalize:
+      mean: [0., 0., 0.]
+      std: [1., 1., 1.]
+
+test_trfms: 
+  - Resize:
+      size: *image_size
+  - ToTensor: {}
+  - Normalize:
+      mean: [0., 0., 0.]
+      std: [1., 1., 1.]
 
 optimizer:
   name: Adam
@@ -40,9 +59,12 @@ backbone:
 classifier:
   name: InfLoRA_OPT
   kwargs:
+    use_ca: True
+    dataset: *dataset
     init_cls_num: *init_cls_num
     inc_cls_num: *inc_cls_num
     task_num: *task_num
     lame: 1.0
     lamb: 0.95
     embd_dim: 768
+    

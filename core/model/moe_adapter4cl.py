@@ -93,10 +93,5 @@ class MOE_ADAPTER4CL(nn.Module):
             [self.prompt_template.format(c) for c in self.accm_class_names]
         ).to(self.device)
 
-    def after_task(self, task_idx, buffer, train_loader, test_loaders):
-
-        pass
-
-
     def get_parameters(self, config):
         return self._network.parameters()

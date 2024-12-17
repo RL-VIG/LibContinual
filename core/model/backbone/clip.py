@@ -276,7 +276,7 @@ class QuickGELU(nn.Module):
         return x * torch.sigmoid(1.702 * x)
 
 class ResidualAttentionBlock(nn.Module):
-    def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None, text_or_image=None):
+    def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None, text_or_image=None, experts_num=2):
         super().__init__()
         self.register_buffer("mean", torch.tensor([0.0]))
         self.register_buffer("std", torch.tensor([1.0]))
@@ -293,32 +293,33 @@ class ResidualAttentionBlock(nn.Module):
         self.step = 1
         self.top_k = 2
         self.ffn_num = 64
-        self.experts_num = 2
+        self.experts_num = experts_num
         self.softmax = nn.Softmax(1)
         self.softplus = nn.Softplus()
         self.noisy_gating = True
         self.adaptmlp_list = nn.ModuleList()
         self.text_or_image = text_or_image
         if text_or_image == 'text':
-            #print('text transformer')
-            self.choose_map_text = torch.zeros([ self.experts_num])
+            self.choose_map_text = torch.zeros([self.experts_num])
         else:
-            #print('image transformer')
-            self.choose_map_image = torch.zeros([ self.experts_num])
+            self.choose_map_image = torch.zeros([self.experts_num])
         self.router_list = nn.ParameterList()
         self.w_noise_list = nn.ParameterList()
+
         for i in range(self.step):
             self.router_list.append(nn.Parameter(torch.zeros(d_model, self.experts_num), requires_grad=True))
             self.w_noise_list.append(nn.Parameter(torch.zeros(d_model, self.experts_num), requires_grad=True))
         for i in range(self.experts_num):  #
-            self.adaptmlp = Adapter(d_model=d_model, dropout=0.1, bottleneck=self.ffn_num,
+            self.adaptmlp_list.append(Adapter(d_model=d_model, dropout=0.1, bottleneck=self.ffn_num,
                                     init_option='lora',
                                     adapter_scalar=0.1,
                                     adapter_layernorm_option='none',
-                                    )
-            self.adaptmlp_list.append(self.adaptmlp)
+                                    ))
+
+        self.lora_feature = None # Temporary save the output of adapter, for method : DMNSP
 
         # self.taskid = None
+    
     def attention(self, x: torch.Tensor):
         self.attn_mask = self.attn_mask.to(dtype=x.dtype, device=x.device) if self.attn_mask is not None else None
         return self.attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
@@ -419,55 +420,78 @@ class ResidualAttentionBlock(nn.Module):
             load = self._gates_to_load(gates)
         return gates, load
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, compute_lora_feat=False):
+        # TODO: clean
         x = x + self.attention(self.ln_1(x))
         if global_taskid is not None:
-            x_re = x.permute(1, 0, 2)[:, 0, :]
-            gates, load = self.noisy_top_k_gating(x_re, self.is_train, self.router_list[global_taskid],
-                                                  self.w_noise_list[global_taskid])
-            importance = gates.sum(0)
+            
+            if self.experts_num > 1:
+                x_re = x.permute(1, 0, 2)[:, 0, :]
+                gates, load = self.noisy_top_k_gating(x_re, self.is_train, self.router_list[global_taskid],
+                                                    self.w_noise_list[global_taskid])
+                importance = gates.sum(0)
 
-            nonzero_indices = torch.nonzero(gates)
-            counter = Counter(nonzero_indices[:, 1].tolist())
-            for number, count in counter.items():
-                if self.text_or_image == 'text':
-                    self.choose_map_text[number] = self.choose_map_text[number] + count
-                else:
-                    self.choose_map_image[number] = self.choose_map_image[number] + count
-            dispatcher = SparseDispatcher(self.experts_num, gates)
-            expert_inputs = dispatcher.dispatch(x.permute(1, 0, 2).view(x.shape[1], -1))
-            expert_outputs = [self.adaptmlp_list[i](expert_inputs[i].view(expert_inputs[i].shape[0],
-                                                                          x.shape[0], x.shape[2]).to(x), add_residual=False)
-                              for i in range(self.experts_num)]
+                nonzero_indices = torch.nonzero(gates)
+                counter = Counter(nonzero_indices[:, 1].tolist())
+                for number, count in counter.items():
+                    if self.text_or_image == 'text':
+                        self.choose_map_text[number] = self.choose_map_text[number] + count
+                    else:
+                        self.choose_map_image[number] = self.choose_map_image[number] + count
+                dispatcher = SparseDispatcher(self.experts_num, gates)
+                expert_inputs = dispatcher.dispatch(x.permute(1, 0, 2).view(x.shape[1], -1))
+                expert_outputs = [self.adaptmlp_list[i](expert_inputs[i].view(expert_inputs[i].shape[0],
+                                                                            x.shape[0], x.shape[2]).to(x), add_residual=False)
+                                for i in range(self.experts_num)]
 
-            i = 0
-            while i < len(expert_outputs):
-                if expert_outputs[i].shape[0] == 0:
-                    expert_outputs.pop(i)
-                else:
-                    expert_outputs[i] = expert_outputs[i].view(expert_outputs[i].shape[0], -1)
-                    i += 1
+                i = 0
+                while i < len(expert_outputs):
+                    if expert_outputs[i].shape[0] == 0:
+                        expert_outputs.pop(i)
+                    else:
+                        expert_outputs[i] = expert_outputs[i].view(expert_outputs[i].shape[0], -1)
+                        i += 1
 
-            y = dispatcher.combine(expert_outputs)
-            y = y.view(x.shape[1], x.shape[0], x.shape[2])
-            x = x + self.mlp(self.ln_2(x)) + y.permute(1, 0, 2)
+                y = dispatcher.combine(expert_outputs)
+                y = y.view(x.shape[1], x.shape[0], x.shape[2])
+                x = x + self.mlp(self.ln_2(x)) + y.permute(1, 0, 2)
+
+            else:
+                assert len(self.adaptmlp_list) == 1
+
+                x_re = x.permute(1, 0, 2)
+                adapt_x = self.adaptmlp_list[0](x_re, add_residual=False)
+                adapt_x = adapt_x.permute(1, 0, 2)
+
+                x = x + self.mlp(self.ln_2(x)) + adapt_x
+
+                if compute_lora_feat:
+                    self.lora_feature = adapt_x.detach().cpu()
+
         else:
             x = x + self.mlp(self.ln_2(x))
+
         return x
 
 class Transformer(nn.Module):
-    def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None, text_or_image=None):
+    def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None, text_or_image=None, **kwargs):
         super().__init__()
         self.width = width
         self.layers = layers
-        self.resblocks = nn.Sequential(*[ResidualAttentionBlock(width, heads, attn_mask, text_or_image) for _ in range(layers)])
+        self.resblocks = nn.ModuleList([ResidualAttentionBlock(width, heads, attn_mask, text_or_image, **kwargs) for _ in range(layers)])
 
-    def forward(self, x: torch.Tensor):
-        return self.resblocks(x)
+        self.lora_feature = []
+
+    def forward(self, x: torch.Tensor, **kwargs):
+
+        for block in self.resblocks:
+            x = block(x, **kwargs)
+            
+        return x
 
 class VisualTransformer(nn.Module):
-    # If only we can replace this ViT with the ViT in another file
-    def __init__(self, input_resolution: int, patch_size: int, width: int, layers: int, heads: int, output_dim: int, text_or_image=None):
+    # TODO: If only we can replace this ViT with the ViT in another file
+    def __init__(self, input_resolution: int, patch_size: int, width: int, layers: int, heads: int, output_dim: int, text_or_image=None, **kwargs):
         super().__init__()
         self.input_resolution = input_resolution
         self.output_dim = output_dim
@@ -484,12 +508,12 @@ class VisualTransformer(nn.Module):
         self.positional_embedding = nn.Parameter(scale * torch.randn((input_resolution // patch_size) ** 2 + 1, width))
         self.ln_pre = LayerNorm(width)
 
-        self.transformer = Transformer(width, layers, heads, text_or_image=text_or_image)
+        self.transformer = Transformer(width, layers, heads, text_or_image=text_or_image, **kwargs)
 
         self.ln_post = LayerNorm(width)
         self.proj = nn.Parameter(scale * torch.randn(width, output_dim))
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor, **kwargs):
         x = self.conv1(x)
         x = x.reshape(x.shape[0], x.shape[1], -1)
         x = x.permute(0, 2, 1)
@@ -498,7 +522,7 @@ class VisualTransformer(nn.Module):
         x = self.ln_pre(x)
 
         x = x.permute(1, 0, 2)  # NLD -> LND
-        x = self.transformer(x)
+        x = self.transformer(x, **kwargs)
         x = x.permute(1, 0, 2)  # LND -> NLD
 
         x = self.ln_post(x[:, 0, :])
@@ -522,7 +546,10 @@ class CLIP(nn.Module):
                  transformer_width: int,
                  transformer_heads: int,
                  transformer_layers: int,
-                 baseline = False
+                 baseline = False,
+                 # MoE
+                 experts_num: int = 1,
+                 **kwargs
                  ):
         super().__init__()
         self.baseline = baseline
@@ -547,7 +574,8 @@ class CLIP(nn.Module):
                 layers=vision_layers,
                 heads=vision_heads,
                 output_dim=embed_dim,
-                text_or_image='image'
+                text_or_image='image',
+                experts_num=experts_num
             )
 
         self.transformer = Transformer(
@@ -555,7 +583,8 @@ class CLIP(nn.Module):
             layers=transformer_layers,
             heads=transformer_heads,
             attn_mask=self.build_attention_mask(),
-            text_or_image='text'
+            text_or_image='text',
+            experts_num=experts_num
         )
 
         self.vocab_size = vocab_size
@@ -610,16 +639,16 @@ class CLIP(nn.Module):
     def dtype(self):
         return self.visual.conv1.weight.dtype
 
-    def encode_image(self, image):
-        return self.visual(image.type(self.dtype))
+    def encode_image(self, image, **kwargs):
+        return self.visual(image.type(self.dtype), **kwargs)
 
-    def encode_text(self, text):
+    def encode_text(self, text, **kwargs):
 
         x = self.token_embedding(text).type(self.dtype)  # [batch_size, n_ctx, d_model]
 
         x = x + self.positional_embedding.type(self.dtype)
         x = x.permute(1, 0, 2)  # NLD -> LND
-        x = self.transformer(x)
+        x = self.transformer(x, **kwargs)
         x = x.permute(1, 0, 2)  # LND -> NLD
         x = self.ln_final(x).type(self.dtype)
 
@@ -628,16 +657,16 @@ class CLIP(nn.Module):
 
         return x
 
-    def forward(self, image, text, taskid, is_train):
+    def forward(self, image, text, taskid, is_train, **kwargs):
         global global_taskid, global_is_train
         global_taskid = taskid
         global_is_train = is_train
         if image is None:
-            return self.encode_text(text)
+            return self.encode_text(text, **kwargs)
         elif text is None:
-            return self.encode_image(image)
-        image_features = self.encode_image(image)
-        text_features = self.encode_text(text)
+            return self.encode_image(image, **kwargs)
+        image_features = self.encode_image(image, **kwargs)
+        text_features = self.encode_text(text, **kwargs)
 
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         text_features = text_features / text_features.norm(dim=-1, keepdim=True)
@@ -649,7 +678,7 @@ class CLIP(nn.Module):
 
         return logits_per_image, logits_per_text
 
-def build_model(state_dict: dict):
+def build_model(state_dict: dict, **kwargs):
     vit = "visual.proj" in state_dict
 
     if vit:
@@ -677,7 +706,7 @@ def build_model(state_dict: dict):
     model = CLIP(
         embed_dim,
         image_resolution, vision_layers, vision_width, vision_patch_size,
-        context_length, vocab_size, transformer_width, transformer_heads, transformer_layers
+        context_length, vocab_size, transformer_width, transformer_heads, transformer_layers, **kwargs
     )
 
     for key in ["input_resolution", "context_length", "vocab_size"]:
@@ -735,7 +764,7 @@ def _download(url: str, root: str = os.path.expanduser("~/.cache/clip")):
 
     return download_target
 
-def load(name: str, device: Union[str, torch.device] = "cuda" if torch.cuda.is_available() else "cpu", jit=True, pretrained=True):
+def load(name: str, device: Union[str, torch.device] = "cuda" if torch.cuda.is_available() else "cpu", jit=True, pretrained=True, **kwargs):
     """Load a CLIP model
     Parameters
     ----------
@@ -778,10 +807,10 @@ def load(name: str, device: Union[str, torch.device] = "cuda" if torch.cuda.is_a
 
     if not jit:
         try:
-            model = build_model(state_dict or model.state_dict()).to(device)
+            model = build_model(state_dict or model.state_dict(), **kwargs).to(device)
         except KeyError:
             sd = {k[7:]: v for k,v in state_dict["state_dict"].items()}
-            model = build_model(sd).to(device)
+            model = build_model(sd, **kwargs).to(device)
 
         if str(device) == "cpu":
             model.float()
@@ -866,4 +895,4 @@ def tokenize(texts: Union[str, List[str]], context_length: int = 77) -> torch.Lo
     return result
 
 def clip(model_name, device, jit = False, pretrained = False, **kwargs):
-    return load(model_name, device, jit, pretrained)
+    return load(model_name, device, jit, pretrained, **kwargs)
