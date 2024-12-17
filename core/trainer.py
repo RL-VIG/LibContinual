@@ -348,11 +348,8 @@ class Trainer(object):
                         avg_acc, per_task_acc = test_acc['avg_acc'], test_acc['per_task_acc']
                         best_avg_acc = max(avg_acc, best_avg_acc)
 
-                        frgt = sum(np.diag(avg_acc_table)[:task_idx - 1] - per_task_acc[:-2]) / task_idx if task_idx > 1 else float('inf')
-                        best_frgt = min(frgt, best_frgt)
-
-                        bwt = sum(per_task_acc[:-1] - np.diag(acc_table)[:task_idx]) / task_idx if task_idx > 0 else float('-inf')
-                        best_bwt = max(bwt, best_bwt)
+                        frgt, bwt = compute_frgt(avg_acc_table, per_task_acc, task_idx), compute_bwt(avg_acc_table, per_task_acc, task_idx)
+                        best_frgt, best_bwt = min(frgt, best_frgt), max(bwt, best_bwt)
 
                         print(f" * Last Average Acc  (Best Last Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
                         print(f" * Forgetting (Best Forgetting) : {frgt:.3f} ({best_frgt:.3f})")
@@ -470,13 +467,14 @@ class Trainer(object):
         meter = deepcopy(self.train_meter)
         meter.reset()
         
-        for b, batch in tqdm(enumerate(dataloader), total=len(dataloader)):
+        total = len(dataloader)
+        for b, batch in tqdm(enumerate(dataloader), total=total):
 
-            # This Method's Learning Rate is updated every iterations, not epochs
-            if self.config['classifier']['name'] == 'MOE_ADAPTER4CL':
-                self.scheduler.step(b)
+            # These method's LR is updated every iterations, not epochs
+            if self.config['classifier']['name'] in ['MOE_ADAPTER4CL', 'DMNSP']:
+                self.scheduler.step(total * epoch_idx + b)
 
-            if self.config["classifier"]["name"] == "TRGP":
+            if self.config["classifier"]["name"] in ['TRGP', 'DMNSP']:
                 self.optimizer.zero_grad()
                 output, acc, loss = self.model.observe(batch)
             else:

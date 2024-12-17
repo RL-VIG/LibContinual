@@ -42,6 +42,12 @@ class SiNet(nn.Module):
         features = self.backbone(x, task_id = self._cur_task_id)
         return features
 
+    def fc_only(self, x):
+        logits = []
+        for prompts in self.classifier_pool[:self._cur_task_id + 1]:
+            logits.append(prompts(x))
+        return torch.cat(logits, dim=1)
+        
     def forward(self, x, inference = False):
         logits = []
         features = self.backbone(x, task_id = self._cur_task_id)
@@ -73,11 +79,14 @@ class InfLoRA_OPT(nn.Module):
         self.feature_list = []
         self.project_type = []
 
-        self._network = SiNet(backbone, **kwargs)
+        self._dataset = kwargs['dataset']
+        self._use_class_alignment = kwargs['use_ca']
+        self.logit_norm = None if self._dataset == 'cifar100' else 0.1
+        self._class_means = None
+        self._class_covs = None
 
+        self._network = SiNet(backbone, **kwargs).to(self.device)
         self.attention_modules = [module for module in self._network.modules() if isinstance(module, Attention_LoRA)]
-
-        self._network.to(self.device)
 
     def observe(self, data):
         '''
@@ -110,6 +119,7 @@ class InfLoRA_OPT(nn.Module):
 
         return preds, acc
     
+    @torch.no_grad()
     def before_task(self, task_idx, buffer, train_loader, test_loaders):
         '''
         It is called before the training of each task to update the parameters, select the branch for training, and update the lora_A matrix of the corresponding branch
@@ -135,10 +145,9 @@ class InfLoRA_OPT(nn.Module):
         print(f"Current task : {task_idx}, Parameters to be updated: {len(unfrezeed_params)}")
         print(",\n".join(unfrezeed_params))
 
-        with torch.no_grad():
-            for batch in tqdm(train_loader, desc="Forwarding to get input matrix"):
-                x = batch['image'].to(self.device)
-                self._network.update_input_matrix(x)
+        for batch in tqdm(train_loader, desc="Forwarding to get input matrix"):
+            x = batch['image'].to(self.device)
+            self._network.update_input_matrix(x)
 
         if task_idx == 0:
             for module in self.attention_modules:
@@ -171,43 +180,48 @@ class InfLoRA_OPT(nn.Module):
         for module in self.attention_modules:
             module.merge_weight()
 
-        with torch.no_grad():
-            for batch in tqdm(train_loader, desc="Forwarding to get input matrix"):
-                x = batch['image'].to(self.device)
-                self._network.update_input_matrix(x)
+        self._update_feature(task_idx, train_loader)
+        if self._use_class_alignment:
+            self._create_distribution(train_loader, test_loaders[0].dataset.trfms)
+            if task_idx > 0:
+                self._compact_classifier(task_idx)
 
-        self.update_DualGPM(task_idx)
-
-    def update_DualGPM(self, task_idx):
+    @torch.no_grad()
+    def _update_feature(self, task_idx, train_loader):
         '''
         Update feature lists and the corresponding type
         '''
 
-        threshold = (self.lame - self.lamb) * task_idx/self.task_num + self.lamb
-        print(f'Threshold: {threshold}')
+        for batch in tqdm(train_loader, desc="Forwarding to get input matrix"):
+            x = batch['image'].to(self.device)
+            self._network.update_input_matrix(x)
+
+        threshold = (self.lame - self.lamb)*task_idx/self.task_num + self.lamb
 
         if task_idx == 0:
-            for module in self.attention_modules:
-                activation = module.cur_matrix.detach().numpy()
+            for i, attention_module in enumerate(self.attention_modules):
+                activation = attention_module.cur_matrix
+
                 U, S, _ = np.linalg.svd(activation, full_matrices=False)
                 sval_total = (S**2).sum()
                 sval_ratio = (S**2)/sval_total
                 r = max(np.sum(np.cumsum(sval_ratio) < threshold), 1)
-                self.feature_list.append(U[: ,:r])
-                if r < (activation.shape[0]/2):
-                    self.project_type.append('remove')
-                else:
-                    self.project_type.append('retain')
+                assert r < activation.shape[0]/2
 
-                module.reset_input_matrix()
+                self.feature_list.append(U[:, :r])
+                self.project_type.append('remove')
+
+                attention_module.reset_input_matrix()                
         else:
-            for i, module in enumerate(self.attention_modules):
-                activation = module.cur_matrix.detach().numpy()
-                _, S, _ = np.linalg.svd(activation, full_matrices = False)
+            for i, attention_module in enumerate(self.attention_modules):
+
+                activation = attention_module.cur_matrix
+                _, S, _ = np.linalg.svd(activation, full_matrices=False)
                 sval_total = (S**2).sum()
 
                 if self.project_type[i] == 'remove':
-                    act_hat = activation - self.feature_list[i] @ self.feature_list[i].T @ activation
+
+                    act_hat = activation - torch.Tensor(self.feature_list[i] @ self.feature_list[i].T) @ activation
                     U, S, _ = np.linalg.svd(act_hat, full_matrices = False)
                     sval_hat = (S**2).sum()
                     sval_ratio = (S**2)/sval_total               
@@ -219,13 +233,13 @@ class InfLoRA_OPT(nn.Module):
                         r = np.sum(np.cumsum(sval_ratio) + accumulated_sval < threshold) + 1
                         Ui = np.hstack((self.feature_list[i], U[:, :r]))  
                         self.feature_list[i] = Ui[:, :min(Ui.shape[0], Ui.shape[1])]
-            
+     
                 else:
-                    act_hat = self.feature_list[i] @ self.feature_list[i].T @ activation
-                    U, S, _ = np.linalg.svd(act_hat, full_matrices = False)
+                    act_hat = torch.Tensor(self.feature_list[i] @ self.feature_list[i].T) @ activation
+                    U,S,_ = np.linalg.svd(act_hat, full_matrices = False)
                     sval_hat = (S**2).sum()
-                    sval_ratio = (S**2)/sval_total        
-                    accumulated_sval = sval_hat/sval_total       
+                    sval_ratio = (S**2)/sval_total     
+                    accumulated_sval = sval_hat/sval_total          
 
                     if accumulated_sval < 1 - threshold:
                         print (f'Skip Updating Space for layer: {i+1}')
@@ -233,12 +247,12 @@ class InfLoRA_OPT(nn.Module):
                         r = np.sum(accumulated_sval - np.cumsum(sval_ratio) >= 1 - threshold) + 1
                         act_feature = self.feature_list[i] - U[:,0:r] @ U[:,0:r].T @ self.feature_list[i]
                         U, _, _ = np.linalg.svd(act_feature)
-                        self.feature_list[i] = U[:, :self.feature_list[i].shape[1]-r]
+                        self.feature_list[i]=U[:,:self.feature_list[i].shape[1]-r]
 
-                module.reset_input_matrix()
+                attention_module.reset_input_matrix()
 
         print('-'*40)
-        print('Gradient Constraints Summary')
+        print(f'Threshold: {threshold}')
         print('-'*40)
         for i in range(len(self.feature_list)):
             if self.project_type[i]=='remove' and (self.feature_list[i].shape[1] > (self.feature_list[i].shape[0]/2)):
@@ -251,6 +265,97 @@ class InfLoRA_OPT(nn.Module):
                 assert self.feature_list[i].shape[1] <= (self.feature_list[i].shape[0]/2)
             print ('Layer {} : {}/{} type {}'.format(i+1,self.feature_list[i].shape[1], self.feature_list[i].shape[0], self.project_type[i]))
         print('-'*40)
+
+    @torch.no_grad()
+    def _create_distribution(self, train_loader, test_trfms):
+        
+        self._network.eval()
+        train_loader.dataset.trfms = test_trfms
+
+        samples = [[] for _ in range(self.inc_cls_num)]
+        for batch in train_loader:
+            x, y = batch['image'], batch['label'] - self._known_classes
+            for label in range(self.inc_cls_num):
+                samples[label].append(x[y == label])
+        samples = [torch.cat(label_sample, dim = 0).to(self.device) for label_sample in samples]
+
+        # Computing class mean
+        if self._class_means is None:
+            self._class_means = torch.zeros((self.init_cls_num, 768))
+            self._class_covs = torch.zeros((self.init_cls_num, 768, 768))
+        else:
+            self._class_means = torch.cat((self._class_means, torch.zeros((self.inc_cls_num, 768))), dim=0)
+            self._class_covs = torch.cat((self._class_covs, torch.zeros((self.inc_cls_num, 768, 768))), dim=0)
+
+        for class_idx, x in enumerate(samples):
+            class_idx += self._known_classes
+            features = self._network.get_feature(x)
+
+            self._class_means[class_idx, :] = torch.mean(features, dim = 0)
+            self._class_covs[class_idx, :, :] = torch.cov(features.to(torch.float64).T) + torch.eye(768, device = self.device) * 1e-4
+
+    def _compact_classifier(self, task_idx):
+
+        # Hyperparam
+        epoch = 5
+        lr = 0.01
+        weight_decay = 0.0005
+        momentum = 0.9
+        num_sample = 256
+
+        for param in self._network.classifier_pool[:task_idx + 1].parameters():
+            param.requires_grad_(True)
+        param_list = [param for param in self._network.classifier_pool.parameters() if param.requires_grad]
+
+        optimizer = optim.SGD(param_list, lr=lr, momentum=momentum, weight_decay=weight_decay)
+        scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer=optimizer, T_max=epoch)
+
+        for ep in range(epoch):
+            sampled_data, sampled_label = [], []
+
+            for class_id in range((task_idx + 1) * self.inc_cls_num):
+                task_id = class_id // self.inc_cls_num
+
+                decay = (task_id + 1) / (task_idx + 1) * 0.1
+                cls_mean = self._class_means[class_id].to(self.device, torch.float64) * (0.9 + decay)
+                cls_cov = self._class_covs[class_id].to(self.device)
+
+                m = torch.distributions.multivariate_normal.MultivariateNormal(cls_mean.float(), cls_cov.float())
+
+                sampled_data_single = m.sample(sample_shape=(num_sample,))
+                sampled_data.append(sampled_data_single)                
+                sampled_label.extend([class_id] * num_sample)
+
+            inputs = torch.cat(sampled_data, dim=0).float().to(self.device)
+            targets = torch.tensor(sampled_label).long().to(self.device)
+
+            # Randomize
+            sf_indexes = torch.randperm(inputs.size(0))
+            inputs = inputs[sf_indexes]
+            targets = targets[sf_indexes]
+            
+            for _iter in range((task_idx + 1) * self.inc_cls_num):
+                
+                #task_id = _iter // self.inc_cls_num
+
+                inp = inputs[_iter * num_sample : (_iter+1) * num_sample]
+                tgt = targets[_iter * num_sample : (_iter+1) * num_sample]
+                logits = self._network.fc_only(inp)
+
+                assert logits.shape == logits[:, :(task_idx + 1) * self.inc_cls_num].shape
+
+                if self.logit_norm:
+
+                    pass
+
+                else:
+                    loss = F.cross_entropy(logits, tgt)
+
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+
+            scheduler.step()
 
     def get_parameters(self, config):
         return self._network.parameters()

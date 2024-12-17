@@ -66,4 +66,5 @@ class Adapter(nn.Module):
             output = up + residual
         else:
             output = up
+        
         return output
