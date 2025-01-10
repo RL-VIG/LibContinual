@@ -1,7 +1,6 @@
 diffdist==0.1
 numpy==1.21.6
 Pillow==10.2.0
-PyYAML==6.0.1
 scikit_learn==1.0.2
 torch==1.12.1
 torchvision==0.13.1
