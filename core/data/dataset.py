@@ -1,9 +1,10 @@
 import os
+from re import A
+from typing import List
 import PIL
 import numpy as np
 
 from torch.utils.data import Dataset, DataLoader
-
 
 class ContinualDatasets:
     def __init__(self, mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms, batchsize):
