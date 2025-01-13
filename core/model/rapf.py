@@ -53,6 +53,10 @@ def seed_everything(seed=0):
     os.environ['PYTHONHASHSEED'] = str(seed)
 
 
+"""
+This clas refer to the following repository:
+https://github.com/linlany/RAPF
+"""
 class ClassIncrementalCLIP(nn.Module):
     def __init__(self, model, **kwargs):
         super().__init__()
@@ -220,7 +224,10 @@ class ClassIncrementalCLIP(nn.Module):
             weight = U_old @ right
             self.adapter.weight.data = weight
 
-
+"""
+This clas refer to the following repository:
+https://github.com/linlany/RAPF
+"""
 class RAPF(nn.Module):
     def __init__(self, backbone, **kwargs):
         super().__init__()
