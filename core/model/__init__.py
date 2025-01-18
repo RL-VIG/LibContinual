@@ -22,3 +22,4 @@ from .trgp import TRGP
 from .InfLoRA_opt import InfLoRA_OPT
 from .moe_adapter4cl import MOE_ADAPTER4CL
 from .dmnsp import DMNSP
+from .rapf import RAPF
