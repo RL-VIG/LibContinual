@@ -37,6 +37,7 @@ Complete tutorials can be found at [`./docs`](https://libcontinual.readthedocs.i
 
 ## Datasets
 [CIFAR-100](https://www.cs.toronto.edu/~kriz/cifar.html) are available at [Google Drive](https://drive.google.com/drive/folders/1EL46LQ3ww-F1NVTwFDPIg-nO198cUqWm?usp=sharing)  <br>
+CUB200, ImageNet-R are available at [Google Drive](https://drive.google.com/drive/folders/16afRW2952coWJSbiH7cZT1b8pRibA8nH?usp=sharing)  <br>
 
 After the dataset is downloaded, please extract the compressed file to the specified path.
 ```
