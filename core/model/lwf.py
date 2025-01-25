@@ -17,7 +17,7 @@ class LWF(Finetune):
         self.inc_cls_num = kwargs['inc_cls_num']
         self.known_cls_num = 0
         self.total_cls_num = 0
-        self.old_backbone = None
+        self.old_backbone = None        
 
     def freeze(self,nn):
         for param in nn.parameters():

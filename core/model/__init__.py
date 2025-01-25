@@ -20,5 +20,7 @@ from .praka import PRAKA
 from .ranpac import RanPAC
 from .trgp import TRGP
 from .InfLoRA_opt import InfLoRA_OPT
+from .MInfLoRA import MInfLoRA
 from .moe_adapter4cl import MOE_ADAPTER4CL
+from .moe_test import MoE_Test
 from .dmnsp import DMNSP

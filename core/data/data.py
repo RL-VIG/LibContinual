@@ -119,8 +119,58 @@ class ImageNetTransform:
         else:
             raise ValueError("Unsupported model type")
     
+class ImageNetRTransform:
+    mean = [0.4914, 0.4822, 0.4465]
+    std = [0.2023, 0.1994, 0.2010]
+    
+    common_trfs = [transforms.ToTensor(),
+                   transforms.Normalize(mean, std)]
+    
+    resnet_train_transform = transforms.Compose([
+        transforms.RandomResizedCrop(224),
+        transforms.RandomHorizontalFlip(),
+        transforms.ColorJitter(brightness=63 / 255),
+        *common_trfs])
+    
+    resnet_test_transform = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        *common_trfs])
+
+    mean = [0., 0., 0.]
+    std = [1., 1., 1.]
+
+    common_trfs = [transforms.ToTensor(),
+                   transforms.Normalize(mean, std)]
+
+    vit_train_transform = transforms.Compose([
+        transforms.RandomResizedCrop(224),
+        transforms.RandomHorizontalFlip(),
+        *common_trfs])
+    
+    vit_test_transform = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        *common_trfs])
+    
+    @staticmethod
+    def get_transform(model_type, mode):
+        if model_type == 'resnet':
+            if mode == 'train':
+                return ImageNetRTransform.resnet_train_transform
+            elif mode == 'test':
+                return ImageNetRTransform.resnet_test_transform
+        elif model_type == 'vit':
+            if mode == 'train':
+                return ImageNetRTransform.vit_train_transform
+            elif mode == 'test':
+                return ImageNetRTransform.vit_test_transform
+        else:
+            raise ValueError("Unsupported model type")
+
     
 transform_classes = {
     'cifar': CIFARTransform,
-    'imagenet': ImageNetTransform
+    'imagenet': ImageNetTransform,
+    'imagenet-r': ImageNetRTransform
 }

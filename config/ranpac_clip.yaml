@@ -1,41 +1,34 @@
-init_cls_num: &init_cls_num 10
-inc_cls_num: &inc_cls_num 10
+init_cls_num: &init_cls_num 20
+inc_cls_num: &inc_cls_num 20
 total_cls_num: &total_cls_num 100
-task_num: &task_num 10
+task_num: &task_num 5
 image_size: &image_size 224
 
 task_num: *task_num
 init_cls_num: *init_cls_num
 inc_cls_num: *inc_cls_num
 total_cls_num: *total_cls_num
-epoch: 1
-val_per_epoch: 1
-
-train_batch_size: 128
-test_batch_size: 64
-
-testing_times: 1
-
-setting: task-agnostic 
+init_epoch: 20 # 20
+epoch: 1 # 1
+batch_size: 48 # 128
+val_per_epoch: 20
 
 train_trfms:
-  - RandomResizedCrop :
+  - RandomResizedCrop:
       size: *image_size
-      scale: [0.9, 1.0]
-      interpolation: BICUBIC
+      scale: [0.05, 1.0]
+      ratio: [0.75, 1.33333333] # [3./4., 4./3.]
+  - RandomHorizontalFlip: 
+      p: 0.5 
   - ToTensor: {}
-  - Normalize:
-      mean: [0.48145466, 0.4578275, 0.40821073]
-      std: [0.26862954, 0.26130258, 0.27577711]
 
 test_trfms: 
-  - Resize :
+  - Resize:
       size: *image_size
       interpolation: BICUBIC
+  - CenterCrop:
+      size: *image_size
   - ToTensor: {}
-  - Normalize:
-      mean: [0.48145466, 0.4578275, 0.40821073]
-      std: [0.26862954, 0.26130258, 0.27577711]
 
 optimizer:
   name: AdamW
@@ -49,25 +42,25 @@ lr_scheduler:
     T_max: 0 # Will be replaced in trainter.py with epoch * len(dataloader)
     warmup_length: 30
 
-
 backbone:
   name: clip
   kwargs:
     model_name : ViT-B/16
     pretrained : True
     block_layer: ResidualAttentionBlock_MoE_MLP
-    experts_num: 2
-    step: 1
-    top_k : 2
+    experts_num: 1
+    step: -1 # think again
     act_layer: QuickGELU
     norm_layer: LayerNorm
 
 classifier:
-  name: MOE_ADAPTER4CL
+  name: RanPAC
   kwargs:
+    use_RP: True
+    M: 10000
+    first_session_training: True
     init_cls_num: *init_cls_num
     inc_cls_num: *inc_cls_num
     task_num: *task_num
-    embd_dim: 768
+    total_cls_num: *total_cls_num
     prompt_template : "a bad photo of a {}."
-    label_smoothing: 0.

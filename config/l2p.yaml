@@ -1,40 +1,43 @@
-includes:
-  - headers/data.yaml
-  - headers/device.yaml
-  - headers/model.yaml
-  # - headers/optimizer.yaml
-  # - backbones/resnet12.yaml
 
-data_root: "/home/lvqiexuan/temp_data/cifar100/"
-image_size: 32
-save_path: ./
-# data
-init_cls_num: 10
-inc_cls_num: 10
-task_num: 10
+dataset: &dataset cifar100
+init_cls_num: &init_cls_num 10
+inc_cls_num: &inc_cls_num 10
+total_cls_num: &total_cls_num 100
+task_num: &task_num 10
+image_size: &image_size 224
 
+init_cls_num: *init_cls_num
+inc_cls_num: *inc_cls_num
+task_num: *task_num
 
-epoch: 10 #160
-device_ids: 1
-n_gpu: 1
+epoch: 5 
 val_per_epoch: 5
-
 
 batch_size: 128
 
+train_trfms:
+  - Resize:
+      size: 256 # Stated in source code of L2P
+  - RandomResizedCrop: 
+      size: *image_size
+  - RandomHorizontalFlip: {}
+  - ToTensor: {}
+
+test_trfms: 
+  - Resize:
+      size: 256 # Stated in source code of L2P
+  - CenterCrop: 
+      size: *image_size
+  - ToTensor: {}
 
 optimizer:
   name: Adam
   kwargs:
-    lr: 0.001
+    lr: 0.03
     betas: [0.9, 0.999]
-    weight_decay: 0
 
 lr_scheduler:
-  name: MultiStepLR
-  kwargs:
-    gamma: 0.1
-    milestones: [80, 120]
+  name: Constant
 
 backbone:
   name: vit_pt_imnet
@@ -43,23 +46,14 @@ backbone:
     pretrained: true
     model_name : vit_base_patch16_224
 
-
-
-buffer:
-  name: LinearBuffer
-  kwargs:
-    buffer_size: 0
-    batch_size: 128
-    strategy: herding     # random, equal_random, reservoir, herding
-
 classifier:
   name: L2P
   kwargs:
-    num_class: 100
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    num_class: *total_cls_num
+    task_num: *task_num
     feat_dim: 768
-    task_num: 10
-    init_cls_num: 10
-    inc_cls_num: 10
-    prompt_length: 20
-    pool_size: 30
+    prompt_length: 20 # 20
+    pool_size: 30 # 30
 

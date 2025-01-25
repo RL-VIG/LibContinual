@@ -200,7 +200,7 @@ class ResNet(nn.Module):
         pool = nn.AvgPool2d(dim, stride=1)
         x = pool(x)
         x = x.view(x.size(0), -1)
-        return {"features": x}
+        return x
 
 def resnet18_cbam(pretrained=False, **kwargs):
     """Constructs a ResNet-18 model.

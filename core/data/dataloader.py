@@ -41,7 +41,10 @@ def get_augment(config, mode='train'):
          'mode': mode}
     
     if 'dataset' in config.keys():
-        d['dataset'] = config['dataset']
+        if config['dataset'] == 'cifar100':
+            d['dataset'] = 'cifar'
+        else:
+            d['dataset'] = config['dataset']
     if 'vit' in config['backbone']['name'].lower():
         d['backbone'] = 'vit'
     if 'alexnet' in config['backbone']['name'].lower():
@@ -68,6 +71,7 @@ def get_dataloader(config, mode, cls_map=None):
     inc_cls_num = config['inc_cls_num']
 
     data_root = config['data_root']
+    num_workers = config['num_workers']
 
     trfms = get_augment(config, mode)
 
@@ -83,5 +87,5 @@ def get_dataloader(config, mode, cls_map=None):
         for label, ori_label in enumerate(perm):
             cls_map[label] = cls_list[ori_label]
 
-    return ContinualDatasets(mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms, batch_size)
+    return ContinualDatasets(mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms, batch_size, num_workers)
     

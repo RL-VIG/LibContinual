@@ -79,25 +79,33 @@ class EWC(Finetune):
         self.network.classifier = new_fc
         self.network.to(self.device)
 
-
     def observe(self, data):
-        x, y = data['image'], data['label']
-        x = x.to(self.device)
-        y = y.to(self.device)
+        x, y = data['image'].to(self.device), data['label'].to(self.device)
         logit = self.network(x)
 
         if self.task_idx == 0:
             loss = F.cross_entropy(logit, y)
         else:
+
+
+
             old_classes = self.network.classifier.out_features - self.kwargs['inc_cls_num']
+
+            #print(old_classes)
+            #print(logit[:, old_classes:].shape)
+            #print(y)
+            #print(y-old_classes)
+
             loss = F.cross_entropy(logit[:, old_classes:], y - old_classes)
             loss += self.lamda * self.compute_ewc()
 
         pred = torch.argmax(logit, dim=1)
 
+        #print(pred)
+        #print(y)
+
         acc = torch.sum(pred == y).item()
         return pred, acc / x.size(0), loss
-
 
     def after_task(self, task_idx, buffer, train_loader, test_loaders):
         """
@@ -136,7 +144,6 @@ class EWC(Finetune):
         acc = torch.sum(pred == y).item()
         return pred, acc / x.size(0)
     
-
     def getFisher(self, train_loader):
         """
         Compute the Fisher Information Matrix for the parameters of the network.

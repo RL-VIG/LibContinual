@@ -1,27 +1,15 @@
-includes:
-  - headers/data.yaml
-  - headers/device.yaml
-  - headers/model.yaml
-  # - headers/optimizer.yaml
-  - backbones/resnet12.yaml
-
 image_size: 32
 
-
-save_path: ./
 # data
-init_cls_num: 50
-inc_cls_num: 25
-task_num: 3
+init_cls_num: 10 # 50
+inc_cls_num: 10 # 25
+task_num: 10 # 3
 
-init_epoch: 1 # 100
-epoch: 1 # 100
+epoch: 100 # 100
 n_gpu: 1
 val_per_epoch: 50
 
-
 batch_size: 128
-
 
 optimizer:
   name: SGD
@@ -37,25 +25,17 @@ lr_scheduler:
     milestones: [60, 120, 170]
 
 backbone:
-  name: cifar_resnet32
+  name: resnet34 # cifar_resnet32
   kwargs:
     num_classes: 100
     args: 
       dataset: cifar100
 
-
-buffer:
-  name: LinearBuffer
-  kwargs:
-    buffer_size: 0
-    batch_size: 128
-    strategy: herding     # random, equal_random, reservoir, herding
-
 classifier:
   name: EWC
   kwargs:
     num_class: 100
-    feat_dim: 64
-    init_cls_num: 50
-    inc_cls_num: 50
+    feat_dim: 512 # 64 for backbone cifar_resnet32
+    init_cls_num: 10
+    inc_cls_num: 10
     lamda: 1000

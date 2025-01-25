@@ -1,11 +1,14 @@
 
+dataset: &dataset "imagenet-r"
+data_root: "/home/lvqiexuan/temp_data/imagenet-r/"
 
 init_cls_num: &init_cls_num 20
 inc_cls_num: &inc_cls_num 20
-total_cls_num: &total_cls_num 100
-task_num: &task_num 5
+total_cls_num: &total_cls_num 200
+task_num: &task_num 10
 image_size: &image_size 224
 
+dataset: *dataset
 task_num: *task_num
 init_cls_num: *init_cls_num
 inc_cls_num: *inc_cls_num
@@ -19,25 +22,6 @@ test_batch_size: 64
 testing_times: 10
 
 setting: task-agnostic 
-
-train_trfms:
-  - RandomResizedCrop :
-      size: *image_size
-      scale: [0.9, 1.0]
-      interpolation: BICUBIC
-  - ToTensor: {}
-  - Normalize:
-      mean: [0.48145466, 0.4578275, 0.40821073]
-      std: [0.26862954, 0.26130258, 0.27577711]
-
-test_trfms: 
-  - Resize :
-      size: *image_size
-      interpolation: BICUBIC
-  - ToTensor: {}
-  - Normalize:
-      mean: [0.48145466, 0.4578275, 0.40821073]
-      std: [0.26862954, 0.26130258, 0.27577711]
 
 optimizer:
   name: AdamW

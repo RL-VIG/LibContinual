@@ -1,19 +1,34 @@
 init_cls_num: &init_cls_num 20
 inc_cls_num: &inc_cls_num 20
 total_cls_num: &total_cls_num 100
-num_classes: &num_classes 100 
 task_num: &task_num 5
+image_size: &image_size 224
 
 task_num: *task_num
 init_cls_num: *init_cls_num
 inc_cls_num: *inc_cls_num
 total_cls_num: *total_cls_num
-init_epoch: 1 # 20
+init_epoch: 20 # 20
 epoch: 1 # 1
 batch_size: 48 # 128
 val_per_epoch: 20
 
-image_size: 224
+train_trfms:
+  - RandomResizedCrop:
+      size: *image_size
+      scale: [0.05, 1.0]
+      ratio: [0.75, 1.33333333] # [3./4., 4./3.]
+  - RandomHorizontalFlip: 
+      p: 0.5 
+  - ToTensor: {}
+
+test_trfms: 
+  - Resize:
+      size: *image_size
+      interpolation: BICUBIC
+  - CenterCrop:
+      size: *image_size
+  - ToTensor: {}
 
 optimizer:
   name: SGD
@@ -44,4 +59,3 @@ classifier:
     inc_cls_num: *inc_cls_num
     task_num: *task_num
     total_cls_num: *total_cls_num
-    embd_dim: 768
