@@ -77,6 +77,7 @@ class Trainer(object):
         if not os.path.isdir(log_path):
             os.mkdir(log_path)
         log_prefix = config['classifier']['name'] + "-" + config['backbone']['name'] + "-" + f"epoch{config['epoch']}" #mode
+        log_prefix = log_prefix.replace("/", "-")
         log_file = os.path.join(log_path, "{}-{}.log".format(log_prefix, fmt_date_str()))
 
         logger = Logger(log_file)
@@ -250,7 +251,10 @@ class Trainer(object):
                                                              # where [i, j] is acc of model on task j after learning task i
         bwt_list, frgt_list = [], []
         testing_times = self.config['testing_times']
-
+        
+        classes_names = sorted(os.listdir(os.path.join(self.config["data_root"], "train")))
+        self.model.model.classes_names = classes_names
+# Begin training
         for task_idx in range(self.task_num):
             self.task_idx = task_idx
             print(f"================Task {task_idx} Start!================")
@@ -474,10 +478,10 @@ class Trainer(object):
                 self.model.bias_layers[_].eval()
         meter = deepcopy(self.train_meter)
         meter.reset()
-        
+
         total = len(dataloader)
         for b, batch in tqdm(enumerate(dataloader), total=total):
-
+            batch['batch_id'] = b
             # These method's LR is updated every iterations, not epochs
             if self.config['classifier']['name'] in ['MOE_ADAPTER4CL', 'DMNSP']:
                 self.scheduler.step(total * epoch_idx + b)

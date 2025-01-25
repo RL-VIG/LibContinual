@@ -6,7 +6,7 @@ includes:
   # - backbones/resnet12.yaml
 
 # data_root: /data/fanzhichen/continual/cifar100
-data_root: /home/chenyiyang/dataset/cifar100
+data_root: ~/datasets/cifar100
 image_size: 32
 
 

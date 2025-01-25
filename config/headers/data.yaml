@@ -1,5 +1,5 @@
 save_path: ''
-data_root: /home/lvqiexuan/temp_data/cifar100/
+data_root: /home/xtx/datasets/cifar100
 image_size: 32
 pin_memory: False
 augment: True

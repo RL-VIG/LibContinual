@@ -3,8 +3,15 @@ import numpy as np
 import core.data.custom_transforms as cstf
 
 from torchvision import datasets, transforms
+from torchvision.transforms import Compose, Resize, CenterCrop, ToTensor, Normalize
 from .dataset import ContinualDatasets
 from .data import transform_classes
+from PIL import Image
+try:
+    from torchvision.transforms import InterpolationMode
+    BICUBIC = InterpolationMode.BICUBIC
+except ImportError:
+    BICUBIC = Image.BICUBIC
 
 def _create_transforms(cfg):
     transform_list = []
@@ -30,7 +37,19 @@ def _create_transforms(cfg):
     return transforms.Compose(transform_list)
 
 def get_augment(config, mode='train'):
+    # Special judge for RAPF
+    if 'is_rapf' in config.keys() and config['is_rapf']:
+        def _convert_image_to_rgb(image):
+            return image.convert("RGB")
+        n_px = config['image_size']
 
+        return Compose([
+            transforms.Resize(n_px, interpolation=BICUBIC),
+            CenterCrop(n_px),
+            _convert_image_to_rgb,
+            ToTensor(),
+            Normalize((0.48145466, 0.4578275, 0.40821073), (0.26862954, 0.26130258, 0.27577711)),
+        ])
     if f'{mode}_trfms' in config.keys():
         return _create_transforms(config[f'{mode}_trfms'])
 
@@ -81,8 +100,13 @@ def get_dataloader(config, mode, cls_map=None):
         batch_size = config['batch_size']
 
     if cls_map is None:
-        cls_list = os.listdir(os.path.join(data_root, mode))
-        perm = np.random.permutation(len(cls_list))
+        # Apply class_order for debugging
+        cls_list = sorted(os.listdir(os.path.join(data_root, mode)))
+        if 'class_order' in config.keys():
+            class_order = config['class_order']
+            perm = class_order
+        else: 
+            perm = np.random.permutation(len(cls_list))
         cls_map = dict()
         for label, ori_label in enumerate(perm):
             cls_map[label] = cls_list[ori_label]
