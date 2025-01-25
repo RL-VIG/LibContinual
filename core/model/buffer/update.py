@@ -17,7 +17,7 @@ def random_update(datasets, buffer):
     buffer.labels = labels.tolist()
 
 
-def hearding_update(datasets, buffer, feature_extractor, device):
+def herding_update(datasets, buffer, feature_extractor, device):
     print("Using Herding Update Strategy")
     per_classes = buffer.buffer_size // buffer.total_classes
 

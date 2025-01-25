@@ -3,26 +3,23 @@ Code Reference:
 https://github.com/pytorch/vision/blob/master/torchvision/models/resnet.py
 https://github.com/G-U-N/PyCIL/blob/master/convs/resnet.py
 '''
+
+import copy
 import math
 import torch
 import torch.nn as nn
-import copy
-
-from torch.nn.parameter import Parameter
 import torch.nn.functional as F
 
-
+from torch.nn.parameter import Parameter
 
 def conv3x3(in_planes, out_planes, stride=1, groups=1, dilation=1):
     """3x3 convolution with padding"""
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
                      padding=dilation, groups=groups, bias=False, dilation=dilation)
 
-
 def conv1x1(in_planes, out_planes, stride=1):
     """1x1 convolution"""
     return nn.Conv2d(in_planes, out_planes, kernel_size=1, stride=stride, bias=False)
-
 
 class BasicBlock(nn.Module):
     expansion = 1
@@ -63,7 +60,6 @@ class BasicBlock(nn.Module):
         out = self.relu(out)
 
         return out
-
 
 class Bottleneck(nn.Module):
     expansion = 4
@@ -107,10 +103,6 @@ class Bottleneck(nn.Module):
         out = self.relu(out)
 
         return out
-
-
-
-
 
 class ResNet(nn.Module):
 
@@ -273,7 +265,6 @@ def resnet18(pretrained=False, progress=True, **kwargs):
     return _resnet('resnet18', BasicBlock, [2, 2, 2, 2], pretrained, progress,
                    **kwargs)
 
-
 def resnet34(pretrained=False, progress=True, **kwargs):
     r"""ResNet-34 model from
     `"Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>`_
@@ -284,7 +275,6 @@ def resnet34(pretrained=False, progress=True, **kwargs):
     return _resnet('resnet34', BasicBlock, [3, 4, 6, 3], pretrained, progress,
                    **kwargs)
 
-
 def resnet50(pretrained=False, progress=True, **kwargs):
     r"""ResNet-50 model from
     `"Deep Residual Learning for Image Recognition" <https://arxiv.org/pdf/1512.03385.pdf>`_
@@ -294,7 +284,6 @@ def resnet50(pretrained=False, progress=True, **kwargs):
     """
     return _resnet('resnet50', Bottleneck, [3, 4, 6, 3], pretrained, progress,
                    **kwargs)
-
 
 
 class ResNetBasicblock(nn.Module):
@@ -426,9 +415,9 @@ class CifarResNet(nn.Module):
 
 class BiasLayer(nn.Module):
     def __init__(self):
-        super(BiasLayer, self).__init__()
-        self.alpha = nn.Parameter(torch.ones(1, requires_grad=True, device="cuda"))
-        self.beta = nn.Parameter(torch.zeros(1, requires_grad=True, device="cuda"))
+        super().__init__()
+        self.alpha = nn.Parameter(torch.ones(1, requires_grad=True))
+        self.beta = nn.Parameter(torch.zeros(1, requires_grad=True))
     def forward(self, x):
         return self.alpha * x + self.beta
     def printParam(self, i):
@@ -487,9 +476,6 @@ class SplitCosineLinear(nn.Module):
         if self.sigma is not None:
             out = self.sigma * out
         return out
-
-
-
 
 
 '''
@@ -589,8 +575,7 @@ class modified_ResNet(nn.Module):
         x = x.view(x.size(0), -1)
         
         return {"features": x}
-
-        
+ 
     def feature(self, x):
         x = self.conv1(x)
         x = self.bn1(x)
@@ -605,6 +590,109 @@ class modified_ResNet(nn.Module):
         
         return x
 
+# Temporary Resnet for BIC, TODO: Merge
+'''
+This BasicBlock is speciallu for BIC, which do batch normalization before conv
+'''
+class BasicBlock2(nn.Module):
+    expansion = 1
+
+    def __init__(self, inplanes, planes, stride=1, downsample=None):
+        super().__init__()
+        self.bn1 = nn.BatchNorm2d(inplanes)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv1 = conv3x3(inplanes, planes, stride)
+        self.bn2 = nn.BatchNorm2d(planes)
+        self.conv2 = conv3x3(planes, planes)
+        self.downsample = downsample
+        self.stride = stride
+
+    def forward(self, x):
+        residual = x
+
+        out = self.bn1(x)
+        out = self.relu(out)
+        out = self.conv1(out)
+
+        out = self.bn2(out)
+        out = self.relu(out)
+        out = self.conv2(out)
+
+        if self.downsample is not None:
+            residual = self.downsample(x)
+
+        out += residual
+
+        return out
+
+class ResNet_BIC(nn.Module):
+
+    def __init__(self, depth, block_name='BasicBlock2'):
+        super().__init__()
+        # Model type specifies number of layers for CIFAR-10 model
+        if block_name.lower() == 'basicblock2':
+            assert (depth - 2) % 6 == 0, 'When use basicblock, depth should be 6n+2, e.g. 20, 32, 44, 56, 110, 1202'
+            n = (depth - 2) // 6
+            block = BasicBlock2
+        elif block_name.lower() == 'bottleneck':
+            assert (depth - 2) % 9 == 0, 'When use bottleneck, depth should be 9n+2, e.g. 20, 29, 47, 56, 110, 1199'
+            n = (depth - 2) // 9
+            block = Bottleneck
+        else:
+            raise ValueError('block_name shoule be Basicblock or Bottleneck')
+
+        self.inplanes = 16
+        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1,
+                               bias=False)
+        self.layer1 = self._make_layer(block, 16, n)
+        self.layer2 = self._make_layer(block, 32, n, stride=2)
+        self.layer3 = self._make_layer(block, 64, n, stride=2)
+        self.bn = nn.BatchNorm2d(64 * block.expansion)
+        self.relu = nn.ReLU(inplace=True)
+        self.avgpool = nn.AvgPool2d(8)
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                m.weight.data.normal_(0, math.sqrt(2. / n))
+            elif isinstance(m, nn.BatchNorm2d):
+                m.weight.data.fill_(1)
+                m.bias.data.zero_()
+
+    def _make_layer(self, block, planes, blocks, stride=1):
+        downsample = None
+        if stride != 1 or self.inplanes != planes * block.expansion:
+            downsample = nn.Sequential(
+                nn.Conv2d(self.inplanes, planes * block.expansion,
+                          kernel_size=1, stride=stride, bias=False),
+            )
+
+        layers = []
+        layers.append(block(self.inplanes, planes, stride, downsample))
+        self.inplanes = planes * block.expansion
+        for i in range(1, blocks):
+            layers.append(block(self.inplanes, planes))
+
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        x = self.conv1(x)
+
+        x_1 = self.layer1(x)  # 32x32
+        x_2 = self.layer2(x_1)  # 16x16
+        x_3 = self.layer3(x_2)  # 8x8
+        x = self.bn(x_3)
+        x = self.relu(x)
+
+        x = self.avgpool(x)
+        x = x.view(x.size(0), -1)
+
+        return {
+            'fmaps': [x_1, x_2, x_3],
+            'features': x
+        }
+
+        return x
 
 def cifar_resnet20(pretrained=False, **kwargs):
     n = 3
@@ -616,6 +704,9 @@ def cifar_resnet32(pretrained=False, **kwargs):
     model = CifarResNet(ResNetBasicblock, 32)
     return model
 
+def cifar_resnet32_V2(pretrained=False, **kwargs):
+    # BIC
+    return ResNet_BIC(32)
 
 def resnet32_V2(pretrained=False, **kwargs):
     # ## LUCIR:

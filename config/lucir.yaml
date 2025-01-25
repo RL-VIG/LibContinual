@@ -1,33 +1,42 @@
-includes:
-  - headers/data.yaml
-  - headers/device.yaml
-  - headers/model.yaml
-  # - headers/optimizer.yaml
-  - backbones/resnet12.yaml
 
-image_size: 32
-save_path: ./
-# data
-init_cls_num: 20
-inc_cls_num: 20
-task_num: 5
+dataset: &dataset cifar100
+init_cls_num: &init_cls_num 50
+inc_cls_num: &inc_cls_num 10 # 10 5
+total_cls_num: &total_cls_num 100
+task_num: &task_num 6 # 6 11
+image_size: &image_size 32
 
+init_cls_num: *init_cls_num
+inc_cls_num: *inc_cls_num
+task_num: *task_num
 
-epoch: 2 # 160
-device_ids: 0
-n_gpu: 1
-val_per_epoch: 1
+epoch: 160
+val_per_epoch: 160
+train_batch_size: 128
+test_batch_size: 100
 
+train_trfms:
+  - RandomCrop : 
+      size : *image_size
+      padding : 4
+  - RandomHorizontalFlip : {}
+  - ToTensor: {}
+  - Normalize:
+      mean: [0.5071, 0.4866, 0.4409]
+      std: [0.2009, 0.1984, 0.2023]
 
-batch_size: 128
-
+test_trfms: 
+  - ToTensor: {}
+  - Normalize:
+      mean: [0.5071, 0.4866, 0.4409]
+      std: [0.2009, 0.1984, 0.2023]
 
 optimizer:
   name: SGD
   kwargs:
     lr: 0.1
     momentum: 0.9
-    weight_decay: 0.0005
+    weight_decay: 5e-4
 
 lr_scheduler:
   name: MultiStepLR
@@ -42,7 +51,6 @@ backbone:
     args: 
       dataset: cifar100
 
-
 buffer:
   name: LinearBuffer
   kwargs:
@@ -53,10 +61,10 @@ buffer:
 classifier:
   name: LUCIR
   kwargs:
-    num_class: 100
+    num_class: *total_cls_num
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
     feat_dim: 64
-    init_cls_num: 20
-    inc_cls_num: 20
     dist: 0.5
     lamda: 5
     K: 2

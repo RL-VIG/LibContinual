@@ -56,6 +56,50 @@ Once you have completed the "Quick Installation" and "Datasets" sections, we can
 - **Step2:** Run code `python run_trainer.py --config lucir.yaml`
 - **Step3:** After the training is completed, the log files will be saved in the path specified by the `save_path` parameter.
 
+## Benchmarks
+
+* $T \in [1, \text{task num}]$
+* $R_{t,i}$ be accuracy of **model after training on task $t$ being test on test data of task $i$**
+* $R_{t,{i\sim j}}$ be accuracy of **model after training on task $t$ being test on test data of task $i\sim j$**
+
+
+### \[Batch\] Last Average Accuracy
+
+> $Acc_T=R_{T, {0\sim T}}$
+
+### Backward Transfer 
+
+> Equivalent to Positive BwT of Continuum
+> 
+> https://arxiv.org/pdf/1810.13166
+> 
+> $BWT_T = \frac{\sum_{i=3}^T\sum_{j=1}^{i-2}R_{i,j}-R{j,j}}{T(T-1)/2}$
+
+### Forgetting
+
+> Equivalent to Forgetting of Continuum
+> 
+> $Frgt_T = \frac{\sum_{j=1}^{T-2}R_{T-1,j}-R_{j,j}}{T-1}$
+
+### \[Batch\] Overall Average Accuracy
+
+> $\overline{Acc_T}=\frac{1}{T}\sum_{t=1}^T(R_{t,{0\sim T}})$
+
+### \[Task\] Overall Average Accuracy
+
+> $\overline{Acc_T}=\frac{1}{T}\sum_{t=1}^T(\frac{1}{t}\sum_{i=1}^t R_{t,i})$
+
+Note: 
+* \[Batch\] Overall Average Accuracy and \[Task\] Overall Average Accuracy are equal if initial num of classes equal to increment num of classes
+* We keep both implementation of Overall Average Accuracy as **Lucir** use \[Task\] in its original experiment, while **Praka** use \[Batch\]. 
+
+### Overall Forgetting
+
+> $\overline{Frgt_T} = \frac{1}{T-2}\sum_{t=3}^TFrgt_{t}$
+
+### Overall Backward Transfer
+
+> $\overline{BWT_T} = \frac{1}{T-2}\sum_{t=3}^TBWT_{t}$
 
 ## Acknowledgement
 LibContinual is an open source project designed to help continual learning researchers quickly understand the classic methods and code structures. We welcome other contributors to use this framework to implement their own or other impressive methods and add them to LibContinual. This library can only be used for academic research. We welcome any feedback during using LibContinual and will try our best to continually improve the library.

@@ -1,8 +1,8 @@
 dataset: &dataset cifar100
-init_cls_num: &init_cls_num 10
-inc_cls_num: &inc_cls_num 10
+init_cls_num: &init_cls_num 20
+inc_cls_num: &inc_cls_num 20
 total_cls_num: &total_cls_num 100
-task_num: &task_num 10
+task_num: &task_num 5
 image_size: &image_size 224
 
 dataset: *dataset
@@ -49,13 +49,16 @@ lr_scheduler:
   kwargs:
     K: 20
 
+
 backbone:
-  name: vit_pt_imnet
+  name: clip
   kwargs:
-    pretrained: True
-    model_name : vit_base_patch16_224_in21k
+    pretrained : True
+    model_name : ViT-B/16
+    experts_num: 0
+    act_layer: QuickGELU
+    norm_layer: LayerNorm
     attn_layer: MultiHeadAttention_LoRA
-    lora_rank: 10
 
 classifier:
   name: InfLoRA_OPT
@@ -68,4 +71,5 @@ classifier:
     lame: 1.0
     lamb: 0.95
     embd_dim: 768
-    
+    prompt_template : "a bad photo of a {}." # For CLIP
+    visual_only: True # For CLIP, apply lora to only visual encoder or visual and text encoder

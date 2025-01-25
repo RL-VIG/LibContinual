@@ -348,7 +348,7 @@ class L2P(DualPrompt):
         super().__init__(emb_d, n_tasks, prompt_param, key_dim)
 
     def _init_smart(self, emb_d, prompt_param):
-        self.top_k = 5
+        self.top_k = 4 # Acorrding to source code of L2P, was 5 before
         self.task_id_bootstrap = False
 
         # prompt locations

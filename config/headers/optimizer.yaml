@@ -1,5 +1,5 @@
 # optimizer info
-optimizer:
+optimzer:
   name: SGD
   kwargs:
     lr: 0.1

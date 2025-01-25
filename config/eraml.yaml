@@ -14,6 +14,18 @@ val_per_epoch: 1
 
 batch_size: 10
 
+train_trfms:
+  - ToTensor: {}
+  - Normalize:
+      mean: [0.5071,  0.4866,  0.4409]
+      std: [0.2675, 0.2565, 0.2761]
+
+test_trfms: 
+  - ToTensor: {}
+  - Normalize:
+      mean: [0.5071,  0.4866,  0.4409]
+      std: [0.2675, 0.2565, 0.2761]
+
 optimizer:
   name: SGD
   kwargs:

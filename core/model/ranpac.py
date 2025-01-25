@@ -8,14 +8,9 @@
       primaryClass={cs.LG},
       url={https://arxiv.org/abs/2307.02251}, 
 }
-}
 
 Code Reference:
 https://github.com/RanPAC/RanPAC
-
-Note:
-* The accuracy of in-epoch test beside task 0 is low because the model classifier head is only being trained in after_task
-* If you want to use transformation of dataset in original ranpac implementation, which result in better performance, set the attribute '_use_org_trfms' to be True
 '''
 
 import copy
@@ -24,12 +19,18 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision import transforms
+
+from .backbone.transformer import MultiHeadAttention_LoRA, VisionTransformer
+from .backbone.clip import CLIP, tokenize
+from .backbone.vit import ViTZoo, ViT_in21k_adapter
+
+VIT = ViT_in21k_adapter
+CLIP = CLIP
 
 class CosineLinear(nn.Module):
     def __init__(self, in_features, out_features):
 
-        super(CosineLinear, self).__init__()
+        super().__init__()
         self.in_features = in_features
         self.out_features = out_features
         self.weight = nn.Parameter(torch.Tensor(self.out_features, in_features))
@@ -59,7 +60,7 @@ class CosineLinear(nn.Module):
 
         out = self.sigma * out
 
-        return {'logits': out}
+        return out
 
 class Network(nn.Module):
     def __init__(self, backbone, device, **kwargs):
@@ -70,9 +71,35 @@ class Network(nn.Module):
         self.device = device
         self.classifier = None
 
-        self.feature_dim = kwargs['embd_dim']
+        if isinstance(self.backbone, VIT):
+            self.feature_dim = self.backbone.feat_dim
+        elif isinstance(self.backbone, CLIP):
+            # Assuming the final features_dim is concat of image and text
+            self.feature_dim = self.backbone.visual.output_dim + self.backbone.transformer.width
+            self.accm_class_names = []   
+            self.curr_class_names = []
+            self.accm_text_tokens = None
+            self.curr_text_tokens = None
 
-    def update_classifer(self, num_classes):
+            self.prompt_template = kwargs['prompt_template']
+
+    def update_classifer(self, num_classes, train_loader):
+
+        if isinstance(self.backbone, VIT):
+            pass
+        elif isinstance(self.backbone, CLIP):
+            self.curr_class_names = train_loader.dataset.get_class_names()
+            self.accm_class_names += self.curr_class_names
+
+            self.curr_text_tokens = tokenize(
+                [self.prompt_template.format(c) for c in self.curr_class_names]
+            ).to(self.device)
+
+            self.accm_text_tokens = tokenize(
+                [self.prompt_template.format(c) for c in self.accm_class_names]
+            ).to(self.device)
+        else:
+            assert 0
 
         self._cur_task_id += 1
         del self.classifier
@@ -80,16 +107,35 @@ class Network(nn.Module):
 
     def get_feature(self, x):
 
-        features = self.backbone(x)
-        return features
+        if isinstance(self.backbone, VIT):
+            return self.backbone(x)
+        elif isinstance(self.backbone, CLIP):
+            features_image, features_text, logits_per_image, logits_per_text = self.backbone(x, self.curr_text_tokens)
 
-    def forward(self, x):
+            max_indices = logits_per_image.softmax(dim=-1).argmax(dim=1) # Shape will be [48]
+            max_features = features_text[max_indices]  # Shape will be [48, 768]
 
-        logits = []
-        features = self.backbone(x)
-        logits = self.classifier(features)
+            return torch.cat([features_image, max_features], dim=1)  # Shape will be [48, 1536]
+        else:
+            assert 0
 
-        return logits
+    def forward(self, x, inference=False):
+
+        if isinstance(self.backbone, VIT):
+            features = self.backbone(x)
+        elif isinstance(self.backbone, CLIP):
+            if inference:
+                features_image, features_text, logits_per_image, logits_per_text = self.backbone(x, self.accm_text_tokens)
+            else:
+                features_image, features_text, logits_per_image, logits_per_text = self.backbone(x, self.curr_text_tokens)
+
+            max_indices = logits_per_image.softmax(dim=-1).argmax(dim=1) # Shape will be [48]
+            max_features = features_text[max_indices]  # Shape will be [48, 768]
+            features = torch.cat([features_image, max_features], dim=1)  # Shape will be [48, 1536]
+        else:
+            assert 0
+
+        return self.classifier(features)
 
 class RanPAC(nn.Module):
     def __init__(self, backbone, device, **kwargs):
@@ -108,11 +154,15 @@ class RanPAC(nn.Module):
 
         self._known_classes = 0
         self._classes_seen_so_far = 0
-        self._use_org_trfms = True # set to True if you want to use original implementation transforms of data
         self._skip_train = False # this flag is used to skip training
-        self._skip_test = False # this flag is used to skip in-epoch test
 
         self._network.to(self.device)
+
+        if isinstance(backbone, CLIP):
+            for name, param in self._network.named_parameters():
+                if 'adapt' not in name:
+                    param.requires_grad = False
+
 
     def before_task(self, task_idx, buffer, train_loader, test_loaders):
 
@@ -121,7 +171,7 @@ class RanPAC(nn.Module):
         elif task_idx > 0:
             self._classes_seen_so_far += self.inc_cls_num
         
-        self._network.update_classifer(self._classes_seen_so_far)
+        self._network.update_classifer(self._classes_seen_so_far, train_loader)
 
         if task_idx == 0 and self.first_session_training:
             self._skip_train = False
@@ -129,30 +179,15 @@ class RanPAC(nn.Module):
             self._skip_train = True
             print(f"Not training on task {task_idx}")
 
-        self._skip_test = True
-
-        if self._use_org_trfms:
-            train_loader.dataset.trfms = transforms.Compose([
-                transforms.RandomResizedCrop(224, scale=(0.05, 1.0), ratio=(3. / 4., 4. / 3.)),
-                transforms.RandomHorizontalFlip(p=0.5),
-                transforms.ToTensor()
-            ])
-            for loader in test_loaders:
-                loader.dataset.trfms = transforms.Compose([
-                    transforms.Resize(224, interpolation=transforms.InterpolationMode.BICUBIC),
-                    transforms.CenterCrop(224),
-                    transforms.ToTensor()
-                ])
-
     def observe(self, data):
 
         if self._skip_train:
             # set required_grad be True so that it can call backward() but don't do anything
-            return None, 0., torch.tensor(0.0, device = self.device, requires_grad = True)
+            return None, 0., torch.tensor(0., device = self.device, requires_grad = True)
 
         inputs, targets = data['image'].to(self.device), data['label'].to(self.device) - self._known_classes
 
-        logits = self._network(inputs)['logits']
+        logits = self._network(inputs)
         loss = F.cross_entropy(logits, targets)
 
         _, preds = torch.max(logits, dim=1)
@@ -165,11 +200,8 @@ class RanPAC(nn.Module):
 
     def inference(self, data):
 
-        if self._skip_test:
-            return None, 0.
-
         inputs, targets = data['image'].to(self.device), data['label']
-        logits = self._network(inputs)['logits']
+        logits = self._network(inputs, True)
         _, preds = torch.max(logits, dim=1)
 
         correct = preds.cpu().eq(targets.expand_as(preds)).sum().item()
@@ -181,7 +213,6 @@ class RanPAC(nn.Module):
 
     def after_task(self, task_idx, buffer, train_loader, test_loaders):
 
-        self._skip_test = False
         self._known_classes = self._classes_seen_so_far
 
         if task_idx == 0:

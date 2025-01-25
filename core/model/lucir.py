@@ -216,15 +216,11 @@ class LUCIR(Finetune):
             self.handle_old_scores_bs.remove()
             self.handle_new_scores_bs.remove()
 
-
-
     def inference(self, data):
-        x, y = data['image'], data['label']
-        x = x.to(self.device)
-        y = y.to(self.device)
-        
-        logit = self.network(x)
 
+        x, y = data['image'].to(self.device), data['label'].to(self.device)
+
+        logit = self.network(x)
         pred = torch.argmax(logit, dim=1)
 
         acc = torch.sum(pred == y).item()

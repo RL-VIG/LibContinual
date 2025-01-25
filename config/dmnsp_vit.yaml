@@ -1,20 +1,20 @@
-init_cls_num: &init_cls_num 10
-inc_cls_num: &inc_cls_num 10
+init_cls_num: &init_cls_num 20
+inc_cls_num: &inc_cls_num 20
 total_cls_num: &total_cls_num 100
-task_num: &task_num 10
+task_num: &task_num 5
 image_size: &image_size 224
 
 task_num: *task_num
 init_cls_num: *init_cls_num
 inc_cls_num: *inc_cls_num
 total_cls_num: *total_cls_num
-epoch: 1
-val_per_epoch: 1
+epoch: 4 # 4
+val_per_epoch: 4 # 4
 
 train_batch_size: 128
 test_batch_size: 64
 
-testing_times: 1
+testing_times: 10
 
 setting: task-agnostic 
 
@@ -49,21 +49,17 @@ lr_scheduler:
     T_max: 0 # Will be replaced in trainter.py with epoch * len(dataloader)
     warmup_length: 30
 
-
 backbone:
-  name: clip
+  name: vit_pt_imnet
   kwargs:
-    model_name : ViT-B/16
-    pretrained : True
-    block_layer: ResidualAttentionBlock_MoE_MLP
-    experts_num: 2
-    step: 1
-    top_k : 2
+    pretrained: True
+    model_name : vit_base_patch16_224_in21k
+    experts_num: 1
     act_layer: QuickGELU
     norm_layer: LayerNorm
 
 classifier:
-  name: MOE_ADAPTER4CL
+  name: DMNSP
   kwargs:
     init_cls_num: *init_cls_num
     inc_cls_num: *inc_cls_num

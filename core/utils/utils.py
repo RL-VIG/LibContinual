@@ -208,29 +208,27 @@ def compute_bwt(acc_table, curr_acc, task_idx):
 
     if task_idx > 1:
     
-        frgt = 0.
+        bwt = 0.
         for i in range(2, task_idx):
             for j in range(i - 1):
-                frgt += acc_table[i, j] - acc_table[j, j]
+                bwt += acc_table[i, j] - acc_table[j, j]
 
         for j in range(task_idx - 1):
-            frgt += curr_acc[j] - acc_table[j, j]
+            bwt += curr_acc[j] - acc_table[j, j]
 
-        return (frgt * 2) / (task_idx * (task_idx+1))
+        return (bwt * 2) / (task_idx * (task_idx+1))
 
     return 0.
 
 
 def compute_frgt(acc_table, curr_acc, task_idx):
     '''
-    After training T tasks, $BWT = \frac{\sum_{j=1}^{T-2}R_{T-1,j}-R_{j,j}}{T-1}$
+    After training T tasks, $Frgt = \frac{\sum_{j=1}^{T-2}R_{T-1,j}-R_{j,j}}{T-1}$
     Equivalent to Forgetting of Continuum
     '''
 
-    curr_acc = curr_acc[:task_idx+1]
-
     if task_idx > 1:
-        return sum(np.diag(acc_table)[:task_idx - 1] - curr_acc[:-2]) / task_idx
+        return sum(np.diag(acc_table)[:task_idx - 1] - curr_acc[:task_idx+1][:-2]) / task_idx
     return 0.
 
 
@@ -249,7 +247,7 @@ def compute_fps(model, config):
     for i in range(100):
         t1 = time()
         if config['setting'] == 'task-aware':
-            model.inference(data, random.randint(0, config['task_num'] - 1))
+            model.inference(data, task_id = random.randint(0, config['task_num'] - 1))
         elif config['setting'] == 'task-agnostic':
             model.inference(data)
         t2 = time()

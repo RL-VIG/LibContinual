@@ -53,7 +53,6 @@ class Model(nn.Module):
             feat = self.backbone(x, train=False)
             return self.classifier(feat)
 
-
 class L2P(Finetune):
     def __init__(self, backbone, feat_dim, num_class, **kwargs):
         super().__init__(backbone, feat_dim, num_class, **kwargs)
@@ -65,6 +64,22 @@ class L2P(Finetune):
         
         self.last_out_dim = 0
 
+    def observe(self, data):
+        x, y = data['image'], data['label']
+        x = x.to(self.device)
+        y = y.to(self.device)
+        logit, loss = self.network(x, train=True)
+
+        logit[:,:self.last_out_dim] = -float('inf')
+        dw_cls = self.dw_k[-1 * torch.ones(y.size()).long()]
+
+        loss += (self.loss_fn(logit, y) * dw_cls).mean()
+        
+        pred = torch.argmax(logit, dim=1)
+        acc = torch.sum(pred == y).item()
+
+        return pred, acc / x.size(0), loss
+    
     def before_task(self, task_idx, buffer, train_loader, test_loaders):
         self.task_idx = task_idx
         self.network.backbone.task_id = task_idx
@@ -83,24 +98,6 @@ class L2P(Finetune):
         self.out_dim = new_out_features
         self.dw_k = torch.tensor(np.ones(self.out_dim + 1, dtype=np.float32)).to(self.device)
 
-    def observe(self, data):
-        x, y = data['image'], data['label']
-        x = x.to(self.device)
-        y = y.to(self.device)
-        logit, loss = self.network(x, train=True)
-
-        logit[:,:self.last_out_dim] = -float('inf')
-        dw_cls = self.dw_k[-1 * torch.ones(y.size()).long()]
-
-        loss += (self.loss_fn(logit, y) * dw_cls).mean()
-        
-        pred = torch.argmax(logit, dim=1)
-        acc = torch.sum(pred == y).item()
-
-        return pred, acc / x.size(0), loss
-    
-        
-
     def after_task(self, task_idx, buffer, train_loader, test_loaders):
         self.last_out_dim = self.out_dim
 
@@ -115,7 +112,6 @@ class L2P(Finetune):
 
         acc = torch.sum(pred == y).item()
         return pred, acc / x.size(0)
-
 
     def get_parameters(self, config):
         return list(self.network.backbone.prompt.parameters()) + list(self.network.classifier.parameters())

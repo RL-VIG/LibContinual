@@ -21,7 +21,11 @@ from torch.nn import functional as F
 from torch.nn.parameter import Parameter
 from tqdm import tqdm
 
-from .backbone.clip import tokenize
+from .backbone.clip import tokenize, CLIP
+from .backbone.vit import ViTZoo
+
+VIT = ViTZoo
+CLIP = CLIP
 
 class MOE_ADAPTER4CL(nn.Module):
 
@@ -34,16 +38,21 @@ class MOE_ADAPTER4CL(nn.Module):
         self.label_smoothing = kwargs['label_smoothing']
 
         self._known_classes = 0
+        self._cur_task_id = -1
 
         self.accm_class_names = []   
         self.curr_class_names = []
-
         self.accm_text_tokens = None
         self.curr_text_tokens = None
 
         self.prompt_template = kwargs['prompt_template']
 
         self._network = backbone
+
+        self.classifier_pool = nn.ModuleList([
+            nn.Linear(kwargs["embd_dim"], kwargs['init_cls_num'], bias=True)] + 
+            [nn.Linear(kwargs["embd_dim"], kwargs['inc_cls_num'], bias=True) for _ in range(kwargs['task_num'] - 1)]
+        )
 
         for name, param in self._network.named_parameters():
             if 'adaptmlp' not in name and 'router' not in name and 'noise' not in name:
@@ -56,8 +65,17 @@ class MOE_ADAPTER4CL(nn.Module):
 
         x, y = data['image'].to(self.device), data['label'].to(self.device) - self._known_classes
 
-        # TODO: task_id and is_train is pass into clip model, but they never change, why?
-        logits_per_img, logits_per_txt = self._network(x, self.curr_text_tokens, 0 , True)
+        if isinstance(self._network, CLIP):
+            features_img, features_txt, logits_per_img, logits_per_txt = self._network(x, self.curr_text_tokens)
+        elif isinstance(self._network, VIT):
+            features = self._network(x)
+            logits_per_img = []
+            for prompts in [self.classifier_pool[self._cur_task_id]]:
+                logits_per_img.append(prompts(features))
+            logits_per_img = torch.cat(logits_per_img, dim=1)
+        else:
+            assert 0
+        
         loss = F.cross_entropy(logits_per_img, y, label_smoothing=self.label_smoothing)
 
         preds = logits_per_img.softmax(dim=-1).argmax(dim=1)
@@ -69,7 +87,17 @@ class MOE_ADAPTER4CL(nn.Module):
 
         x, y = data['image'].to(self.device), data['label'].to(self.device)
 
-        logits_per_img, logits_per_txt = self._network(x, self.accm_text_tokens, 0 , False)
+        if isinstance(self._network, CLIP):
+            features_img, features_txt, logits_per_img, logits_per_txt = self._network(x, self.accm_text_tokens)
+        elif isinstance(self._network, VIT):
+            features = self._network(x)
+            logits_per_img = []
+            for prompts in self.classifier_pool[:self._cur_task_id + 1]:
+                logits_per_img.append(prompts(features))
+            logits_per_img = torch.cat(logits_per_img, dim=1)
+        else:
+            assert 0
+
         preds = logits_per_img.softmax(dim=-1).argmax(dim=1)
         acc = preds.eq(y).sum().item() / y.size(0)
 
@@ -77,6 +105,7 @@ class MOE_ADAPTER4CL(nn.Module):
     
     def before_task(self, task_idx, buffer, train_loader, test_loaders):
         
+        self._cur_task_id = task_idx
         if task_idx == 1:
             self._known_classes = self.init_cls_num
         elif task_idx > 1:
@@ -85,13 +114,8 @@ class MOE_ADAPTER4CL(nn.Module):
         self.curr_class_names = train_loader.dataset.get_class_names()
         self.accm_class_names += self.curr_class_names
 
-        self.curr_text_tokens = tokenize(
-            [self.prompt_template.format(c) for c in self.curr_class_names]
-        ).to(self.device)
-
-        self.accm_text_tokens = tokenize(
-            [self.prompt_template.format(c) for c in self.accm_class_names]
-        ).to(self.device)
+        self.curr_text_tokens = tokenize([self.prompt_template.format(c) for c in self.curr_class_names]).to(self.device)
+        self.accm_text_tokens = tokenize([self.prompt_template.format(c) for c in self.accm_class_names]).to(self.device)
 
     def get_parameters(self, config):
         return self._network.parameters()

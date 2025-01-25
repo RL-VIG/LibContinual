@@ -10,8 +10,7 @@ from torch.nn.parameter import Parameter
 from tqdm import tqdm
 from math import pi
 from torchvision import transforms
-
-from.backbone.vit import Attention_LoRA2
+from .backbone.transformer import MultiHeadAttention_MoEMaskedLoRA
 
 Epsilon = 0.5
 
@@ -39,17 +38,13 @@ class Model(nn.Module):
         features = self.backbone(x, expert_id = expert_id)
         return features
 
-    def forward(self, x, expert_id, inference = False, task_aware = False):
+    def forward(self, x, expert_id, inference = False):
         logits = []
         features = self.backbone(x, expert_id = expert_id)
 
         if inference:
-            if task_aware:
-                for prompts in [self.classifier_pool[expert_id]]:
-                    logits.append(prompts(features))
-            else:
-                for prompts in self.classifier_pool[:self._cur_task_id + 1]:
-                    logits.append(prompts(features))
+            for prompts in self.classifier_pool[:self._cur_task_id + 1]:
+                logits.append(prompts(features))
         else:
             for prompts in [self.classifier_pool[self._cur_task_id]]:
                 logits.append(prompts(features))
@@ -59,7 +54,6 @@ class Model(nn.Module):
     def update_input_matrix(self, x, expert_id):
         self.backbone(x, expert_id = expert_id, get_input_matrix = True)
 
-# Mixture of Side-Tuning
 class MoE_Test(nn.Module):
 
     def __init__(self, backbone, device, **kwargs):
@@ -69,6 +63,8 @@ class MoE_Test(nn.Module):
         self.init_cls_num = kwargs["init_cls_num"]
         self.inc_cls_num = kwargs["inc_cls_num"]
         self.task_num = kwargs["task_num"]
+        self.lame = kwargs["lame"]
+        self.lamb = kwargs["lamb"]
 
         self._known_classes = 0
         self.feature_list = []
@@ -76,7 +72,7 @@ class MoE_Test(nn.Module):
 
         self._network = Model(backbone, **kwargs)
 
-        self.attention_modules = [module for module in self._network.modules() if isinstance(module, Attention_LoRA2)]
+        self.attention_modules = [module for module in self._network.modules() if isinstance(module, MultiHeadAttention_MoEMaskedLoRA)]
 
         # TRGP Implementation
         self.feature_list_each_tasks = [[np.zeros((1)) for _ in range(len(self.attention_modules))] for _ in range(self.task_num)]
@@ -111,13 +107,12 @@ class MoE_Test(nn.Module):
 
         return preds, acc, loss
     
-    def inference(self, data, **kwargs):
+    def inference(self, data):
 
-        task_id = kwargs['task_id'] if 'task_id' in kwargs else None 
         x, y = data['image'].to(self.device), data['label'].to(self.device)
 
-        logits = self._network(x, expert_id = task_id, inference = True, task_aware = True)
-        preds = logits.max(1)[1] + task_id * self.inc_cls_num
+        logits = self._network(x, expert_id = 0, inference = True)
+        preds = logits.max(1)[1]
         acc = preds.eq(y).sum().item() / y.shape[0]
 
         return preds, acc
@@ -141,11 +136,11 @@ class MoE_Test(nn.Module):
         if task_idx == 0:
             for i, module in enumerate(self.attention_modules):
                 U, _, _ = torch.linalg.svd(module.cur_matrix)
-                module.lora_A_k.weight.data.copy_(U[:,:module.rank].T/math.sqrt(3))
-                module.lora_A_v.weight.data.copy_(U[:,:module.rank].T/math.sqrt(3))
+                module.lora_A_k.weight.data.copy_(U[:,:module.lora_rank].T/math.sqrt(3))
+                module.lora_A_v.weight.data.copy_(U[:,:module.lora_rank].T/math.sqrt(3))
 
-                module.lora_A_k_ts[task_idx].weight.data.copy_(U[:,:module.rank].T/math.sqrt(3))
-                module.lora_A_v_ts[task_idx].weight.data.copy_(U[:,:module.rank].T/math.sqrt(3))
+                #module.lora_A_k_ts[task_idx].weight.data.copy_(U[:,:module.lora_rank].T/math.sqrt(3))
+                #module.lora_A_v_ts[task_idx].weight.data.copy_(U[:,:module.lora_rank].T/math.sqrt(3))
                 module.reset_input_matrix()
         else:
             for i, module in enumerate(self.attention_modules):
@@ -157,8 +152,8 @@ class MoE_Test(nn.Module):
                 U, _, _ = np.linalg.svd(cur_matrix.cpu().numpy(), full_matrices = False)
                 U = torch.tensor(U).to(self.device)
 
-                module.lora_A_k_ts[task_idx].weight.data.copy_(U[:,:module.rank].T/math.sqrt(3))
-                module.lora_A_v_ts[task_idx].weight.data.copy_(U[:,:module.rank].T/math.sqrt(3))
+                #module.lora_A_k_ts[task_idx].weight.data.copy_(U[:,:module.rank].T/math.sqrt(3))
+                #module.lora_A_v_ts[task_idx].weight.data.copy_(U[:,:module.rank].T/math.sqrt(3))
 
                 if self.project_type[i] == 'remove':
                     cur_matrix = cur_matrix - feature_mat @ cur_matrix
@@ -168,19 +163,24 @@ class MoE_Test(nn.Module):
                 U, _, _ = np.linalg.svd(cur_matrix.cpu().numpy(), full_matrices = False)
                 U = torch.tensor(U).to(self.device)
 
-                module.lora_A_k.weight.data.copy_(U[:,:module.rank].T/math.sqrt(3))
-                module.lora_A_v.weight.data.copy_(U[:,:module.rank].T/math.sqrt(3))
+                module.lora_A_k.weight.data.copy_(U[:,:module.lora_rank].T/math.sqrt(3))
+                module.lora_A_v.weight.data.copy_(U[:,:module.lora_rank].T/math.sqrt(3))
                 module.reset_input_matrix()
 
         for name, param in self._network.named_parameters():
-            param.requires_grad_(False)
+            param.requires_grad_(False)            
 
             if f'classifier_pool.{task_idx}' in name or \
                (f'lora_B' in name and 'ts' not in name) or \
                f"B_k_ts.{task_idx}" in name or \
                f"B_v_ts.{task_idx}" in name or \
-               f"scale_param.{task_idx}" in name:
+               f"scale_param.{task_idx}" in name or \
+               f'eye' in name or \
+               f'router' in name or \
+               f'w_noise' in name:
+            
                 param.requires_grad_(True)
+        
         unfrezeed_params = [name for name, param in self._network.named_parameters() if param.requires_grad]
         print('\n'.join(unfrezeed_params))
 

@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 @inproceedings{liang2024inflora,
     title={InfLoRA: Interference-Free Low-Rank Adaptation for Continual Learning},
@@ -21,47 +20,105 @@ from torch.nn import functional as F
 from torch.nn.parameter import Parameter
 from tqdm import tqdm
 
-from .backbone.vit import Attention_LoRA
+from .backbone.transformer import MultiHeadAttention_LoRA, VisionTransformer
+from .backbone.clip import CLIP, tokenize
+from .backbone.vit import ViTZoo
+
+VIT = ViTZoo
+CLIP = CLIP
 
 class SiNet(nn.Module):
-    def __init__(self, backbone, **kwargs):
+    def __init__(self, backbone, device, **kwargs):
         super().__init__()
 
         self._cur_task_id = -1
         self.backbone = backbone
+        self.device = device
 
-        self.classifier_pool = nn.ModuleList([
-            nn.Linear(kwargs["embd_dim"], kwargs['init_cls_num'], bias=True)] + 
-            [nn.Linear(kwargs["embd_dim"], kwargs['inc_cls_num'], bias=True) for _ in range(kwargs['task_num'] - 1)]
-        )
+        if isinstance(backbone, VIT):
+            self.classifier_pool = nn.ModuleList([
+                nn.Linear(kwargs["embd_dim"], kwargs['init_cls_num'], bias=True)] + 
+                [nn.Linear(kwargs["embd_dim"], kwargs['inc_cls_num'], bias=True) for _ in range(kwargs['task_num'] - 1)]
+            )
+        elif isinstance(backbone, CLIP):
+            self.accm_class_names = []   
+            self.curr_class_names = []
+            self.accm_text_tokens = None
+            self.curr_text_tokens = None
 
-    def update_fc(self):
+            self.prompt_template = kwargs['prompt_template']
+        else:
+            assert 0, f'Backbone not implemented'
+
+    def update_fc(self, train_loader):
+        
         self._cur_task_id += 1
 
-    def get_feature(self, x):
-        features = self.backbone(x, task_id = self._cur_task_id)
-        return features
+        if isinstance(self.backbone, CLIP):
 
+            self.curr_class_names = train_loader.dataset.get_class_names()
+            self.accm_class_names += self.curr_class_names
+
+            self.curr_text_tokens = tokenize(
+                [self.prompt_template.format(c) for c in self.curr_class_names]
+            ).to(self.device)
+
+            self.accm_text_tokens = tokenize(
+                [self.prompt_template.format(c) for c in self.accm_class_names]
+            ).to(self.device)
+    
+    # These two for classifier alignment, 
+    def get_feature(self, x):
+        if isinstance(self.backbone, VIT):
+            return self.backbone(x)
+        elif isinstance(self.backbone, CLIP):
+            assert 0
+        else:
+            assert 0
+        
     def fc_only(self, x):
-        logits = []
-        for prompts in self.classifier_pool[:self._cur_task_id + 1]:
-            logits.append(prompts(x))
-        return torch.cat(logits, dim=1)
+        if isinstance(self.backbone, VIT):
+            logits = []
+            for prompts in self.classifier_pool[:self._cur_task_id + 1]:
+                logits.append(prompts(x))
+            return torch.cat(logits, dim=1)
+        elif isinstance(self.backbone, CLIP):
+            assert 0
+        else:
+            assert 0
         
     def forward(self, x, inference = False):
-        logits = []
-        features = self.backbone(x, task_id = self._cur_task_id)
-        if inference:
-            for prompts in self.classifier_pool[:self._cur_task_id + 1]:
-                logits.append(prompts(features))
-        else:
-            for prompts in [self.classifier_pool[self._cur_task_id]]:
-                logits.append(prompts(features))
 
-        return torch.cat(logits, dim=1)
+        if isinstance(self.backbone, VIT):
+            
+            logits = []
+            features = self.backbone(x)
+            if inference:
+                for prompts in self.classifier_pool[:self._cur_task_id + 1]:
+                    logits.append(prompts(features))
+            else:
+                for prompts in [self.classifier_pool[self._cur_task_id]]:
+                    logits.append(prompts(features))
+
+            return torch.cat(logits, dim=1)
+
+        elif isinstance(self.backbone, CLIP):
+            if inference:
+                features_img, features_txt, logits_per_img, logits_per_txt = self.backbone(x, self.accm_text_tokens)
+            else:
+                features_img, features_txt, logits_per_img, logits_per_txt = self.backbone(x, self.curr_text_tokens)
+            return logits_per_img
+        else:
+            assert 0, f'Backbone not implemented'
 
     def update_input_matrix(self, x):
-        self.backbone(x, task_id = self._cur_task_id, get_input_matrix = True)
+        
+
+        if isinstance(self.backbone, VIT):
+            self.backbone(x, get_input_matrix = True)
+
+        elif isinstance(self.backbone, CLIP):
+            self.backbone(image = x, text = self.curr_text_tokens, get_input_matrix = True)
 
 class InfLoRA_OPT(nn.Module):
 
@@ -81,12 +138,23 @@ class InfLoRA_OPT(nn.Module):
 
         self._dataset = kwargs['dataset']
         self._use_class_alignment = kwargs['use_ca']
-        self.logit_norm = None if self._dataset == 'cifar100' else 0.1
+        self._logit_norm = None if self._dataset == 'cifar100' else 0.1
         self._class_means = None
         self._class_covs = None
 
-        self._network = SiNet(backbone, **kwargs).to(self.device)
-        self.attention_modules = [module for module in self._network.modules() if isinstance(module, Attention_LoRA)]
+        self._network = SiNet(backbone, device, **kwargs).to(self.device)
+
+        if isinstance(backbone, VIT):
+            self.attention_modules = [module for module in self._network.modules() if isinstance(module, MultiHeadAttention_LoRA)]
+        elif isinstance(backbone, CLIP):
+            self.visual_only = kwargs['visual_only']
+            if self.visual_only:
+                self.attention_modules = [module for name, module in self._network.named_modules() if isinstance(module, MultiHeadAttention_LoRA) and 'visual' in name]
+            else:
+                self.attention_modules = [module for module in self._network.modules() if isinstance(module, MultiHeadAttention_LoRA)]
+        else:
+            assert 0, 'Not Implmented'
+
 
     def observe(self, data):
         '''
@@ -129,18 +197,31 @@ class InfLoRA_OPT(nn.Module):
             self._known_classes = self.init_cls_num
         elif task_idx > 1:
             self._known_classes += self.inc_cls_num
-        self._network.update_fc()
+        self._network.update_fc(train_loader)
 
         for module in self.attention_modules:
             module.init_param()
 
-        # Freeze the model and only train the linear layer, and lora_b layer
         unfrezeed_params = []
-        for name, param in self._network.named_parameters():
-            param.requires_grad_(False)
-            if "classifier_pool." + str(task_idx) in name or "lora_B" in name:
-                param.requires_grad_(True)
-                unfrezeed_params.append(name)
+        if isinstance(self._network.backbone, VIT):
+            for name, param in self._network.named_parameters():
+                param.requires_grad_(False)
+                if "classifier_pool." + str(task_idx) in name or "lora_B" in name:
+                    param.requires_grad_(True)
+                    unfrezeed_params.append(name)
+        elif isinstance(self._network.backbone, CLIP):
+            if self.visual_only:
+                for name, param in self._network.named_parameters():
+                    param.requires_grad_(False)
+                    if "visual" in name and "lora_B" in name:
+                        param.requires_grad_(True)
+                        unfrezeed_params.append(name)
+            else:
+                for name, param in self._network.named_parameters():
+                    param.requires_grad_(False)
+                    if "lora_B" in name:
+                        param.requires_grad_(True)
+                        unfrezeed_params.append(name)
 
         print(f"Current task : {task_idx}, Parameters to be updated: {len(unfrezeed_params)}")
         print(",\n".join(unfrezeed_params))
@@ -152,8 +233,8 @@ class InfLoRA_OPT(nn.Module):
         if task_idx == 0:
             for module in self.attention_modules:
                 U, _, _ = torch.linalg.svd(module.cur_matrix)
-                module.lora_A_k.weight.data.copy_(U[:,:module.rank].T/math.sqrt(3))
-                module.lora_A_v.weight.data.copy_(U[:,:module.rank].T/math.sqrt(3))
+                module.lora_A_k.weight.data.copy_(U[:,:module.lora_rank].T/math.sqrt(3))
+                module.lora_A_v.weight.data.copy_(U[:,:module.lora_rank].T/math.sqrt(3))
                 module.reset_input_matrix()
         else:
             for i, module in enumerate(self.attention_modules):
@@ -168,8 +249,8 @@ class InfLoRA_OPT(nn.Module):
                     cur_matrix = feature_mat @ cur_matrix
 
                 U, _, _ = torch.linalg.svd(cur_matrix, full_matrices = False)
-                module.lora_A_k.weight.data.copy_(U[:,:module.rank].T/math.sqrt(3))
-                module.lora_A_v.weight.data.copy_(U[:,:module.rank].T/math.sqrt(3))
+                module.lora_A_k.weight.data.copy_(U[:,:module.lora_rank].T/math.sqrt(3))
+                module.lora_A_v.weight.data.copy_(U[:,:module.lora_rank].T/math.sqrt(3))
                 module.reset_input_matrix()
     
     def after_task(self, task_idx, buffer, train_loader, test_loaders):
@@ -336,15 +417,11 @@ class InfLoRA_OPT(nn.Module):
             
             for _iter in range((task_idx + 1) * self.inc_cls_num):
                 
-                #task_id = _iter // self.inc_cls_num
-
                 inp = inputs[_iter * num_sample : (_iter+1) * num_sample]
                 tgt = targets[_iter * num_sample : (_iter+1) * num_sample]
                 logits = self._network.fc_only(inp)
 
-                assert logits.shape == logits[:, :(task_idx + 1) * self.inc_cls_num].shape
-
-                if self.logit_norm:
+                if self._logit_norm:
 
                     pass
 

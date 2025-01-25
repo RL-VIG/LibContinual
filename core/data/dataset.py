@@ -7,7 +7,7 @@ import numpy as np
 from torch.utils.data import Dataset, DataLoader
 
 class ContinualDatasets:
-    def __init__(self, mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms, batchsize):
+    def __init__(self, mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms, batchsize, num_workers):
         self.mode = mode
         self.task_num = task_num
         self.init_cls_num = init_cls_num
@@ -15,12 +15,13 @@ class ContinualDatasets:
         self.data_root = data_root
         self.cls_map = cls_map
         self.trfms = trfms
-        self.dataloaders = []
         self.batchsize = batchsize
+        self.num_workers = num_workers
 
         self.create_loaders()
 
     def create_loaders(self):
+        self.dataloaders = []
         for i in range(self.task_num):
             start_idx = 0 if i == 0 else (self.init_cls_num + (i-1) * self.inc_cls_num)
             end_idx = start_idx + (self.init_cls_num if i ==0 else self.inc_cls_num)
@@ -28,7 +29,8 @@ class ContinualDatasets:
                 SingleDataset(self.data_root, self.mode, self.cls_map, start_idx, end_idx, self.trfms),
                 shuffle = True,
                 batch_size = self.batchsize,
-                drop_last = False
+                drop_last = False,
+                num_workers = self.num_workers
             ))
 
     def get_loader(self, task_idx):
@@ -37,8 +39,7 @@ class ContinualDatasets:
             return self.dataloaders[task_idx]
         else:
             return self.dataloaders[:task_idx+1]
-        
-    
+         
 class SingleDataset(Dataset):
     def __init__(self, data_root, mode, cls_map, start_idx, end_idx, trfms):
         super().__init__()
@@ -54,8 +55,10 @@ class SingleDataset(Dataset):
     def __getitem__(self, idx):
         img_path = self.images[idx]
         label = self.labels[idx]
+
         image = PIL.Image.open(os.path.join(self.data_root, self.mode, img_path)).convert("RGB")
         image = self.trfms(image)
+
         return {"image": image, "label": label}
     
     def __len__(self,):
@@ -73,7 +76,7 @@ class SingleDataset(Dataset):
 
     def get_class_names(self):
         return self.labels_name
-    
+
 
 class BatchData(Dataset):
     def __init__(self, images, labels, input_transform=None):

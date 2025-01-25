@@ -19,9 +19,8 @@ from tqdm import tqdm
 
 from .tokenizer.tokenizer import SimpleTokenizer as _Tokenizer
 from .petl.adapter import Adapter
+from .transformer import LayerNorm, Transformer, VisualTransformer
 
-global_taskid = 0
-global_is_train=True
 class SparseDispatcher(object):
     """Helper for implementing a mixture of experts.
     The purpose of this class is to create input minibatches for the
@@ -263,274 +262,7 @@ class ModifiedResNet(nn.Module):
 
         return x
 
-class LayerNorm(nn.LayerNorm):
-    """Subclass torch's LayerNorm to handle fp16."""
-
-    def forward(self, x: torch.Tensor):
-        orig_type = x.dtype
-        ret = super().forward(x.type(torch.float32))
-        return ret.type(orig_type)
-
-class QuickGELU(nn.Module):
-    def forward(self, x: torch.Tensor):
-        return x * torch.sigmoid(1.702 * x)
-
-class ResidualAttentionBlock(nn.Module):
-    def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None, text_or_image=None, experts_num=2):
-        super().__init__()
-        self.register_buffer("mean", torch.tensor([0.0]))
-        self.register_buffer("std", torch.tensor([1.0]))
-        self.attn = nn.MultiheadAttention(d_model, n_head)
-        self.ln_1 = LayerNorm(d_model)
-        self.mlp = nn.Sequential(OrderedDict([
-            ("c_fc", nn.Linear(d_model, d_model * 4)),
-            ("gelu", QuickGELU()),
-            ("c_proj", nn.Linear(d_model * 4, d_model))
-        ]))
-        self.ln_2 = LayerNorm(d_model)
-        self.attn_mask = attn_mask
-        self.is_train = global_is_train
-        self.step = 1
-        self.top_k = 2
-        self.ffn_num = 64
-        self.experts_num = experts_num
-        self.softmax = nn.Softmax(1)
-        self.softplus = nn.Softplus()
-        self.noisy_gating = True
-        self.adaptmlp_list = nn.ModuleList()
-        self.text_or_image = text_or_image
-        if text_or_image == 'text':
-            self.choose_map_text = torch.zeros([self.experts_num])
-        else:
-            self.choose_map_image = torch.zeros([self.experts_num])
-        self.router_list = nn.ParameterList()
-        self.w_noise_list = nn.ParameterList()
-
-        for i in range(self.step):
-            self.router_list.append(nn.Parameter(torch.zeros(d_model, self.experts_num), requires_grad=True))
-            self.w_noise_list.append(nn.Parameter(torch.zeros(d_model, self.experts_num), requires_grad=True))
-        for i in range(self.experts_num):  #
-            self.adaptmlp_list.append(Adapter(d_model=d_model, dropout=0.1, bottleneck=self.ffn_num,
-                                    init_option='lora',
-                                    adapter_scalar=0.1,
-                                    adapter_layernorm_option='none',
-                                    ))
-
-        self.lora_feature = None # Temporary save the output of adapter, for method : DMNSP
-
-        # self.taskid = None
-    
-    def attention(self, x: torch.Tensor):
-        self.attn_mask = self.attn_mask.to(dtype=x.dtype, device=x.device) if self.attn_mask is not None else None
-        return self.attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
-
-    def cv_squared(self, x):
-        """The squared coefficient of variation of a sample.
-        Useful as a loss to encourage a positive distribution to be more uniform.
-        Epsilons added for numerical stability.
-        Returns 0 for an empty Tensor.
-        Args:
-        x: a `Tensor`.
-        Returns:
-        a `Scalar`.
-        """
-        eps = 1e-10
-        # if only num_experts = 1
-
-        if x.shape[0] == 1:
-            return torch.tensor([0], device=x.device, dtype=x.dtype)
-        return x.float().var() / (x.float().mean()**2 + eps)
-
-    def _gates_to_load(self, gates):
-        """Compute the true load per expert, given the gates.
-        The load is the number of examples for which the corresponding gate is >0.
-        Args:
-        gates: a `Tensor` of shape [batch_size, n]
-        Returns:
-        a float32 `Tensor` of shape [n]
-        """
-        return (gates > 0).sum(0)
-
-    def _prob_in_top_k(self, clean_values, noisy_values, noise_stddev, noisy_top_values):
-        """Helper function to NoisyTopKGating.
-        Computes the probability that value is in top k, given different random noise.
-        This gives us a way of backpropagating from a loss that balances the number
-        of times each expert is in the top k experts per example.
-        In the case of no noise, pass in None for noise_stddev, and the result will
-        not be differentiable.
-        Args:
-        clean_values: a `Tensor` of shape [batch, n].
-        noisy_values: a `Tensor` of shape [batch, n].  Equal to clean values plus
-          normally distributed noise with standard deviation noise_stddev.
-        noise_stddev: a `Tensor` of shape [batch, n], or None
-        noisy_top_values: a `Tensor` of shape [batch, m].
-           "values" Output of tf.top_k(noisy_top_values, m).  m >= k+1
-        Returns:
-        a `Tensor` of shape [batch, n].
-        """
-        # print('1231',clean_values)  # 全nan
-        batch = clean_values.size(0)
-        m = noisy_top_values.size(1)
-        top_values_flat = noisy_top_values.flatten()
-
-        threshold_positions_if_in = torch.arange(batch, device=clean_values.device) * m + self.top_k
-        threshold_if_in = torch.unsqueeze(torch.gather(top_values_flat, 0, threshold_positions_if_in), 1)
-        is_in = torch.gt(noisy_values, threshold_if_in)
-        threshold_positions_if_out = threshold_positions_if_in - 1
-        threshold_if_out = torch.unsqueeze(torch.gather(top_values_flat, 0, threshold_positions_if_out), 1)
-        # is each value currently in the top k.
-        normal = Normal(self.mean, self.std)
-        #
-
-        prob_if_in = normal.cdf((clean_values - threshold_if_in)/noise_stddev)
-        prob_if_out = normal.cdf((clean_values - threshold_if_out)/noise_stddev)
-        prob = torch.where(is_in, prob_if_in, prob_if_out)
-        return prob
-
-    def noisy_top_k_gating(self, x, train, w_gate, w_noise, noise_epsilon=1e-2):
-        """Noisy top-k gating.
-          See paper: https://arxiv.org/abs/1701.06538.
-          Args:
-            x: input Tensor with shape [batch_size, input_size]
-            train: a boolean - we only add noise at training time.
-            noise_epsilon: a float
-          Returns:
-            gates: a Tensor with shape [batch_size, num_experts]
-            load: a Tensor with shape [num_experts]
-        """
-
-        clean_logits = x @ w_gate.to(x)
-        if self.noisy_gating and train:
-            raw_noise_stddev = x @ w_noise.to(x)
-            noise_stddev = ((self.softplus(raw_noise_stddev) + noise_epsilon))
-            noisy_logits = clean_logits + (torch.randn_like(clean_logits) * noise_stddev)
-            logits = noisy_logits
-        else:
-            logits = clean_logits
-        # calculate topk + 1 that will be needed for the noisy gates
-        top_logits, top_indices = logits.topk(min(self.top_k + 1, self.experts_num), dim=1)
-        top_k_logits = top_logits[:, :self.top_k]
-        top_k_indices = top_indices[:, :self.top_k]
-        top_k_gates = self.softmax(top_k_logits)
-        zeros = torch.zeros_like(logits)
-        gates = zeros.scatter(1, top_k_indices, top_k_gates)
-        if self.noisy_gating and self.top_k < self.experts_num and train:  # 目前未用上
-            load = (self._prob_in_top_k(clean_logits, noisy_logits, noise_stddev, top_logits)).sum(0)
-        else:
-            load = self._gates_to_load(gates)
-        return gates, load
-
-    def forward(self, x: torch.Tensor, compute_lora_feat=False):
-        # TODO: clean
-        x = x + self.attention(self.ln_1(x))
-        if global_taskid is not None:
-            
-            if self.experts_num > 1:
-                x_re = x.permute(1, 0, 2)[:, 0, :]
-                gates, load = self.noisy_top_k_gating(x_re, self.is_train, self.router_list[global_taskid],
-                                                    self.w_noise_list[global_taskid])
-                importance = gates.sum(0)
-
-                nonzero_indices = torch.nonzero(gates)
-                counter = Counter(nonzero_indices[:, 1].tolist())
-                for number, count in counter.items():
-                    if self.text_or_image == 'text':
-                        self.choose_map_text[number] = self.choose_map_text[number] + count
-                    else:
-                        self.choose_map_image[number] = self.choose_map_image[number] + count
-                dispatcher = SparseDispatcher(self.experts_num, gates)
-                expert_inputs = dispatcher.dispatch(x.permute(1, 0, 2).view(x.shape[1], -1))
-                expert_outputs = [self.adaptmlp_list[i](expert_inputs[i].view(expert_inputs[i].shape[0],
-                                                                            x.shape[0], x.shape[2]).to(x), add_residual=False)
-                                for i in range(self.experts_num)]
-
-                i = 0
-                while i < len(expert_outputs):
-                    if expert_outputs[i].shape[0] == 0:
-                        expert_outputs.pop(i)
-                    else:
-                        expert_outputs[i] = expert_outputs[i].view(expert_outputs[i].shape[0], -1)
-                        i += 1
-
-                y = dispatcher.combine(expert_outputs)
-                y = y.view(x.shape[1], x.shape[0], x.shape[2])
-                x = x + self.mlp(self.ln_2(x)) + y.permute(1, 0, 2)
-
-            else:
-                assert len(self.adaptmlp_list) == 1
-
-                x_re = x.permute(1, 0, 2)
-                adapt_x = self.adaptmlp_list[0](x_re, add_residual=False)
-                adapt_x = adapt_x.permute(1, 0, 2)
-
-                x = x + self.mlp(self.ln_2(x)) + adapt_x
-
-                if compute_lora_feat:
-                    self.lora_feature = adapt_x.detach().cpu()
-
-        else:
-            x = x + self.mlp(self.ln_2(x))
-
-        return x
-
-class Transformer(nn.Module):
-    def __init__(self, width: int, layers: int, heads: int, attn_mask: torch.Tensor = None, text_or_image=None, **kwargs):
-        super().__init__()
-        self.width = width
-        self.layers = layers
-        self.resblocks = nn.ModuleList([ResidualAttentionBlock(width, heads, attn_mask, text_or_image, **kwargs) for _ in range(layers)])
-
-        self.lora_feature = []
-
-    def forward(self, x: torch.Tensor, **kwargs):
-
-        for block in self.resblocks:
-            x = block(x, **kwargs)
-            
-        return x
-
-class VisualTransformer(nn.Module):
-    # TODO: If only we can replace this ViT with the ViT in another file
-    def __init__(self, input_resolution: int, patch_size: int, width: int, layers: int, heads: int, output_dim: int, text_or_image=None, **kwargs):
-        super().__init__()
-        self.input_resolution = input_resolution
-        self.output_dim = output_dim
-        # Added so this info is available. should not change anything.
-        self.patch_size = patch_size
-        self.width = width
-        self.layers = layers
-        self.heads = heads
-
-        self.conv1 = nn.Conv2d(in_channels=3, out_channels=width, kernel_size=patch_size, stride=patch_size, bias=False)
-
-        scale = width ** -0.5
-        self.class_embedding = nn.Parameter(scale * torch.randn(width))
-        self.positional_embedding = nn.Parameter(scale * torch.randn((input_resolution // patch_size) ** 2 + 1, width))
-        self.ln_pre = LayerNorm(width)
-
-        self.transformer = Transformer(width, layers, heads, text_or_image=text_or_image, **kwargs)
-
-        self.ln_post = LayerNorm(width)
-        self.proj = nn.Parameter(scale * torch.randn(width, output_dim))
-
-    def forward(self, x: torch.Tensor, **kwargs):
-        x = self.conv1(x)
-        x = x.reshape(x.shape[0], x.shape[1], -1)
-        x = x.permute(0, 2, 1)
-        x = torch.cat([self.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device), x], dim=1)  # shape = [*, grid ** 2 + 1, width]
-        x = x + self.positional_embedding.to(x.dtype)
-        x = self.ln_pre(x)
-
-        x = x.permute(1, 0, 2)  # NLD -> LND
-        x = self.transformer(x, **kwargs)
-        x = x.permute(1, 0, 2)  # LND -> NLD
-
-        x = self.ln_post(x[:, 0, :])
-
-        if self.proj is not None:
-            x = x @ self.proj
-
-        return x
+# -----------------------------
 
 class CLIP(nn.Module):
     def __init__(self,
@@ -547,13 +279,11 @@ class CLIP(nn.Module):
                  transformer_heads: int,
                  transformer_layers: int,
                  baseline = False,
-                 # MoE
-                 experts_num: int = 1,
                  **kwargs
                  ):
         super().__init__()
-        self.baseline = baseline
 
+        self.baseline = baseline
         self.context_length = context_length
 
         if isinstance(vision_layers, (tuple, list)):
@@ -567,15 +297,16 @@ class CLIP(nn.Module):
             )
         else:
             vision_heads = vision_width // 64
+
             self.visual = VisualTransformer(
-                input_resolution=image_resolution,
+                img_size=image_resolution,
                 patch_size=vision_patch_size,
                 width=vision_width,
-                layers=vision_layers,
+                depth=vision_layers,
                 heads=vision_heads,
                 output_dim=embed_dim,
                 text_or_image='image',
-                experts_num=experts_num
+                **kwargs
             )
 
         self.transformer = Transformer(
@@ -584,7 +315,7 @@ class CLIP(nn.Module):
             heads=transformer_heads,
             attn_mask=self.build_attention_mask(),
             text_or_image='text',
-            experts_num=experts_num
+            **kwargs
         )
 
         self.vocab_size = vocab_size
@@ -594,6 +325,7 @@ class CLIP(nn.Module):
 
         self.text_projection = nn.Parameter(torch.empty(transformer_width, embed_dim))
         self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
+        #self.logit_scale = nn.Parameter(torch.tensor(100.0))
 
         self.initialize_parameters()
 
@@ -618,11 +350,19 @@ class CLIP(nn.Module):
         proj_std = (self.transformer.width ** -0.5) * ((2 * self.transformer.layers) ** -0.5)
         attn_std = self.transformer.width ** -0.5
         fc_std = (2 * self.transformer.width) ** -0.5
-        for block in self.transformer.resblocks:
-            nn.init.normal_(block.attn.in_proj_weight, std=attn_std)
-            nn.init.normal_(block.attn.out_proj.weight, std=proj_std)
-            nn.init.normal_(block.mlp.c_fc.weight, std=fc_std)
-            nn.init.normal_(block.mlp.c_proj.weight, std=proj_std)
+        #for block in self.transformer.resblocks:
+        for block in self.transformer.blocks:
+            # DEBUG
+            # nn.init.normal_(block.attn.in_proj_weight, std=attn_std)
+            # nn.init.normal_(block.attn.out_proj.weight, std=proj_std)
+            # nn.init.normal_(block.mlp.c_fc.weight, std=fc_std)
+            # nn.init.normal_(block.mlp.c_proj.weight, std=proj_std)
+
+            nn.init.normal_(block.attn.qkv.weight, std=attn_std)
+            nn.init.normal_(block.attn.proj.weight, std=proj_std)
+            nn.init.normal_(block.mlp.fc1.weight, std=fc_std)
+            nn.init.normal_(block.mlp.fc2.weight, std=proj_std)
+
 
         if self.text_projection is not None:
             nn.init.normal_(self.text_projection, std=self.transformer.width ** -0.5)
@@ -657,10 +397,7 @@ class CLIP(nn.Module):
 
         return x
 
-    def forward(self, image, text, taskid, is_train, **kwargs):
-        global global_taskid, global_is_train
-        global_taskid = taskid
-        global_is_train = is_train
+    def forward(self, image, text, **kwargs):
         if image is None:
             return self.encode_text(text, **kwargs)
         elif text is None:
@@ -671,12 +408,12 @@ class CLIP(nn.Module):
         image_features = image_features / image_features.norm(dim=-1, keepdim=True)
         text_features = text_features / text_features.norm(dim=-1, keepdim=True)
 
-        # if self.baseline:
         logit_scale = self.logit_scale.exp()
-        logits_per_image = logit_scale * image_features @ text_features.t()
-        logits_per_text = logits_per_image.t()
+        logits_per_image = logit_scale * image_features @ text_features.T
+        logits_per_text = logits_per_image.T
 
-        return logits_per_image, logits_per_text
+        return image_features, text_features, \
+               logits_per_image, logits_per_text
 
 def build_model(state_dict: dict, **kwargs):
     vit = "visual.proj" in state_dict
@@ -704,6 +441,7 @@ def build_model(state_dict: dict, **kwargs):
     transformer_layers = len(set(k.split(".")[2] for k in state_dict if k.startswith(f"transformer.resblocks")))
 
     model = CLIP(
+
         embed_dim,
         image_resolution, vision_layers, vision_width, vision_patch_size,
         context_length, vocab_size, transformer_width, transformer_heads, transformer_layers, **kwargs
@@ -713,7 +451,40 @@ def build_model(state_dict: dict, **kwargs):
         if key in state_dict:
             del state_dict[key]
 
-    model.load_state_dict(state_dict, strict=False)
+    # nn.MultiheadAttention is replaced with custom MultiheadAttention, the param name is changed to compatible with Pretrained ViT
+    key_mapping = {
+        "attn.in_proj_": "attn.qkv.",
+        "attn.out_proj.": "attn.proj.",
+        "mlp.c_fc.": "mlp.fc1.",
+        "mlp.c_proj.": "mlp.fc2.",
+        ".resblocks.": ".blocks."
+    }
+
+    modified_state_dict = {}
+    for key in state_dict.keys():
+        new_key = key
+        for old_key, mapped_key in key_mapping.items():
+            if old_key in new_key:
+                new_key = new_key.replace(old_key, mapped_key)
+
+        modified_state_dict[new_key] = state_dict[key]
+
+    '''
+    original_keys = set(model.state_dict().keys())
+    modified_keys = set(modified_state_dict.keys())
+
+    # Print differences
+    print("Keys in original state dict but not in modified state dict:")
+    print('\n'.join(original_keys - modified_keys))  # Original keys that are missing in modified
+
+    print('\n')
+    print("Keys in modified state dict but not in original state dict:")
+    print('\n'.join(modified_keys - original_keys))  # Modified keys that are extra in modified
+    assert 0
+    '''
+
+
+    model.load_state_dict(modified_state_dict, strict=False)
     for p in model.parameters():
         p.data = p.data.float()
     return model.eval()
@@ -803,12 +574,11 @@ def load(name: str, device: Union[str, torch.device] = "cuda" if torch.cuda.is_a
         
         state_dict = torch.load(model_path, map_location="cpu")
 
-
-
     if not jit:
         try:
             model = build_model(state_dict or model.state_dict(), **kwargs).to(device)
         except KeyError:
+            print('Error')
             sd = {k[7:]: v for k,v in state_dict["state_dict"].items()}
             model = build_model(sd, **kwargs).to(device)
 

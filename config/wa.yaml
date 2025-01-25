@@ -1,29 +1,22 @@
-includes:
-  - headers/data.yaml
-  - headers/device.yaml
-  - headers/model.yaml
-  - headers/optimizer.yaml
-  - backbones/resnet12.yaml
 
-# Set paths to datasets
-data_root: ${DATASET_DIR}/cifar100
+dataset: &dataset cifar100
+init_cls_num: &init_cls_num 20
+inc_cls_num: &inc_cls_num 20
+total_cls_num: &total_cls_num 100
+task_num: &task_num 5
+image_size: &image_size 32
 
 # Image size
-image_size: 32
-
-save_path: ./
-
-# Data settings
-init_cls_num: 20
-inc_cls_num: 20
-task_num: 5
+dataset: cifar
+init_cls_num: *init_cls_num
+inc_cls_num: *inc_cls_num
+task_num: *task_num
+image_size: *image_size
 
 # Training setting
 init_epoch: 250
 epoch: 250
-device_ids: 3
-n_gpu: 1
-val_per_epoch: 1
+val_per_epoch: 250
 batch_size: 128
 
 # Optimizer settings
@@ -43,11 +36,11 @@ lr_scheduler:
 
 # Backbone architecture settings
 backbone:
-  name: resnet32
+  name: resnet18
   kwargs:
-    num_classes: 100
+    num_classes: *total_cls_num
     args:
-      dataset: cifar100
+      dataset: *dataset
 
 # Buffer settings
 buffer:
@@ -61,6 +54,6 @@ buffer:
 classifier:
   name: WA
   kwargs:
-    num_class: 100
-    feat_dim: 64
-    init_cls_num: 20
+    num_class: *total_cls_num
+    feat_dim: 512 # 64
+    init_cls_num: *init_cls_num
