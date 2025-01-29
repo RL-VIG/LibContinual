@@ -19,6 +19,7 @@ from .InfLoRA import InfLoRA
 from .praka import PRAKA
 from .ranpac import RanPAC
 from .trgp import TRGP
+from .trgp_clip import TRGP_CLIP
 from .InfLoRA_opt import InfLoRA_OPT
 from .MInfLoRA import MInfLoRA
 from .moe_adapter4cl import MOE_ADAPTER4CL

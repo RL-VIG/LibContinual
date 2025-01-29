@@ -153,6 +153,22 @@ class ImageNetRTransform:
         transforms.CenterCrop(224),
         *common_trfs])
     
+
+    # from trust region gradient projection
+    mean=[x/255 for x in [125.3,123.0,113.9]]
+    std=[x/255 for x in [63.0,62.1,66.7]]
+
+    alexnet_train_transform = transforms.Compose([
+        transforms.RandomResizedCrop(32),
+        transforms.ToTensor(),
+        transforms.Normalize(mean,std)])
+
+    alexnet_test_transform = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(32),
+        transforms.ToTensor(),
+        transforms.Normalize(mean,std)])
+
     @staticmethod
     def get_transform(model_type, mode):
         if model_type == 'resnet':
@@ -165,6 +181,11 @@ class ImageNetRTransform:
                 return ImageNetRTransform.vit_train_transform
             elif mode == 'test':
                 return ImageNetRTransform.vit_test_transform
+        elif model_type == 'alexnet':
+            if mode == 'train':
+                return ImageNetRTransform.alexnet_train_transform
+            elif mode == 'test':
+                return ImageNetRTransform.alexnet_test_transform
         else:
             raise ValueError("Unsupported model type")
 
