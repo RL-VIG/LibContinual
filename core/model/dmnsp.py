@@ -36,6 +36,7 @@ class DMNSP(nn.Module):
         self._known_classes = 0
         self.visual_U = []
         self.lamda = [[0 for _ in range(12)] for _ in range(12)]
+        self.lamda_scale = kwargs['lamda_scale']
 
         self.accm_class_names = []   
         self.curr_class_names = []
@@ -120,20 +121,32 @@ class DMNSP(nn.Module):
 
         return preds, acc, loss
 
-    def inference(self, data):
+    def inference(self, data, task_id = -1):
 
         x, y = data['image'].to(self.device), data['label'].to(self.device)
 
         if isinstance(self._network, CLIP):
-            features_img, features_txt, logits_per_img, logits_per_txt = self._network(x, self.accm_text_tokens)
-        elif isinstance(self._network, ViTZoo):
-            features = self._network(x)
-            logits_per_img = []
-            for prompts in self.classifier_pool[:self._cur_task_id + 1]:
-                logits_per_img.append(prompts(features))
-            logits_per_img = torch.cat(logits_per_img, dim=1)
+            if task_id > -1:
+                assert self.init_cls_num == self.inc_cls_num
+                features_img, features_txt, logits_per_img, logits_per_txt = self._network(x, self.accm_text_tokens[task_id * self.inc_cls_num : (task_id + 1) * self.inc_cls_num])
+            else:
+                features_img, features_txt, logits_per_img, logits_per_txt = self._network(x, self.accm_text_tokens)
+        elif isinstance(self._network, VIT):
+            if task_id > -1:
+                assert 0, 'Not Implemented'
+            else:
+                features = self._network(x)
+                logits_per_img = []
+                for prompts in self.classifier_pool[:self._cur_task_id + 1]:
+                    logits_per_img.append(prompts(features))
+                logits_per_img = torch.cat(logits_per_img, dim=1)
 
         preds = logits_per_img.softmax(dim=-1).argmax(dim=1)
+
+        if task_id > -1:
+            assert self.init_cls_num == self.inc_cls_num
+            preds += task_id * self.inc_cls_num
+
         acc = preds.eq(y).sum().item() / y.size(0)
 
         return preds, acc
@@ -182,7 +195,7 @@ class DMNSP(nn.Module):
                             similarities_visual.append(cos_sim_visual)
 
                         dot_products_visual = torch.mean(torch.topk(torch.stack(similarities_visual), int(len(similarities_visual) * 00.1))[0])
-                        self.lamda[j][k] = torch.exp(-dot_products_visual) * 30
+                        self.lamda[j][k] = torch.exp(-dot_products_visual) * self.lamda_scale
 
                 break # first batch only
 

@@ -1,25 +1,23 @@
-
 init_cls_num: &init_cls_num 5
 inc_cls_num: &inc_cls_num 5
 total_cls_num: &total_cls_num 100
 task_num: &task_num 20
-
 image_size: &image_size 224
 
 task_num: *task_num
 init_cls_num: *init_cls_num
 inc_cls_num: *inc_cls_num
 total_cls_num: *total_cls_num
-epoch: 4
+init_epoch: 4 # 4
+epoch: 4 # 4
 val_per_epoch: 4
 
 train_batch_size: 128
 test_batch_size: 64
 
-testing_times: 10
+testing_times: 1 # 10
 
-# setting: task-agnostic # class-incremental settings
-setting: task-aware # task-incremental settings
+setting: task-aware
 
 train_trfms:
   - RandomResizedCrop :
@@ -57,15 +55,16 @@ backbone:
   kwargs:
     model_name : ViT-B/16
     pretrained : True
-    block_layer: ResidualAttentionBlock_MLP
+    block_layer: ResidualAttentionBlock_MaskedMLP
     act_layer: QuickGELU
     norm_layer: LayerNorm
 
 classifier:
-  name: DMNSP
+  name: TRGP_CLIP
   kwargs:
     init_cls_num: *init_cls_num
-    inc_cls_num: *inc_cls_num
-    prompt_template : "a bad photo of a {}."
+    inc_cls_num: *init_cls_num
+    task_num: *task_num
     label_smoothing: 0.
     lamda_scale: 30
+    prompt_template : "a bad photo of a {}."

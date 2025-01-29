@@ -16,7 +16,7 @@ from collections import Counter
 from timm.models.vision_transformer import PatchEmbed
 from timm.models.layers import trunc_normal_, DropPath
 
-from .petl.adapter import Adapter
+from .petl.adapter import Adapter, MaskedAdapter
 from .petl.proj import Proj
 
 # Helper
@@ -300,7 +300,7 @@ class MultiHeadAttention_MaskedLoRA(MultiHeadAttention_LoRA):
     def forward(self, x, attn_mask=None, expert_id=0, register_hook=False, prompt=None, get_input_matrix = False):
 
         if get_input_matrix:
-            self.cur_matrix = (self.cur_matrix*self.n_cur_matrix + torch.bmm(x.detach().permute(0, 2, 1), x.detach()).sum(dim=0).cpu())/(self.n_cur_matrix + x.shape[0]*x.shape[1])
+            self.cur_matrix = (self.cur_matrix*self.n_cur_matrix + torch.bmm(x.detach().permute(0, 2, 1), x.detach()).sum(dim=0).cpu())/(self.n_cur_matrix + x.shape[0]*x.shape[1])            
             self.n_cur_matrix += x.shape[0]*x.shape[1]
             
         B, N, C = x.shape
@@ -610,6 +610,7 @@ class ResidualAttentionBlock_MLP(ResidualAttentionBlock):
 
         self.lora_feature = None # Temporary save the output of adapter, for method : DMNSP
     
+
     def attention(self, x: torch.Tensor, **kwargs):
         self.attn_mask = self.attn_mask.to(x) if self.attn_mask is not None else None
     
@@ -633,6 +634,66 @@ class ResidualAttentionBlock_MLP(ResidualAttentionBlock):
             self.lora_feature = adapt_x.detach().cpu()
 
         return x
+
+class ResidualAttentionBlock_MaskedMLP(ResidualAttentionBlock):
+    def __init__(self, 
+                 d_model: int, 
+                 n_head: int,
+                 mlp_ratio: float = 4.,
+                 qkv_bias: bool = True,
+                 qk_scale: float = None,
+                 attn_drop: float = 0.,
+                 proj_drop: float = 0.,
+                 drop_path: float = 0.,
+                 attn_layer = MultiHeadAttention, 
+                 act_layer = nn.GELU,
+                 norm_layer = nn.LayerNorm,
+                 attn_mask: torch.Tensor = None, 
+                 text_or_image=None,
+                 # For attn_layer = MultiHeadAttention_LoRA
+                 lora_rank: int = 0,
+                 lora_bias: bool = False,
+    ):
+        super().__init__(
+            d_model,
+            n_head,
+            mlp_ratio,
+            qkv_bias,
+            qk_scale,
+            attn_drop,
+            proj_drop,
+            drop_path,
+            attn_layer, 
+            act_layer,
+            norm_layer,
+            attn_mask, 
+            text_or_image)
+
+        self.ffn_num = 64
+        self.adaptmlp = MaskedAdapter(d_model=d_model, dropout=0.1, bottleneck=self.ffn_num,
+                                init_option='lora', adapter_scalar=0.1, adapter_layernorm_option='none')
+
+    def attention(self, x: torch.Tensor, **kwargs):
+        self.attn_mask = self.attn_mask.to(x) if self.attn_mask is not None else None
+    
+        x = x.permute(1, 0, 2)
+        attn = self.attn(x, attn_mask=self.attn_mask, **kwargs)
+        attn = attn.permute(1, 0, 2)
+
+        return attn
+
+    def forward(self, x: torch.Tensor, compute_input_matrix = False, **kwargs):
+        
+        x = x + self.drop_path(self.attention(self.ln_1(x), **kwargs)) # [Seq, Batch, Dim]
+
+        x_re = x.permute(1, 0, 2)
+        adapt_x = self.adaptmlp(x_re, add_residual=False, compute_input_matrix=compute_input_matrix)
+        adapt_x = adapt_x.permute(1, 0, 2)
+
+        x = x + self.drop_path(self.mlp(self.ln_2(x)) + adapt_x)
+
+        return x
+
 
 class ResidualAttentionBlock_MoE_MLP(ResidualAttentionBlock):
     def __init__(self, 

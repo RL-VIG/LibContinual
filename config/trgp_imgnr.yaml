@@ -1,6 +1,10 @@
-init_cls_num: &init_cls_num 5
-inc_cls_num: &inc_cls_num 5
-total_cls_num: &total_cls_num 100
+
+dataset: &dataset "imagenet-r"
+data_root: "/home/lvqiexuan/temp_data/imagenet-r/"
+
+init_cls_num: &init_cls_num 10
+inc_cls_num: &inc_cls_num 10
+total_cls_num: &total_cls_num 200
 task_num: &task_num 20
 
 task_num: *task_num
@@ -13,6 +17,8 @@ batch_size: 64
 val_per_epoch: 200
 
 setting: task-aware
+
+testing_times: 1
 
 optimizer:
   name: SGD

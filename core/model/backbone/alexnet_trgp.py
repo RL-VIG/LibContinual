@@ -49,8 +49,12 @@ class Conv2d(nn.Conv2d):
             cropped_scale = scale[:space.size(1), :space.size(1)]
             cropped_identity_matrix = self.identity_matrix[:space.shape[1], :space.shape[1]].to(self.weight.device)
 
-            masked_weight = masked_weight + (self.weight.view(sz, -1) @ space @ (cropped_scale - cropped_identity_matrix) @ space.T).\
-                                            view(self.weight.shape)
+            #masked_weight = masked_weight + (self.weight.view(sz, -1) @ space @ (cropped_scale - cropped_identity_matrix) @ space.T).\
+            #                                view(self.weight.shape)
+
+            masked_weight = masked_weight + (masked_weight.view(sz, -1) @ space @ (cropped_scale - cropped_identity_matrix) @ space.T).\
+                                            view(masked_weight.shape)
+
 
         return F.conv2d(input, masked_weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
 
@@ -87,7 +91,9 @@ class Linear(nn.Linear):
             cropped_scale = scale[:space.shape[1], :space.shape[1]]
             cropped_identity_matrix = self.identity_matrix[:space.shape[1], :space.shape[1]].to(self.weight.device)
 
-            masked_weight = masked_weight + self.weight @ space @ (cropped_scale - cropped_identity_matrix) @ space.T
+            #masked_weight = masked_weight + self.weight @ space @ (cropped_scale - cropped_identity_matrix) @ space.T # ?
+
+            masked_weight = masked_weight + masked_weight @ space @ (cropped_scale - cropped_identity_matrix) @ space.T # ?
 
         return F.linear(input, masked_weight, self.bias)
 

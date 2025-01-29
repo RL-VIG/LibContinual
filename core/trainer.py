@@ -252,9 +252,10 @@ class Trainer(object):
         bwt_list, frgt_list = [], []
         testing_times = self.config['testing_times']
         
-        classes_names = sorted(os.listdir(os.path.join(self.config["data_root"], "train")))
-        self.model.model.classes_names = classes_names
-# Begin training
+        if self.config["classifier"]["name"] == 'RAPF':
+            classes_names = sorted(os.listdir(os.path.join(self.config["data_root"], "train")))
+            self.model.model.classes_names = classes_names
+
         for task_idx in range(self.task_num):
             self.task_idx = task_idx
             print(f"================Task {task_idx} Start!================")
@@ -309,7 +310,7 @@ class Trainer(object):
                     print(f"================Validation on test set================")
 
                     # Disable validation for some method
-                    if self.config['classifier']['name'] in ['TRGP', 'RanPAC', 'MInfLoRA', 'PRAKA']:
+                    if self.config['classifier']['name'] in ['TRGP', 'RanPAC', 'MInfLoRA', 'PRAKA', 'TRGP_CLIP']:
                         print(f" * Disabled validation for this method")
                     else:
                         test_acc = self._validate(task_idx)
@@ -483,10 +484,10 @@ class Trainer(object):
         for b, batch in tqdm(enumerate(dataloader), total=total):
             batch['batch_id'] = b
             # These method's LR is updated every iterations, not epochs
-            if self.config['classifier']['name'] in ['MOE_ADAPTER4CL', 'DMNSP']:
+            if self.config['classifier']['name'] in ['MOE_ADAPTER4CL', 'DMNSP', 'DMNSP_CIL']:
                 self.scheduler.step(total * epoch_idx + b)
 
-            if self.config["classifier"]["name"] in ['TRGP', 'DMNSP']:
+            if self.config["classifier"]["name"] in ['TRGP', 'DMNSP', 'DMNSP_CIL', 'TRGP_CLIP']:
                 self.optimizer.zero_grad()
                 output, acc, loss = self.model.observe(batch)
             else:
