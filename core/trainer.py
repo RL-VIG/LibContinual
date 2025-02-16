@@ -376,6 +376,16 @@ class Trainer(object):
             
                     bias_scheduler.step()
 
+            elif self.config["classifier"]["name"] == "DAP":
+                print("================ Train on the train set (stage2)================")
+                for epoch_idx in range(self.inc_epoch):
+                    print("learning rate: {}".format(self.scheduler.get_last_lr()))
+                    print("================ Train on the train set ================")
+                    train_meter = self.stage2_train_dap(task_idx, dataloader)
+                    print("Epoch [{}/{}] |\tLoss: {:.3f} \tAverage Acc: {:.3f} ".format(epoch_idx, self.inc_epoch, train_meter.avg('loss'), train_meter.avg("acc1")))
+
+                    self.scheduler.step()
+
             for test_idx in range(testing_times):
                 print(f"================Test {test_idx+1}/{testing_times} of Task {task_idx}!================")
 
@@ -460,6 +470,40 @@ class Trainer(object):
             
             meter.update("acc1", 100 * acc)
             meter.update("loss", loss.item())
+
+        return meter
+
+    def stage2_train_dap(self, task_idx, dataloader):
+        """
+        The second train stage of DAP, adjusting the general prompt.
+
+        Args:
+            task_idx (int): Task index
+            dataloader (DataLoader): DataLoader for training
+
+        Returns:
+            dict:  {"avg_acc": float}
+        """
+        self.model.train()
+        meter = self.train_meter
+        meter.reset()
+
+        if task_idx == 0:
+            self.model.prompt_center = torch.zeros_like(self.model.backbone.prompt.taskprompt[0].view(-1), device=self.device)
+        else:
+            self.model.prompt_center = self.model.cal_center(model=self.model.backbone, task_id=self.model.task_idx, task_data_count=self.model.task_data_count, prompt_center=self.model.prompt_center)
+
+        with tqdm(total=len(dataloader)) as pbar:
+            for batch_idx, batch in enumerate(dataloader):
+                output, acc, loss = self.model.observe(batch, train_gprompt=True, gen=True)
+                self.optimizer.zero_grad()
+                loss.backward()
+
+                self.optimizer.step()
+                pbar.update(1)
+
+                meter.update("acc1", 100 * acc)
+                meter.update("loss", loss.item())
 
         return meter
 

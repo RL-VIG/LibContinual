@@ -1,0 +1,74 @@
+includes:
+  - headers/data.yaml
+  - headers/device.yaml
+  - headers/model.yaml
+
+data_root: data/cifar100/
+image_size: 224
+save_path: ./
+init_cls_num: 10
+inc_cls_num: 10
+task_num: 10
+
+epoch: 5
+n_gpu: 1
+seed: 42
+val_per_epoch: 5
+
+imb_type: exp_re
+imb_factor: 0.002
+shuffle: false
+
+batch_size: 64
+
+optimizer:
+  name: Adam
+  kwargs:
+    lr: 0.01
+    eps: 1e-8
+    weight_decay: 0.0
+    betas: [0.9, 0.9]
+
+lr_scheduler:
+  name: MultiStepLR
+  kwargs:
+    gamma: 0.1
+    milestones: [80, 120]
+
+backbone:
+  name: vit_pt_imnet_dap
+  kwargs:
+    pretrained: true
+    model_name: vit_base_patch16_224_dap
+    num_classes: 100
+    drop: 0.0
+    drop_path: 0.0
+    length: 5
+    embedding_key: cls
+    prompt_key_init: uniform
+    prompt_pool: true
+    prompt_key: true
+    size: 10
+    top_k: 5
+    batchwise_prompt: true
+    head_type: prompt
+    use_prompt_mask: false
+
+classifier:
+  name: DAP
+  kwargs:
+    num_class: 100
+    feat_dim: 768
+    task_num: 10
+    init_cls_num: 10
+    inc_cls_num: 10
+    train_mask: true
+    task_inc: false
+    freeze:
+      - blocks
+      - patch_embed
+      - cls_token
+      - norm
+      - pos_embed
+    pull_constraint: true
+    pull_constraint_coeff: 0.1
