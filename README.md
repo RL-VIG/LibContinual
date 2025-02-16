@@ -29,6 +29,7 @@ LibContinual is an open source continual learning toolbox based on PyTorch. The 
 + [InfLoRA (CVPR 2024)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/inflora/README.md)
 + [MoE_Adapter4CL (CVPR 2024)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/moe_adapter4cl/README.md)
 + [RAPF (ECCV 2024)](https://github.com/RL-VIG/LibContinual/tree/master/reproduce/rapf)
++ [DAP (IJCAI 2024)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/dap/README.md)
 
 ## Quick Installation
 
