@@ -26,6 +26,7 @@ from .moe_adapter4cl import MOE_ADAPTER4CL
 from .dmnsp import DMNSP
 from .rapf import RAPF
 from .gpm import GPM
+from .dap import DAP
 
 from .moe_test import MoE_Test
 from .moe_test2 import MoE_Test2

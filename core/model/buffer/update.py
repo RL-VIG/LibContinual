@@ -48,7 +48,7 @@ def construct_examplar(datasets, images, labels, feature_extractor, per_classes,
         features = []
         for data in dataloader:
             imgs = data['image'].to(device)
-            features.append(feature_extractor(imgs).cpu().numpy().tolist())
+            features.append(feature_extractor(imgs)['features'].cpu().numpy().tolist())
 
     features = np.concatenate(features)
     selected_images, selected_labels = [], []

@@ -47,6 +47,141 @@ class ContinualDatasets:
         else:
             return self.dataloaders[:task_idx+1]
 
+
+class ImbalancedDatasets(ContinualDatasets):
+    def __init__(self, mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms, batchsize, num_workers, imb_type='exp', imb_factor=0.002, shuffle=False):
+        self.imb_type = imb_type
+        self.imb_factor = imb_factor
+        self.shuffle = shuffle
+        super().__init__(mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms, batchsize, num_workers)
+
+    def create_loaders(self):
+        self.dataloaders = []
+        cls_num = self.init_cls_num + self.inc_cls_num * (self.task_num - 1)
+        img_num_list = self._get_img_num_per_cls(cls_num, self.imb_type, self.imb_factor)
+
+        if self.shuffle:
+            grouped_img_nums = [img_num_list[i:i + self.inc_cls_num] for i in range(0, cls_num, self.inc_cls_num)]
+            np.random.shuffle(grouped_img_nums)
+            for group in grouped_img_nums:
+                np.random.shuffle(group)
+            shuffled_img_num_list = [num for group in grouped_img_nums for num in group]
+            img_num_list = shuffled_img_num_list
+
+        for i in range(self.task_num):
+            start_idx = 0 if i == 0 else (self.init_cls_num + (i - 1) * self.inc_cls_num)
+            end_idx = start_idx + (self.init_cls_num if i == 0 else self.inc_cls_num)
+            dataset = SingleDataset(self.data_root, self.mode, self.cls_map, start_idx, end_idx, self.trfms)
+
+            new_imgs, new_labels = [], []
+            labels_np = np.array(dataset.labels, dtype=np.int64)
+            classes = np.unique(labels_np)
+            for the_class, the_img_num in zip(classes, img_num_list[i * self.inc_cls_num:(i + 1) * self.inc_cls_num]):
+              idx = np.nonzero(labels_np == the_class)[0]
+              np.random.shuffle(idx)
+              selec_idx = idx[:the_img_num]
+              new_imgs.extend([dataset.images[j] for j in selec_idx])
+              new_labels.extend([the_class, ] * the_img_num)
+            dataset.images = new_imgs
+            dataset.labels = new_labels
+
+            self.dataloaders.append(DataLoader(
+                dataset,
+                batch_size = self.batchsize,
+                drop_last = False
+            ))
+
+    def _get_img_num_per_cls(self, cls_num, imb_type, imb_factor):
+        img_max = len(os.listdir(os.path.join(self.data_root, self.mode, self.cls_map[0])))
+        img_num_per_cls = []
+        if imb_type == 'exp':
+            for cls_idx in range(cls_num):
+                num = img_max * (imb_factor**(cls_idx / (cls_num - 1.0)))
+                img_num_per_cls.append(max(int(num), 1))
+        elif imb_type == 'exp_re':
+            for cls_idx in range(cls_num):
+                num = img_max * (imb_factor**(cls_idx / (cls_num - 1.0)))
+                img_num_per_cls.append(max(int(num), 1))
+            img_num_per_cls.reverse()
+        elif imb_type == 'exp_max':
+            cls_per_group = cls_num//self.task_num
+            for cls_idx in range(cls_num):
+                if (cls_idx+1)%cls_per_group==1:
+                    # print(cls_idx)
+                    num = img_max * (imb_factor**(cls_idx / (cls_num - 1.0)))
+                img_num_per_cls.append(int(num))
+        elif imb_type == 'exp_max_re':
+            cls_per_group = cls_num//self.task_num
+            for cls_idx in range(cls_num):
+                if (cls_idx+1)%cls_per_group==1:
+                    # print(cls_idx)
+                    num = img_max * (imb_factor**(cls_idx / (cls_num - 1.0)))
+                img_num_per_cls.append(int(num))
+            img_num_per_cls.reverse()
+
+        elif imb_type == 'exp_min':
+            cls_per_group = cls_num//self.task_num
+            for cls_idx in range(cls_num):
+                if (cls_idx+1)%cls_per_group==1:
+                    # print(cls_idx)
+                    num = img_max * (imb_factor**((cls_idx+cls_per_group-1) / (cls_num - 1.0)))
+                    # print(num)
+                img_num_per_cls.append(int(num))
+
+        elif imb_type == 'half':
+            cls_per_group = cls_num // self.task_num
+            ratio = 2
+            num = 1
+            for cls_idx in range(cls_num):
+                if num > img_max:
+                    num = img_max
+                img_num_per_cls.append(int(num))
+                if (cls_idx + 1) % cls_per_group == 0:
+                    num *= ratio
+            img_num_per_cls.reverse()
+
+        elif imb_type == 'half_re':
+            cls_per_group = cls_num // self.task_num
+            ratio = 2
+            num = 1
+            for cls_idx in range(cls_num):
+                if num > img_max:
+                    num = img_max
+                img_num_per_cls.append(int(num))
+                if (cls_idx + 1) % cls_per_group == 0:
+                    num *= ratio
+
+        elif imb_type == 'halfbal':
+            cls_per_group = cls_num // self.task_num
+            N = img_max * cls_per_group
+
+            total = 0
+            for i in range(self.task_num):
+                total += N / (2**i)
+            print(total)
+            per_class_count = int(total / cls_num)
+            img_num_per_cls.extend([per_class_count] * cls_num)
+
+        elif imb_type == 'oneshot':
+            img_num_per_cls.extend([1] * cls_num)
+        elif imb_type == 'step':
+            for cls_idx in range(cls_num // 2):
+                img_num_per_cls.append(int(img_max))
+            for cls_idx in range(cls_num // 2):
+                img_num_per_cls.append(int(img_max * imb_factor))
+        elif imb_type == 'fewshot':
+            for cls_idx in range(cls_num):
+                if cls_idx<50:
+                    num = img_max
+                else:
+                    num = img_max*0.01
+                img_num_per_cls.append(int(num))
+        else:
+            img_num_per_cls.extend([int(img_max)] * cls_num)
+        return img_num_per_cls
+
+
+
 class SingleDataset(Dataset):
     def __init__(self, dataset, data_root, mode, cls_map, start_idx, end_idx, trfms):
         super().__init__()

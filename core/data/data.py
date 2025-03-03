@@ -190,8 +190,67 @@ class ImageNetRTransform:
             raise ValueError("Unsupported model type")
 
     
+
+
+class TinyImageNetTransform:
+    # Standard normalization values for Tiny-ImageNet
+    MEAN = [0.485, 0.456, 0.406]
+    STD = [0.229, 0.224, 0.225]
+
+    common_trfs = [transforms.ToTensor(),
+                   transforms.Normalize(mean=MEAN, std=STD)]
+
+    # ResNet Transforms
+    resnet_train_transform = transforms.Compose([
+        transforms.RandomResizedCrop(64),
+        transforms.RandomHorizontalFlip(),
+        transforms.ColorJitter(brightness=63 / 255),
+        *common_trfs
+    ])
+
+    resnet_test_transform = transforms.Compose([
+        transforms.Resize(64),
+        transforms.CenterCrop(64),
+        *common_trfs
+    ])
+
+    # ViT Transforms (Using dataset mean/std as [0,0,0] and [1,1,1] for compatibility)
+    dset_mean = (0., 0., 0.)
+    dset_std = (1., 1., 1.)
+
+    vit_train_transform = transforms.Compose([
+        transforms.RandomResizedCrop(224),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize(dset_mean, dset_std)
+    ])
+
+    vit_test_transform = transforms.Compose([
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        transforms.ToTensor(),
+        transforms.Normalize(dset_mean, dset_std)
+    ])
+
+    @staticmethod
+    def get_transform(model_type, mode):
+        if model_type == 'resnet':
+            if mode == 'train':
+                return TinyImageNetTransform.resnet_train_transform
+            elif mode == 'test':
+                return TinyImageNetTransform.resnet_test_transform
+        elif model_type == 'vit':
+            if mode == 'train':
+                return TinyImageNetTransform.vit_train_transform
+            elif mode == 'test':
+                return TinyImageNetTransform.vit_test_transform
+        else:
+            raise ValueError("Unsupported model type")
+
+
 transform_classes = {
     'cifar': CIFARTransform,
     'imagenet': ImageNetTransform,
-    'imagenet-r': ImageNetRTransform
+    'imagenet-r': ImageNetRTransform,
+    'tiny-imagenet': TinyImageNetTransform
 }

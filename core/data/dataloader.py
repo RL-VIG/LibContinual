@@ -4,7 +4,7 @@ import core.data.custom_transforms as cstf
 
 from torchvision import datasets, transforms
 from torchvision.transforms import Compose, Resize, CenterCrop, ToTensor, Normalize
-from .dataset import ContinualDatasets
+from .dataset import ContinualDatasets, ImbalancedDatasets
 from .data import transform_classes
 from PIL import Image
 try:
@@ -111,6 +111,10 @@ def get_dataloader(config, mode, cls_map=None):
         cls_map = dict()
         for label, ori_label in enumerate(perm):
             cls_map[label] = cls_list[ori_label]
+
+    if mode == 'train' and 'imb_type' in config.keys():
+        # generate long-tailed data to reproduce DAP
+        return ImbalancedDatasets(mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms, batch_size, num_workers, config['imb_type'], config['imb_factor'], config['shuffle'])
 
     return ContinualDatasets(dataset, mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms, batch_size, num_workers, config)
     
