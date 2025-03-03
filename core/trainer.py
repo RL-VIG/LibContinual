@@ -1,22 +1,21 @@
 import os
+import sys
 import torch
-from torch import nn
+import numpy as np
+import core.model as arch
+import torch.optim as optim
+
 from time import time
 from tqdm import tqdm
 from core.data import get_dataloader
 from core.utils import *
-import core.model as arch
 from core.model.buffer import *
 from core.model import bic
 from torch.utils.data import DataLoader
-import numpy as np
-import sys
 from core.utils import Logger, fmt_date_str
 from torch.optim.lr_scheduler import MultiStepLR, LambdaLR
-import torch.optim as optim
 from copy import deepcopy
 from pprint import pprint
-
 from core.scheduler import CosineSchedule, PatienceSchedule, CosineAnnealingWarmUp
 
 class Trainer(object):
@@ -106,7 +105,7 @@ class Trainer(object):
 
             for device_id in range(torch.cuda.device_count()):
                 free_mem, total_mem = torch.cuda.mem_get_info(device_id)
-                if free_mem/total_mem > most_free_mem_perc:
+                if total_mem > 0 and free_mem/total_mem > most_free_mem_perc:
                     least_utilized_device = device_id
                     most_free_mem_perc = free_mem/total_mem
 
@@ -144,7 +143,7 @@ class Trainer(object):
 
         return train_meter, test_meter
 
-    def _init_optim(self, config, stage2=False):
+    def _init_optim(self, config):
         """
         Init the optimizers and scheduler from config, if necessary, load the state dict from a checkpoint.
 
@@ -160,14 +159,9 @@ class Trainer(object):
         else:
             init_epoch = config['epoch']
 
-        if stage2:
-            optimizer = get_instance(
-                torch.optim, "optimizer", config, params=self.model.get_parameters(config, stage2=True)
-            )
-        else:
-            optimizer = get_instance(
-                torch.optim, "optimizer", config, params=self.model.get_parameters(config)
-            )
+        optimizer = get_instance(
+            torch.optim, "optimizer", config, params=self.model.get_parameters(config)
+        )
         
         # Check if the learning rate scheduler specified in the configuration is "CosineSchedule"
         if config['lr_scheduler']['name'] == "CosineSchedule":
@@ -244,56 +238,49 @@ class Trainer(object):
         The norm train loop:  before_task, train, test, after_task
         """
         experiment_begin = time()
+        method_name = self.config["classifier"]["name"]
+        testing_times = self.config['testing_times']
 
         avg_acc_list = np.zeros((self.task_num))
         best_avg_acc_list = np.zeros((self.task_num))
-        acc_table = np.zeros((self.task_num, self.task_num)) # A numpy array with shape [task_num, task_num], 
-                                                             # where [i, j] is acc of model on task j after learning task i
+        acc_table = np.zeros((self.task_num, self.task_num)) # A numpy array with shape [task_num, task_num], where [i, j] is acc of model on task j after learning task i
         bwt_list, frgt_list = [], []
-        testing_times = self.config['testing_times']
         
-        if self.config["classifier"]["name"] == 'RAPF':
+        if method_name == 'RAPF':
             classes_names = sorted(os.listdir(os.path.join(self.config["data_root"], "train")))
             self.model.model.classes_names = classes_names
 
         for task_idx in range(self.task_num):
             self.task_idx = task_idx
             print(f"================Task {task_idx} Start!================")
-            self.buffer.total_classes += self.init_cls_num if task_idx == 0 else self.inc_cls_num
+            
             if hasattr(self.model, 'before_task'):
                 self.model.before_task(task_idx, self.buffer, self.train_loader.get_loader(task_idx), self.test_loader.get_loader(task_idx))
             
             print(f"Trainable Parameters for Task {task_idx} : {count_parameters(self.model)} / {count_all_parameters(self.model)} ({count_parameters(self.model)*100/count_all_parameters(self.model):.2f}%)")
 
-            (_, __,
-             self.optimizer, self.scheduler,
-            ) = self._init_optim(self.config)
-
+            _, _, self.optimizer, self.scheduler = self._init_optim(self.config)
             dataloader = self.train_loader.get_loader(task_idx)
 
-            if isinstance(self.buffer, (LinearBuffer, LinearHerdingBuffer)) and self.buffer.buffer_size > 0 and task_idx > 0:
+            if method_name == "bic":
 
-                if self.config['classifier']['name'] == "bic":
+                w_decay = 2e-4 * self.task_num / (task_idx + 1) # in source code?
+                self.optimizer = optim.SGD(self.model.get_parameters(self.config), lr = 0.1, momentum = 0.9, weight_decay = w_decay)
+                self.scheduler = MultiStepLR(self.optimizer, milestones = [100, 150, 200], gamma = 0.1)
 
-                    # This batch size is typical traning batch_size
-                    # for the batch size of val_bias data, we hardcoded it to 100 (source code of BIC)
-                    #dataloader, val_bias_dataloader = bic.spilt_and_update(copy.deepcopy(dataloader), copy.deepcopy(self.buffer), task_idx, config) 
-                
-                    dataloader = bic.get_train_loader(dataloader, self.buffer, task_idx, self.config)
+                dataloader, val_bias_dataloader = bic.spilt_and_update11(dataloader, self.buffer, task_idx, self.config)
 
-                else:
-
-                    datasets = dataloader.dataset
-                    datasets.images.extend(self.buffer.images)
-                    datasets.labels.extend(self.buffer.labels)
-                    dataloader = DataLoader(
-                        datasets,
-                        shuffle = True,
-                        batch_size = self.config['batch_size'],
-                        drop_last = False,
-                        num_workers = self.config['workers']
-                    )
-
+            elif isinstance(self.buffer, (LinearBuffer, LinearHerdingBuffer)) and self.buffer.buffer_size > 0 and task_idx > 0:
+                datasets = dataloader.dataset
+                datasets.images.extend(self.buffer.images)
+                datasets.labels.extend(self.buffer.labels)
+                dataloader = DataLoader(
+                    datasets,
+                    shuffle = True,
+                    batch_size = self.config['batch_size'],
+                    drop_last = False,
+                    num_workers = self.config['num_workers']
+                )
 
             print(f"================Task {task_idx} Training!================")
             print(f"The training samples number : {len(dataloader.dataset)}")
@@ -301,16 +288,15 @@ class Trainer(object):
             best_avg_acc, best_bwt, best_frgt = 0., float('-inf'), float('inf')
             for epoch_idx in range(self.init_epoch if task_idx == 0 else self.inc_epoch):
                 
-                print(f"learning rate : {self.scheduler.get_last_lr()}")
                 print("================Train on train set================")
                 train_meter = self._train(epoch_idx, dataloader)
-                print(f"Epoch [{epoch_idx}/{self.init_epoch if task_idx == 0 else self.inc_epoch}] |\tLoss: {train_meter.avg('loss'):.4f} \tAverage Acc: {train_meter.avg('acc1'):.2f} ")
+                print(f"Epoch [{epoch_idx}/{self.init_epoch if task_idx == 0 else self.inc_epoch}] Learning Rate {self.scheduler.get_last_lr()}\t|\tLoss: {train_meter.avg('loss'):.4f} \tAverage Acc: {train_meter.avg('acc1'):.2f} ")
 
-                if (epoch_idx+1) % self.val_per_epoch == 0 or (epoch_idx+1)==self.inc_epoch:
+                if (epoch_idx+1) % self.val_per_epoch == 0 or (epoch_idx+1) == self.inc_epoch:
                     print(f"================Validation on test set================")
 
                     # Disable validation for some method
-                    if self.config['classifier']['name'] in ['TRGP', 'RanPAC', 'MInfLoRA', 'PRAKA', 'TRGP_CLIP']:
+                    if method_name in ['TRGP', 'RanPAC', 'MInfLoRA', 'PRAKA', 'TRGP_CLIP']:
                         print(f" * Disabled validation for this method")
                     else:
                         test_acc = self._validate(task_idx)
@@ -337,28 +323,29 @@ class Trainer(object):
             if hasattr(self.model, 'after_task'):
                 self.model.after_task(task_idx, self.buffer, self.train_loader.get_loader(task_idx), self.test_loader.get_loader(task_idx))
 
-            if self.buffer.buffer_size > 0:
-                if self.buffer.strategy == 'herding':
-                    herding_update(self.train_loader.get_loader(task_idx).dataset, self.buffer, self.model.backbone, self.device)
-                elif self.buffer.strategy == 'random':
-                    random_update(self.train_loader.get_loader(task_idx).dataset, self.buffer)
+            # Update Buffer
+            if method_name != 'bic':
+                self.buffer.total_classes += self.init_cls_num if task_idx == 0 else self.inc_cls_num
+                if self.buffer.buffer_size > 0:
+                    if self.buffer.strategy == 'herding':
+                        herding_update(self.train_loader.get_loader(task_idx).dataset, self.buffer, self.model.backbone, self.device)
+                    elif self.buffer.strategy == 'random':
+                        random_update(self.train_loader.get_loader(task_idx).dataset, self.buffer)
+                    elif self.buffer.strategy == 'balance_random':
+                        balance_random_update(self.train_loader.get_loader(task_idx).dataset, self.buffer)
 
-            # stage_2 train
-            if self.config["classifier"]["name"] == "bic" and task_idx != 0:
-
-                val_bias_dataloader = bic.get_val_bias_loader(dataloader, self.buffer, task_idx, self.config)
+            # Stage 2 Training : BIC (Stage 2 start after buffer being updated)
+            if self.config["classifier"]["name"] == "bic" and task_idx > 0:
 
                 bias_scheduler = optim.lr_scheduler.LambdaLR(self.model.bias_optimizer, lr_lambda=lambda e: 1)
 
-                print("================ Train on the train set (stage2)================")
                 for epoch_idx in range(self.stage2_epoch):
-                    print("learning rate: {}".format(bias_scheduler.get_last_lr()))
-                    print("================ Train on the train set ================")
+                    print("================ Train on the train set (stage2)================")
                     train_meter = self.stage2_train(epoch_idx, val_bias_dataloader)
 
-                    print(f"Epoch [{epoch_idx}/{self.stage2_epoch}] |\tLoss: {train_meter.avg('loss'):.4f} \tAverage Acc: {train_meter.avg('acc1'):.2f} ")
+                    print(f"Epoch [{epoch_idx}/{self.stage2_epoch}] Learning Rate {bias_scheduler.get_last_lr()}\t|\tLoss: {train_meter.avg('loss'):.4f} \tAverage Acc: {train_meter.avg('acc1'):.2f} ")
 
-                    if (epoch_idx+1) % self.val_per_epoch == 0 or (epoch_idx+1)==self.inc_epoch:
+                    if (epoch_idx+1) % self.val_per_epoch == 0 or (epoch_idx+1) == self.inc_epoch:
                         print("================ Test on the test set (stage2)================")
 
                         test_acc = self._validate(task_idx)
@@ -374,17 +361,7 @@ class Trainer(object):
                         print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
                         print(f" * Per-Task Acc : {per_task_acc}")
             
-                    bias_scheduler.step()
-
-            elif self.config["classifier"]["name"] == "DAP":
-                print("================ Train on the train set (stage2)================")
-                for epoch_idx in range(self.inc_epoch):
-                    print("learning rate: {}".format(self.scheduler.get_last_lr()))
-                    print("================ Train on the train set ================")
-                    train_meter = self.stage2_train_dap(task_idx, dataloader)
-                    print("Epoch [{}/{}] |\tLoss: {:.3f} \tAverage Acc: {:.3f} ".format(epoch_idx, self.inc_epoch, train_meter.avg('loss'), train_meter.avg("acc1")))
-
-                    self.scheduler.step()
+                    #bias_scheduler.step()
 
             for test_idx in range(testing_times):
                 print(f"================Test {test_idx+1}/{testing_times} of Task {task_idx}!================")
@@ -457,53 +434,21 @@ class Trainer(object):
         Returns:
             dict:  {"avg_acc": float}
         """
-        self.model.backbone.eval()
-        for _ in range(len(self.model.bias_layers)):
-            self.model.bias_layers[_].train()
+
+        self.model.eval()
+        for layer in self.model.bias_layers:
+            layer.train()
+
         meter = self.train_meter
         meter.reset()
         
         total = len(dataloader)
         for b, batch in tqdm(enumerate(dataloader), total=total):
 
-            output, acc, loss = self.model.bias_observe(batch)
+            output, acc, loss = self.model.stage2(batch)
             
             meter.update("acc1", 100 * acc)
             meter.update("loss", loss.item())
-
-        return meter
-
-    def stage2_train_dap(self, task_idx, dataloader):
-        """
-        The second train stage of DAP, adjusting the general prompt.
-
-        Args:
-            task_idx (int): Task index
-            dataloader (DataLoader): DataLoader for training
-
-        Returns:
-            dict:  {"avg_acc": float}
-        """
-        self.model.train()
-        meter = self.train_meter
-        meter.reset()
-
-        if task_idx == 0:
-            self.model.prompt_center = torch.zeros_like(self.model.backbone.prompt.taskprompt[0].view(-1), device=self.device)
-        else:
-            self.model.prompt_center = self.model.cal_center(model=self.model.backbone, task_id=self.model.task_idx, task_data_count=self.model.task_data_count, prompt_center=self.model.prompt_center)
-
-        with tqdm(total=len(dataloader)) as pbar:
-            for batch_idx, batch in enumerate(dataloader):
-                output, acc, loss = self.model.observe(batch, train_gprompt=True, gen=True)
-                self.optimizer.zero_grad()
-                loss.backward()
-
-                self.optimizer.step()
-                pbar.update(1)
-
-                meter.update("acc1", 100 * acc)
-                meter.update("loss", loss.item())
 
         return meter
 
@@ -519,8 +464,9 @@ class Trainer(object):
         """
         self.model.train()
         if self.config['classifier']['name'] == 'bic':
-            for _ in range(len(self.model.bias_layers)):
-                self.model.bias_layers[_].eval()
+            for layer in self.model.bias_layers:
+                layer.eval()
+        
         meter = deepcopy(self.train_meter)
         meter.reset()
 
@@ -531,9 +477,13 @@ class Trainer(object):
             if self.config['classifier']['name'] in ['MOE_ADAPTER4CL', 'DMNSP', 'DMNSP_CIL']:
                 self.scheduler.step(total * epoch_idx + b)
 
-            if self.config["classifier"]["name"] in ['TRGP', 'DMNSP', 'DMNSP_CIL', 'TRGP_CLIP']:
+            if self.config["classifier"]["name"] in ['TRGP', 'DMNSP', 'DMNSP_CIL', 'TRGP_CLIP', 'GPM', 'MoE_Test2']:
                 self.optimizer.zero_grad()
                 output, acc, loss = self.model.observe(batch)
+            elif self.config["classifier"]["name"] in ['bic']:
+                output, acc, loss = self.model.observe(batch)
+                self.optimizer.zero_grad()
+                loss.backward(retain_graph=True)
             else:
                 output, acc, loss = self.model.observe(batch)
                 self.optimizer.zero_grad()
@@ -544,12 +494,21 @@ class Trainer(object):
             meter.update("acc1", 100 * acc)
             meter.update("loss", loss.item())
 
+            # DEBUG, REMOVE
+            #if b > 0:
+            #    break
+
+
         return meter
 
     def _validate(self, task_idx):
         dataloaders = self.test_loader.get_loader(task_idx)
 
         self.model.eval()
+        if self.config["classifier"]["name"] == 'bic':
+            for layer in self.model.bias_layers:
+                layer.eval()
+
         total_meter = deepcopy(self.test_meter)
         meter = deepcopy(self.test_meter)
         
@@ -571,7 +530,13 @@ class Trainer(object):
                     meter.update("acc1", 100 * acc)
                     total_meter.update("acc1", 100 * acc)
 
+                    # DEBUG, REMOVE
+                    #break
+
+
                 per_task_acc.append(round(meter.avg("acc1"), 2))
+
+
 
         return {"avg_acc" : round(total_meter.avg("acc1"), 2), 
                 "per_task_acc" : per_task_acc}

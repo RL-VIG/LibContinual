@@ -60,7 +60,7 @@ https://github.com/linlany/RAPF
 class ClassIncrementalCLIP(nn.Module):
     def __init__(self, model, **kwargs):
         super().__init__()
-        device = kwargs['device']
+        device = "cuda"
         fp16 = kwargs['fp16'] 
         mix_bias = kwargs['mix_bias'] 
         self.prompt_template = kwargs['prompt_template']

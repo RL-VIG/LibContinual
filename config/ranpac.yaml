@@ -1,7 +1,7 @@
-init_cls_num: &init_cls_num 20
-inc_cls_num: &inc_cls_num 20
+init_cls_num: &init_cls_num 10
+inc_cls_num: &inc_cls_num 10
 total_cls_num: &total_cls_num 100
-task_num: &task_num 5
+task_num: &task_num 10
 image_size: &image_size 224
 
 task_num: *task_num
@@ -12,6 +12,8 @@ init_epoch: 20 # 20
 epoch: 1 # 1
 batch_size: 48 # 128
 val_per_epoch: 20
+
+seed: 2
 
 train_trfms:
   - RandomResizedCrop:

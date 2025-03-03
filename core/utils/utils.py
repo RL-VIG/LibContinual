@@ -184,6 +184,7 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 def count_all_parameters(model):
+
     return sum(p.numel() for p in model.parameters())
 
 def fmt_date_str(date=None, fmt="%y-%m-%d-%H-%M-%S"):

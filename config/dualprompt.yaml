@@ -5,14 +5,12 @@ includes:
   # - headers/optimizer.yaml
   - backbones/resnet12.yaml
 
-data_root: /data/fanzhichen/continual/cifar100
 image_size: 32
-save_path: ./
+
 # data
 init_cls_num: 10
 inc_cls_num: 10
 task_num: 10
-
 
 epoch: 10 #160
 device_ids: 0
@@ -42,15 +40,6 @@ backbone:
     num_classes: 100
     pretrained: true
     model_name : vit_base_patch16_224
-
-
-
-buffer:
-  name: LinearBuffer
-  kwargs:
-    buffer_size: 0
-    batch_size: 128
-    strategy: herding     # random, equal_random, reservoir, herding
 
 classifier:
   name: DualPrompt

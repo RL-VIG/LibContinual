@@ -12,10 +12,19 @@ import torch.nn.functional as F
 
 from torch.nn.parameter import Parameter
 
+__all__ = ['resnet18', 'resnet34', 'resnet50', 'cifar_resnet20', 'cifar_resnet32', 'cifar_resnet32_V2', 'resnet32_V2']
+
+'''
 def conv3x3(in_planes, out_planes, stride=1, groups=1, dilation=1):
     """3x3 convolution with padding"""
     return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
                      padding=dilation, groups=groups, bias=False, dilation=dilation)
+'''
+
+def conv3x3(in_planes, out_planes, stride=1):
+    "3x3 convolution with padding"
+    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
+                     padding=1, bias=False)
 
 def conv1x1(in_planes, out_planes, stride=1):
     """1x1 convolution"""
@@ -83,6 +92,7 @@ class Bottleneck(nn.Module):
         self.stride = stride
 
     def forward(self, x):
+        
         identity = x
 
         out = self.conv1(x)
@@ -242,7 +252,6 @@ class ResNet(nn.Module):
         else:
             return self.layer4[-1].conv2
 
-
 def _resnet(arch, block, layers, pretrained, progress, **kwargs):
     model = ResNet(block, layers, **kwargs)
     if pretrained:
@@ -253,7 +262,6 @@ def _resnet(arch, block, layers, pretrained, progress, **kwargs):
         out_features = model.fc.out_features
         model.fc = CosineLinear(in_features, out_features)
     return model
-
 
 def resnet18(pretrained=False, progress=True, **kwargs):
     r"""ResNet-18 model from
@@ -285,7 +293,6 @@ def resnet50(pretrained=False, progress=True, **kwargs):
     return _resnet('resnet50', Bottleneck, [3, 4, 6, 3], pretrained, progress,
                    **kwargs)
 
-
 class ResNetBasicblock(nn.Module):
     expansion = 1
 
@@ -314,8 +321,6 @@ class ResNetBasicblock(nn.Module):
             residual = self.downsample(x)
 
         return F.relu(residual + basicblock, inplace=True)
-
-
 
 '''
 Code Reference:
@@ -412,19 +417,6 @@ class CifarResNet(nn.Module):
     @property
     def last_conv(self):
         return self.stage_3[-1].conv_b
-
-class BiasLayer(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.alpha = nn.Parameter(torch.ones(1, requires_grad=True))
-        self.beta = nn.Parameter(torch.zeros(1, requires_grad=True))
-    def forward(self, x):
-        return self.alpha * x + self.beta
-    def printParam(self, i):
-        print(i, self.alpha.item(), self.beta.item())
-
-
-
 
 '''
 Code Reference:
@@ -594,6 +586,17 @@ class modified_ResNet(nn.Module):
 '''
 This BasicBlock is speciallu for BIC, which do batch normalization before conv
 '''
+
+class BiasLayer(nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.alpha = nn.Parameter(torch.ones(1, requires_grad=True))
+        self.beta = nn.Parameter(torch.zeros(1, requires_grad=True))
+
+    def forward(self, x):
+        return self.alpha * x + self.beta
+        
 class BasicBlock2(nn.Module):
     expansion = 1
 
@@ -635,6 +638,7 @@ class ResNet_BIC(nn.Module):
             n = (depth - 2) // 6
             block = BasicBlock2
         elif block_name.lower() == 'bottleneck':
+            assert 0, 'bottleneck is called, should not happen in method : BIC'
             assert (depth - 2) % 9 == 0, 'When use bottleneck, depth should be 9n+2, e.g. 20, 29, 47, 56, 110, 1199'
             n = (depth - 2) // 9
             block = Bottleneck
@@ -642,14 +646,15 @@ class ResNet_BIC(nn.Module):
             raise ValueError('block_name shoule be Basicblock or Bottleneck')
 
         self.inplanes = 16
-        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1,
-                               bias=False)
+        self.conv1 = nn.Conv2d(3, 16, kernel_size=3, padding=1, bias=False)
         self.layer1 = self._make_layer(block, 16, n)
         self.layer2 = self._make_layer(block, 32, n, stride=2)
         self.layer3 = self._make_layer(block, 64, n, stride=2)
         self.bn = nn.BatchNorm2d(64 * block.expansion)
         self.relu = nn.ReLU(inplace=True)
         self.avgpool = nn.AvgPool2d(8)
+        
+        self.feat_dim = 64 # final feature's dim
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -678,19 +683,14 @@ class ResNet_BIC(nn.Module):
     def forward(self, x):
         x = self.conv1(x)
 
-        x_1 = self.layer1(x)  # 32x32
-        x_2 = self.layer2(x_1)  # 16x16
-        x_3 = self.layer3(x_2)  # 8x8
-        x = self.bn(x_3)
+        x = self.layer1(x)  # 32x32
+        x = self.layer2(x)  # 16x16
+        x = self.layer3(x)  # 8x8
+        x = self.bn(x)
         x = self.relu(x)
 
         x = self.avgpool(x)
         x = x.view(x.size(0), -1)
-
-        return {
-            'fmaps': [x_1, x_2, x_3],
-            'features': x
-        }
 
         return x
 
