@@ -91,6 +91,7 @@ def get_dataloader(config, mode, cls_map=None):
 
     data_root = config['data_root']
     num_workers = config['num_workers']
+    dataset = config['dataset']
 
     trfms = get_augment(config, mode)
 
@@ -99,7 +100,7 @@ def get_dataloader(config, mode, cls_map=None):
     else:
         batch_size = config['batch_size']
 
-    if cls_map is None:
+    if cls_map is None and dataset != 'binary_cifar100':
         # Apply class_order for debugging
         cls_list = sorted(os.listdir(os.path.join(data_root, mode)))
         if 'class_order' in config.keys():
@@ -114,5 +115,6 @@ def get_dataloader(config, mode, cls_map=None):
     if mode == 'train' and 'imb_type' in config.keys():
         # generate long-tailed data to reproduce DAP
         return ImbalancedDatasets(mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms, batch_size, num_workers, config['imb_type'], config['imb_factor'], config['shuffle'])
-    return ContinualDatasets(mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms, batch_size, num_workers)
+
+    return ContinualDatasets(dataset, mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms, batch_size, num_workers, config)
     

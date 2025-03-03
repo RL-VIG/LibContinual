@@ -14,8 +14,10 @@ epoch: *epoch
 val_per_epoch: *epoch
 
 batch_size: 128
+testing_times: 10
 
-setting: task-aware
+setting: task-agnostic
+#setting: task-aware
 
 train_trfms:
   - RandomResizedCrop:

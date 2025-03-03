@@ -376,6 +376,7 @@ def tensor_prompt(a, b, c=None, ortho=False):
     return p    
 
 
+
 # @inproceedings{10.24963/ijcai.2024/456,
 #   author = {Hong, Chenxing and Jin, Yan and Kang, Zhiqi and Chen, Yizhou and Li, Mengke and Lu, Yang and Wang, Hanzi},
 #   title = {Dynamically anchored prompting for task-imbalanced continual learning},

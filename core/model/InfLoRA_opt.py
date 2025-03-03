@@ -19,7 +19,6 @@ from torch import optim
 from torch.nn import functional as F
 from torch.nn.parameter import Parameter
 from tqdm import tqdm
-
 from .backbone.transformer import MultiHeadAttention_LoRA, VisionTransformer
 from .backbone.clip import CLIP, tokenize
 from .backbone.vit import ViTZoo
@@ -113,7 +112,6 @@ class SiNet(nn.Module):
 
     def update_input_matrix(self, x):
         
-
         if isinstance(self.backbone, VIT):
             self.backbone(x, get_input_matrix = True)
 
@@ -154,7 +152,6 @@ class InfLoRA_OPT(nn.Module):
                 self.attention_modules = [module for module in self._network.modules() if isinstance(module, MultiHeadAttention_LoRA)]
         else:
             assert 0, 'Not Implmented'
-
 
     def observe(self, data):
         '''

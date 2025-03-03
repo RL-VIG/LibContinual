@@ -23,7 +23,10 @@ from .trgp_clip import TRGP_CLIP
 from .InfLoRA_opt import InfLoRA_OPT
 from .MInfLoRA import MInfLoRA
 from .moe_adapter4cl import MOE_ADAPTER4CL
-from .moe_test import MoE_Test
 from .dmnsp import DMNSP
 from .rapf import RAPF
+from .gpm import GPM
 from .dap import DAP
+
+from .moe_test import MoE_Test
+from .moe_test2 import MoE_Test2

@@ -19,7 +19,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import math
-import torch.utils.model_zoo as model_zoo
 import copy
 from core.model import Finetune
 
@@ -87,9 +86,12 @@ class joint_network(nn.Module):
         '''
         return self.feature(inputs)
 
-class PRAKA(Finetune):
+class PRAKA(nn.Module):
     def __init__(self, backbone, feat_dim, num_class, **kwargs):
-        super().__init__(backbone, feat_dim, num_class, **kwargs)
+        #super().__init__(backbone, feat_dim, num_class, **kwargs)
+        super().__init__()
+        self.device = kwargs['device']
+        self.kwargs = kwargs
         self.size = 32
         # Initialize the feature extractor with a custom ResNet18 structure.
         encoder = backbone
@@ -170,7 +172,6 @@ class PRAKA(Finetune):
 
         imgs, labels = data['image'].to(self.device), data['label'].to(self.device)
 
-        print(labels.unique())
         preds = torch.argmax(self.model(imgs), dim=-1)
 
         return preds, (preds == labels).sum().item() / len(labels)
@@ -275,6 +276,7 @@ class PRAKA(Finetune):
         self.numclass += self.task_size
 
         self.old_model = copy.deepcopy(self.model)
+        self.old_model.eval()
 
     def protoSave(self, model, loader, current_task):
         '''

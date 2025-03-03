@@ -689,13 +689,20 @@ class MInfLoRA(nn.Module):
         else:
             return preds, acc
 
-        if pred_task != task_id:
-            print('-'*15)
-            print(f'Miss : {task_id}/{pred_task} with confidence {confidence:.2f}, {confidence3:.2f}')
+        if task_id: 
+
+            if pred_task != task_id:
+                print('-'*15)
+                print(f'Miss : {task_id}/{pred_task} with confidence {confidence:.2f}, {confidence3:.2f}')
+
+            else:
+                print('-'*15)
+                print(f'Hit : {task_id}/{pred_task} with confidence {confidence:.2f}, {confidence3:.2f}')
+                print('-'*15)
 
         else:
             print('-'*15)
-            print(f'Hit : {task_id}/{pred_task} with confidence {confidence:.2f}, {confidence3:.2f}')
+            print(f'{pred_task} with confidence {confidence:.2f}, {confidence3:.2f}')
             print('-'*15)
 
         return preds, acc

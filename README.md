@@ -17,7 +17,8 @@ LibContinual is an open source continual learning toolbox based on PyTorch. The 
 + [WA (CVPR 2020)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/wa/README.md)
 + [DER (CVPR 2021)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/der/README.md)
 + [OCM (ICML 2022)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/ocm/README.md)
-+ [ERACE,ERAML (ICLR 2022)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/erace,eraml/README.md)
++ [ERACE, ERAML (ICLR 2022)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/erace,eraml/README.md)
++ [GPM (ICLR 2021)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/gpm/README.md)
 + [TRGP (ICLR 2022)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/trgp/README.md)
 + [PRAKA (ICCV 2023)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/praka/README.md)
 + [RanPAC (NeurIPS 2023)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/ranpac/README.md)
@@ -30,7 +31,6 @@ LibContinual is an open source continual learning toolbox based on PyTorch. The 
 + [MoE_Adapter4CL (CVPR 2024)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/moe_adapter4cl/README.md)
 + [RAPF (ECCV 2024)](https://github.com/RL-VIG/LibContinual/tree/master/reproduce/rapf)
 
-
 ## Quick Installation
 
 Please refer to [`install.md`](https://libcontinual.readthedocs.io/en/latest/docs/install.html) <br>
@@ -39,7 +39,6 @@ Complete tutorials can be found at [`./docs`](https://libcontinual.readthedocs.i
 ## Datasets
 [CIFAR-100](https://www.cs.toronto.edu/~kriz/cifar.html) are available at [Google Drive](https://drive.google.com/drive/folders/1EL46LQ3ww-F1NVTwFDPIg-nO198cUqWm?usp=sharing)  <br>
 CUB200, ImageNet-R are available at [Google Drive](https://drive.google.com/drive/folders/16afRW2952coWJSbiH7cZT1b8pRibA8nH?usp=sharing)  <br>
-CIFAR-10 and Tiny-Imagenet are avaliable at [Google Drive](https://drive.google.com/drive/folders/1sl2aW1sRpEfQJuJZwajXO2QhR06gQYZx?usp=drive_link) <br>
 
 After the dataset is downloaded, please extract the compressed file to the specified path.
 ```

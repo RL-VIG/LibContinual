@@ -1,23 +1,20 @@
-init_cls_num: &init_cls_num 5
-inc_cls_num: &inc_cls_num 5
+init_cls_num: &init_cls_num 10
+inc_cls_num: &inc_cls_num 10
 total_cls_num: &total_cls_num 100
-task_num: &task_num 20
+task_num: &task_num 10
 image_size: &image_size 224
 
 task_num: *task_num
 init_cls_num: *init_cls_num
 inc_cls_num: *inc_cls_num
 total_cls_num: *total_cls_num
-init_epoch: 4 # 4
-epoch: 4 # 4
+epoch: 4
 val_per_epoch: 4
 
 train_batch_size: 128
 test_batch_size: 64
 
-testing_times: 1 # 10
-
-setting: task-aware
+setting: task-agnostic
 
 train_trfms:
   - RandomResizedCrop :
@@ -60,11 +57,10 @@ backbone:
     norm_layer: LayerNorm
 
 classifier:
-  name: TRGP_CLIP
+  name: TRGP
   kwargs:
     init_cls_num: *init_cls_num
     inc_cls_num: *init_cls_num
     task_num: *task_num
     label_smoothing: 0.
-    lamda_scale: 30
     prompt_template : "a bad photo of a {}."

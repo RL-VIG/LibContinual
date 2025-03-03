@@ -189,6 +189,7 @@ class ImageNetRTransform:
         else:
             raise ValueError("Unsupported model type")
 
+    
 
 
 class TinyImageNetTransform:
@@ -246,7 +247,7 @@ class TinyImageNetTransform:
         else:
             raise ValueError("Unsupported model type")
 
-    
+
 transform_classes = {
     'cifar': CIFARTransform,
     'imagenet': ImageNetTransform,
