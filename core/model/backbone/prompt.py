@@ -374,3 +374,6 @@ def tensor_prompt(a, b, c=None, ortho=False):
     else:
         nn.init.uniform_(p)
     return p    
+
+
+123
