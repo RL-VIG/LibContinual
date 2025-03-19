@@ -14,6 +14,7 @@ epoch: 5
 val_per_epoch: 5
 
 batch_size: 128
+seed: 2
 
 train_trfms:
   - Resize:

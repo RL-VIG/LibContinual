@@ -1,13 +1,14 @@
 import os
-from re import A
-from typing import List
-import PIL
+import torch
+import pickle
 import numpy as np
 
+from PIL import Image
+from torchvision import datasets
 from torch.utils.data import Dataset, DataLoader
 
 class ContinualDatasets:
-    def __init__(self, mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms, batchsize, num_workers):
+    def __init__(self, dataset, mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms, batchsize, num_workers, config):
         self.mode = mode
         self.task_num = task_num
         self.init_cls_num = init_cls_num
@@ -17,16 +18,22 @@ class ContinualDatasets:
         self.trfms = trfms
         self.batchsize = batchsize
         self.num_workers = num_workers
+        self.config = config
+        self.dataset = dataset
+
+        if self.dataset == 'binary_cifar100':
+            datasets.CIFAR100(self.data_root, download = True)
 
         self.create_loaders()
 
     def create_loaders(self):
         self.dataloaders = []
+
         for i in range(self.task_num):
             start_idx = 0 if i == 0 else (self.init_cls_num + (i-1) * self.inc_cls_num)
             end_idx = start_idx + (self.init_cls_num if i ==0 else self.inc_cls_num)
             self.dataloaders.append(DataLoader(
-                SingleDataset(self.data_root, self.mode, self.cls_map, start_idx, end_idx, self.trfms),
+                SingleDataset(self.dataset, self.data_root, self.mode, self.cls_map, start_idx, end_idx, self.trfms),
                 shuffle = True,
                 batch_size = self.batchsize,
                 drop_last = False,
@@ -174,9 +181,11 @@ class ImbalancedDatasets(ContinualDatasets):
         return img_num_per_cls
 
 
+
 class SingleDataset(Dataset):
-    def __init__(self, data_root, mode, cls_map, start_idx, end_idx, trfms):
+    def __init__(self, dataset, data_root, mode, cls_map, start_idx, end_idx, trfms):
         super().__init__()
+        self.dataset = dataset
         self.data_root = data_root
         self.mode = mode
         self.cls_map = cls_map
@@ -187,10 +196,18 @@ class SingleDataset(Dataset):
         self.images, self.labels, self.labels_name = self._init_datalist()
 
     def __getitem__(self, idx):
-        img_path = self.images[idx]
-        label = self.labels[idx]
 
-        image = PIL.Image.open(os.path.join(self.data_root, self.mode, img_path)).convert("RGB")
+        if self.dataset == 'binary_cifar100':
+
+            image = self.images[idx]
+            image = Image.fromarray(np.uint8(image))
+
+        else:
+
+            img_path = self.images[idx]
+            image = Image.open(os.path.join(self.data_root, self.mode, img_path)).convert("RGB")
+            
+        label = self.labels[idx]
         image = self.trfms(image)
 
         return {"image": image, "label": label}
@@ -199,98 +216,36 @@ class SingleDataset(Dataset):
         return len(self.labels)
 
     def _init_datalist(self):
+
         imgs, labels, labels_name = [], [], []
-        for id in range(self.start_idx, self.end_idx):
-            img_list = [self.cls_map[id] + '/' + pic_path for pic_path in os.listdir(os.path.join(self.data_root, self.mode, self.cls_map[id]))]
-            imgs.extend(img_list)
-            labels.extend([id for _ in range(len(img_list))])
-            labels_name.append(self.cls_map[id])
-        
+
+        if self.dataset == 'binary_cifar100':
+            
+            with open(os.path.join(self.data_root, 'cifar-100-python', self.mode), 'rb') as f:
+                load_data = pickle.load(f, encoding='latin1')
+
+            for data, label in zip(load_data['data'], load_data['fine_labels']):
+
+                if label in range(self.start_idx, self.end_idx):
+                    r = data[:1024].reshape(32, 32)
+                    g = data[1024:2048].reshape(32, 32)
+                    b = data[2048:].reshape(32, 32)
+
+                    tt_data = np.dstack((r, g, b))
+
+                    imgs.append(tt_data)
+                    labels.append(label)
+                    labels_name.append(label)
+
+        else:
+
+            for id in range(self.start_idx, self.end_idx):
+                img_list = [self.cls_map[id] + '/' + pic_path for pic_path in os.listdir(os.path.join(self.data_root, self.mode, self.cls_map[id]))]
+                imgs.extend(img_list)
+                labels.extend([id for _ in range(len(img_list))])
+                labels_name.append(self.cls_map[id])
+            
         return imgs, labels, labels_name
 
     def get_class_names(self):
         return self.labels_name
-
-
-class BatchData(Dataset):
-    def __init__(self, images, labels, input_transform=None):
-        self.images = images
-        self.labels = labels
-        self.input_transform = input_transform
-
-    def __getitem__(self, index):
-        image = self.images[index]
-        image = PIL.Image.fromarray(np.uint8(image))
-        label = self.labels[index]
-        if self.input_transform is not None:
-            image = self.input_transform(image)
-        label = torch.LongTensor([label])
-        return image, label
-
-    def __len__(self):
-        return len(self.images)
-
-
-class Exemplar:
-    def __init__(self, max_size, total_cls):
-        self.val = {}
-        self.train = {}
-        self.cur_cls = 0
-        self.max_size = max_size
-        self.total_classes = total_cls
-
-    def update(self, cls_num, train, val):
-        train_x, train_y = train
-        val_x, val_y = val
-        assert self.cur_cls == len(list(self.val.keys()))
-        assert self.cur_cls == len(list(self.train.keys()))
-        cur_keys = list(set(val_y))
-        self.cur_cls += cls_num
-        total_store_num = self.max_size / self.cur_cls if self.cur_cls != 0 else self.max_size
-        train_store_num = int(total_store_num * 0.9)
-        val_store_num = int(total_store_num * 0.1)
-        for key, value in self.val.items():
-            self.val[key] = value[:val_store_num]
-        for key, value in self.train.items():
-            self.train[key] = value[:train_store_num]
-
-        for x, y in zip(val_x, val_y):
-            if y not in self.val:
-                self.val[y] = [x]
-            else:
-                if len(self.val[y]) < val_store_num:
-                    self.val[y].append(x)
-        assert self.cur_cls == len(list(self.val.keys()))
-        for key, value in self.val.items():
-            assert len(self.val[key]) == val_store_num
-
-        for x, y in zip(train_x, train_y):
-            if y not in self.train:
-                self.train[y] = [x]
-            else:
-                if len(self.train[y]) < train_store_num:
-                    self.train[y].append(x)
-        assert self.cur_cls == len(list(self.train.keys()))
-        for key, value in self.train.items():
-            assert len(self.train[key]) == train_store_num
-
-    def get_exemplar_train(self):
-        exemplar_train_x = []
-        exemplar_train_y = []
-        for key, value in self.train.items():
-            for train_x in value:
-                exemplar_train_x.append(train_x)
-                exemplar_train_y.append(key)
-        return exemplar_train_x, exemplar_train_y
-
-    def get_exemplar_val(self):
-        exemplar_val_x = []
-        exemplar_val_y = []
-        for key, value in self.val.items():
-            for val_x in value:
-                exemplar_val_x.append(val_x)
-                exemplar_val_y.append(key)
-        return exemplar_val_x, exemplar_val_y
-
-    def get_cur_cls(self):
-        return self.cur_cls

@@ -1,11 +1,7 @@
-
-dataset: &dataset "imagenet-r"
-data_root: "/home/lvqiexuan/temp_data/imagenet-r/"
-
-init_cls_num: &init_cls_num 10
-inc_cls_num: &inc_cls_num 10
-total_cls_num: &total_cls_num 200
-task_num: &task_num 20
+init_cls_num: &init_cls_num 20
+inc_cls_num: &inc_cls_num 20
+total_cls_num: &total_cls_num 100
+task_num: &task_num 5
 
 task_num: *task_num
 init_cls_num: *init_cls_num
@@ -16,9 +12,8 @@ epoch: 200 # 200
 batch_size: 64 
 val_per_epoch: 200
 
-setting: task-aware
-
-testing_times: 1
+setting: task-aware # [task-aware, task-agnostic] 
+seed: 1993
 
 optimizer:
   name: SGD
@@ -37,7 +32,7 @@ backbone:
   kwargs:
 
 classifier:
-  name: TRGP
+  name: GPM
   kwargs:
     init_cls_num: *init_cls_num
     inc_cls_num: *init_cls_num

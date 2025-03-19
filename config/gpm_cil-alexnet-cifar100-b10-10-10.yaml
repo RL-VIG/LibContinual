@@ -1,18 +1,18 @@
-init_cls_num: &init_cls_num 5
-inc_cls_num: &inc_cls_num 5
+init_cls_num: &init_cls_num 10
+inc_cls_num: &inc_cls_num 10
 total_cls_num: &total_cls_num 100
-task_num: &task_num 20
+task_num: &task_num 10
 
 task_num: *task_num
 init_cls_num: *init_cls_num
 inc_cls_num: *inc_cls_num
 total_cls_num: *total_cls_num
-init_epoch: 200 # 200
-epoch: 200 # 200
+epoch: 200
 batch_size: 64 
 val_per_epoch: 200
 
-setting: task-aware
+setting: task-agnostic
+seed: 1993
 
 optimizer:
   name: SGD
@@ -31,7 +31,7 @@ backbone:
   kwargs:
 
 classifier:
-  name: TRGP
+  name: GPM
   kwargs:
     init_cls_num: *init_cls_num
     inc_cls_num: *init_cls_num

@@ -1,21 +1,25 @@
 
-dataset: &dataset cifar100
+dataset: &dataset binary_cifar100
+total_cls_num: &total_cls_num 100
 init_cls_num: &init_cls_num 20
 inc_cls_num: &inc_cls_num 20
-total_cls_num: &total_cls_num 100
 task_num: &task_num 5
 image_size: &image_size 32
+
+data_root: /home/lvqiexuan/temp_data/binary_cifar100
 
 init_cls_num: *init_cls_num
 inc_cls_num: *inc_cls_num
 task_num: *task_num
 
-epoch: 250
-stage2_epoch: 250
-val_per_epoch: 250
+epoch: 250 # 250
+stage2_epoch: 250 # 250, 2 in source code?
+val_per_epoch: 50
 batch_size: 128
 
-testing_times: 1
+testing_times: 10 # 10
+
+seed: 1993
 
 num_workers: 0
 
@@ -50,18 +54,19 @@ lr_scheduler:
 
 # done
 backbone:
-  name: resnet18 # cifar_resnet32_V2 
+  name: cifar_resnet32_V2 # cifar_resnet32_V2 ， resnet32 for dataset cifar100, see original paper
   kwargs:
     num_classes: *total_cls_num
     args: 
       dataset: *dataset
 
 buffer:
-  name: LinearBuffer
+  name: LinearSpiltBuffer
   kwargs:
     buffer_size: 2000
     batch_size: 128
-    strategy: herding      # random, equal_random, reservoir, herding 
+    strategy: balance_random      # random, equal_random, reservoir, herding 
+    val_ratio: 0.1
 
 classifier:
   name: bic
@@ -70,4 +75,3 @@ classifier:
     init_cls_num: *init_cls_num
     inc_cls_num: *inc_cls_num
     task_num: *task_num
-    feat_dim: 512 # 64 

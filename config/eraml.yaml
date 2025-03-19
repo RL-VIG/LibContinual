@@ -4,15 +4,16 @@
 #inc_cls_num: 10 
 
 # 20-subsets on CiFar100
-task_num: 5
-init_cls_num: 20 
-inc_cls_num: 20
+task_num: 20
+init_cls_num: 5 
+inc_cls_num: 5
 
 init_epoch: 1
 epoch: 1
 val_per_epoch: 1
 
 batch_size: 10
+testing_times: 1
 
 train_trfms:
   - ToTensor: {}
@@ -34,7 +35,7 @@ optimizer:
 buffer:
   name: ERBuffer
   kwargs:
-    capacity: 10000 # num_classes * 20
+    capacity: 10000 # num_classes * M
     input_size: (3, 32, 32)
 
 backbone: 

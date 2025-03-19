@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 @inproceedings{10.24963/ijcai.2024/456,
   author = {Hong, Chenxing and Jin, Yan and Kang, Zhiqi and Chen, Yizhou and Li, Mengke and Lu, Yang and Wang, Hanzi},
@@ -7,7 +6,6 @@
   year = {2025},
 }
 https://dl.acm.org/doi/10.24963/ijcai.2024/456
-
 Adapted from https://github.com/chenxing6666/dap
 """
 

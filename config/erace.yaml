@@ -12,7 +12,8 @@ init_epoch: 1
 epoch: 1
 val_per_epoch: 1
 
-batch_size: 10 # 10, don't set too high, otherwise performance will drop
+batch_size: 10 # 10
+testing_times: 1
 
 train_trfms:
   - ToTensor: {}
@@ -29,12 +30,12 @@ test_trfms:
 optimizer:
   name: SGD
   kwargs:
-    lr: 0.01
+    lr: 0.1
 
 buffer:
   name: ERBuffer
   kwargs:
-    capacity: 10000 # num_classes * 20
+    capacity: 10000 # num_classes * M
     input_size: (3, 32, 32)
 
 backbone: 

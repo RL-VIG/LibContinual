@@ -3,8 +3,6 @@ import torch
 import copy
 from torch.utils.data import DataLoader
 
-
-
 def random_update(datasets, buffer):
 
     images = np.array(datasets.images + buffer.images)
@@ -16,9 +14,10 @@ def random_update(datasets, buffer):
     buffer.images = images.tolist()
     buffer.labels = labels.tolist()
 
-
 def herding_update(datasets, buffer, feature_extractor, device):
+
     print("Using Herding Update Strategy")
+
     per_classes = buffer.buffer_size // buffer.total_classes
 
     selected_images, selected_labels = [], []

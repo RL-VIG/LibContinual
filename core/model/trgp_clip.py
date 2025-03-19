@@ -57,7 +57,6 @@ class TRGP_CLIP(nn.Module):
         self.inc_cls_num = kwargs["inc_cls_num"]
         self.label_smoothing = kwargs['label_smoothing']
 
-        self._cur_task_id = -1
         self._known_classes = 0
         self.visual_U = []
         self.lamda = [[0 for _ in range(12)] for _ in range(12)]
@@ -99,42 +98,57 @@ class TRGP_CLIP(nn.Module):
         loss = F.cross_entropy(logits_per_img, y, label_smoothing=self.label_smoothing)
 
         preds = logits_per_img.softmax(dim=-1).argmax(dim=1)
-        acc = preds.eq(y).sum().item() / y.size(0)
 
         loss.backward()
         
         if self.cur_task > 0:
-            print(len(self.layers))
-            print(len(self.feature_mat))
             for i, module in enumerate(self.layers):
                 sz = module.scale_proj.weight.grad.data.shape[0]
                 module.scale_proj.weight.grad.data = module.scale_proj.weight.grad.data - (module.scale_proj.weight.grad.data.view(sz,-1) @ self.feature_mat[i].to(self.device)).view(module.scale_proj.weight.shape)
 
+        acc = preds.eq(y).sum().item() / y.size(0)
+
         return preds, acc, loss
     
-    def inference(self, data, task_id):
-
-        assert task_id > -1
-        assert self.init_cls_num == self.inc_cls_num
-
+    def inference(self, data, task_id=-1):
+        
         x, y = data['image'].to(self.device), data['label'].to(self.device)
 
-        for i, module in enumerate(self.layers):
-
-            module.down_proj = self.down_proj[task_id][i]
-            module.space = self.all_space[task_id][i]
-            module.scale_param = nn.ParameterList([
-                nn.Parameter(scale_param) for scale_param in self.scale_param_each_tasks_each_layers[task_id][i]
-            ])
-            module.up_proj = self.up_proj[task_id][i]
-
-        features_img, features_txt, logits_per_img, logits_per_txt = self.network(x, self.accm_text_tokens[task_id * self.inc_cls_num : (task_id + 1) * self.inc_cls_num])
-
-        preds = logits_per_img.softmax(dim=-1).argmax(dim=1)
-
+        # Task-Aware (Task-Incremetanl Scenario)
         if task_id > -1:
-            assert self.init_cls_num == self.inc_cls_num
-            preds += task_id * self.inc_cls_num
+
+            for i, module in enumerate(self.layers):
+
+                module.down_proj = self.down_proj[task_id][i]
+                module.space = self.all_space[task_id][i]
+                module.scale_param = nn.ParameterList([
+                    nn.Parameter(scale_param) for scale_param in self.scale_param_each_tasks_each_layers[task_id][i]
+                ])
+                module.up_proj = self.up_proj[task_id][i]
+
+            features_img, features_txt, logits_per_img, logits_per_txt = self.network(x, self.accm_text_tokens[task_id * self.inc_cls_num : (task_id + 1) * self.inc_cls_num])
+
+            preds = logits_per_img.softmax(dim=-1).argmax(dim=1) + task_id * self.inc_cls_num
+
+        # Task-Agnostic (Class-Incremetanl Scenario)
+        else:
+            
+            logits = []
+            for t in range(self.cur_task + 1):
+                
+                for i, module in enumerate(self.layers):
+
+                    module.down_proj = self.down_proj[t][i]
+                    module.space = self.all_space[t][i]
+                    module.scale_param = nn.ParameterList([
+                        nn.Parameter(scale_param) for scale_param in self.scale_param_each_tasks_each_layers[t][i]
+                    ])
+                    module.up_proj = self.up_proj[t][i]
+
+                features_img, features_txt, logits_per_img, logits_per_txt = self.network(x, self.accm_text_tokens[t * self.inc_cls_num : (t + 1) * self.inc_cls_num])
+                logits.append(logits_per_img)
+
+            preds = torch.cat(logits, dim=-1).softmax(dim=-1).argmax(dim=1)
 
         correct_count = preds.eq(y).sum().item()
         acc = correct_count / y.size(0)
@@ -188,11 +202,18 @@ class TRGP_CLIP(nn.Module):
             loss = F.cross_entropy(logits_per_img, y)
             loss.backward()
 
+
+
+
+
             for i, module in enumerate(self.layers):
 
                 topk = TopK(2)
 
                 grad = module.scale_proj.weight.grad.data.detach().cpu().numpy()
+
+                print(grad.shape)
+                print(self.feature_list_each_tasks[0][i].shape)
 
                 for task_id in range(task_idx):
                     
@@ -218,18 +239,17 @@ class TRGP_CLIP(nn.Module):
 
         # Save the scale param
         for i, module in enumerate(self.layers):
-
             self.down_proj[task_idx][i] = module.down_proj
             self.up_proj[task_idx][i] = module.up_proj
             
             self.scale_param_each_tasks_each_layers[task_idx][i] = [scale_param.data for scale_param in module.scale_param] # top2
-            self.all_space[task_idx][i] = module.space # top2
+            self.all_space[task_idx][i] = module.space
             module.disable_scale()
+
 
         x = []
         for batch in train_loader:
             x.append(batch['image'].to(self.device))
-
         x = torch.cat(x, dim = 0)
 
         # hardcoded, choose 125 input from it

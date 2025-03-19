@@ -54,7 +54,7 @@ class Model(nn.Module):
     def update_input_matrix(self, x, expert_id):
         self.backbone(x, expert_id = expert_id, get_input_matrix = True)
 
-class MoE_Test(nn.Module):
+class MoE_Test2(nn.Module):
 
     def __init__(self, backbone, device, **kwargs):
         super().__init__()
@@ -73,6 +73,7 @@ class MoE_Test(nn.Module):
         self._network = Model(backbone, **kwargs)
 
         self.attention_modules = [module for module in self._network.modules() if isinstance(module, MultiHeadAttention_MoEMaskedLoRA)]
+        self.routers = [module for name, module in self._network.named_modules() if 'router' in name]
 
         # TRGP Implementation
         self.feature_list_each_tasks = [[np.zeros((1)) for _ in range(len(self.attention_modules))] for _ in range(self.task_num)]
@@ -101,6 +102,12 @@ class MoE_Test(nn.Module):
 
         logits = self._network(x, expert_id = self._network._cur_task_id) # hardcoded for task_id
         loss = F.cross_entropy(logits, y)
+        loss.backward()
+
+        if self.cur_task > 0:
+            for router in self.routers:
+                sz = router.weight.grad.data.shape[0]
+                router.weight.grad.data = router.weight.grad.data - (router.weight.grad.data.view(sz,-1) @ self.feature_mat[i]).view(router.weight.shape)
 
         preds = logits.max(1)[1]
         acc = preds.eq(y).sum().item() / y.shape[0]
@@ -120,6 +127,8 @@ class MoE_Test(nn.Module):
     @torch.no_grad()
     def before_task(self, task_idx, buffer, train_loader, _):
 
+        self.cur_task = task_idx
+
         if task_idx == 1:
             self._known_classes += self.init_cls_num
         elif task_idx > 1:
@@ -132,6 +141,8 @@ class MoE_Test(nn.Module):
         for batch in tqdm(train_loader, desc = "Forwarding to get input matrix"):
             x = batch['image'].to(self.device)
             self._network.update_input_matrix(x, expert_id = 0)
+            # DEBUG, REMOVE
+            #break
 
         if task_idx == 0:
             for i, module in enumerate(self.attention_modules):
@@ -139,8 +150,6 @@ class MoE_Test(nn.Module):
                 module.lora_A_k.weight.data.copy_(U[:,:module.lora_rank].T/math.sqrt(3))
                 module.lora_A_v.weight.data.copy_(U[:,:module.lora_rank].T/math.sqrt(3))
 
-                #module.lora_A_k_ts[task_idx].weight.data.copy_(U[:,:module.lora_rank].T/math.sqrt(3))
-                #module.lora_A_v_ts[task_idx].weight.data.copy_(U[:,:module.lora_rank].T/math.sqrt(3))
                 module.reset_input_matrix()
         else:
             for i, module in enumerate(self.attention_modules):
@@ -151,9 +160,6 @@ class MoE_Test(nn.Module):
 
                 U, _, _ = np.linalg.svd(cur_matrix.cpu().numpy(), full_matrices = False)
                 U = torch.tensor(U).to(self.device)
-
-                #module.lora_A_k_ts[task_idx].weight.data.copy_(U[:,:module.rank].T/math.sqrt(3))
-                #module.lora_A_v_ts[task_idx].weight.data.copy_(U[:,:module.rank].T/math.sqrt(3))
 
                 if self.project_type[i] == 'remove':
                     cur_matrix = cur_matrix - feature_mat @ cur_matrix
@@ -191,6 +197,11 @@ class MoE_Test(nn.Module):
 
         self._update_feature(task_idx, train_loader)
 
+        for name, param in self._network.named_parameters():
+            if 'router' in name:
+                print(param)
+
+
         #self._network.eval()
         #self._create_distribution(task_idx, train_loader, test_loaders[0].dataset.trfms) # also compute class mean here
         #
@@ -206,6 +217,9 @@ class MoE_Test(nn.Module):
         for batch in tqdm(train_loader, desc="Forwarding to get input matrix"):
             x = batch['image'].to(self.device)
             self._network.update_input_matrix(x, expert_id = 0)
+            # DEBUG, REMOVE
+            #break
+
 
         threshold = (self.lame - self.lamb)*task_idx/self.task_num + self.lamb
 

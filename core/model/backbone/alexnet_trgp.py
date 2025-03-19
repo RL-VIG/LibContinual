@@ -118,6 +118,9 @@ class AlexNet_TRGP(nn.Module):
         self.fc2 = Linear(in_features = 2048, out_features = 2048, bias=False)
         self.bn5 = nn.BatchNorm1d(2048, track_running_stats = False)
 
+        self.feat_dim = 2048 # final feature's dim
+
+
         # common use
         self.relu = nn.ReLU()
         self.dropout1 = nn.Dropout(dropout_rate_1)
