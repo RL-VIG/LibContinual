@@ -253,8 +253,9 @@ class Trainer(object):
         testing_times = self.config['testing_times']
         
         if self.config["classifier"]["name"] == 'RAPF':
-            classes_names = sorted(os.listdir(os.path.join(self.config["data_root"], "train")))
-            self.model.model.classes_names = classes_names
+            # classes_names = sorted(os.listdir(os.path.join(self.config["data_root"], "train")))
+            # self.model.model.classes_names = classes_names
+            self.model.model.classes_names = self.train_loader.cls_map
 
         for task_idx in range(self.task_num):
             self.task_idx = task_idx

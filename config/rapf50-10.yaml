@@ -47,6 +47,13 @@ backbone:
   kwargs:
     model_name: ViT-B/16
     device: cuda
+    experts_num: 1
+    block_layer: ResidualAttentionBlock_MoE_MLP
+    top_k : 1
+    step: 1
+    act_layer: QuickGELU
+    norm_layer: LayerNorm
+
 
 classifier:
   name: RAPF
