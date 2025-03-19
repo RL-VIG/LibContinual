@@ -246,9 +246,10 @@ class Trainer(object):
         acc_table = np.zeros((self.task_num, self.task_num)) # A numpy array with shape [task_num, task_num], where [i, j] is acc of model on task j after learning task i
         bwt_list, frgt_list = [], []
         
-        if method_name == 'RAPF':
-            classes_names = sorted(os.listdir(os.path.join(self.config["data_root"], "train")))
-            self.model.model.classes_names = classes_names
+        if self.config["classifier"]["name"] == 'RAPF':
+            # classes_names = sorted(os.listdir(os.path.join(self.config["data_root"], "train")))
+            # self.model.model.classes_names = classes_names
+            self.model.model.classes_names = self.train_loader.cls_map
 
         for task_idx in range(self.task_num):
             self.task_idx = task_idx

@@ -20,8 +20,8 @@ def get_class_ids_per_task(init_cls_num, inc_cls_num, class_order):
     for i in range(init_cls_num, len(class_order), inc_cls_num):
         yield class_order[i:i + inc_cls_num]
 
-def get_class_names(classes_names, class_ids):
-    return [classes_names[i] for i in class_ids]
+def get_class_names(classes_names, prev_cls_num, accu_cls_num):
+    return [classes_names[i] for i in range(prev_cls_num, accu_cls_num)]
 
 def shrink_cov(cov):
     diag_mean = torch.mean(torch.diagonal(cov))
@@ -68,7 +68,7 @@ class ClassIncrementalCLIP(nn.Module):
         self.increment = kwargs['inc_cls_num']
         self.device = device
         self.classes_names = None
-        self.class_order = kwargs['class_order']
+        # self.class_order = kwargs['class_order']
         self.visual = model.visual
         self.transformer = model.transformer
         self.positional_embedding = model.positional_embedding
@@ -77,7 +77,7 @@ class ClassIncrementalCLIP(nn.Module):
         self.text_projection = model.text_projection
         self.logit_scale = model.logit_scale
         # pdb.set_trace()
-        self.class_ids_per_task = list(get_class_ids_per_task(self.initial_increment, self.increment, self.class_order))
+        # self.class_ids_per_task = list(get_class_ids_per_task(self.initial_increment, self.increment, self.class_order))
         self.current_class_names = []
         self.text_tokens = None
         self.dtype = torch.float16 if fp16 else torch.float32
@@ -166,8 +166,8 @@ class ClassIncrementalCLIP(nn.Module):
             return probs, original_image_features, image_features
         return probs, image_features, None, None
 
-    def adaptation(self, task_id, threshold=0):
-        self.current_class_names += get_class_names(self.classes_names, self.class_ids_per_task[task_id])
+    def adaptation(self, task_id, prev_cls_num, accu_cls_num, threshold=0):
+        self.current_class_names += get_class_names(self.classes_names, prev_cls_num, accu_cls_num)
         self.text_tokens = tokenize(
             [self.prompt_template.format(c) for c in self.current_class_names]
         ).to(self.device)
@@ -179,8 +179,8 @@ class ClassIncrementalCLIP(nn.Module):
         if task_id>0:
             self.old_adapter = copy.deepcopy(self.adapter)
             dist_list = []
-            for k, class_name_feature in enumerate(self.class_name_features[:-len(self.class_ids_per_task[task_id])]):
-                diff = torch.cdist(self.class_name_features[-len(self.class_ids_per_task[task_id]):].type(torch.float32), class_name_feature.unsqueeze(0).type(torch.float32)).squeeze()
+            for k, class_name_feature in enumerate(self.class_name_features[:prev_cls_num]):
+                diff = torch.cdist(self.class_name_features[prev_cls_num:].type(torch.float32), class_name_feature.unsqueeze(0).type(torch.float32)).squeeze()
                 dist_list.append(diff)
             dist_list = torch.stack(dist_list)
             self.class_diff = dist_list
@@ -247,13 +247,19 @@ class RAPF(nn.Module):
         self.num_workers = kwargs['num_workers']
         self.seed = seed
 
+        self.prev_cls_num = 0
+        self.accu_cls_num = 0
 
-        
 
 
     def before_task(self, task_id, buffer, train_loader, test_loaders):
         self.task_id = task_id
-        self.model.adaptation(task_id, self.threshold)
+        if self.task_id == 0:
+            self.accu_cls_num = self.init_cls_num
+        else:
+            self.accu_cls_num += self.inc_cls_num
+
+        self.model.adaptation(task_id, self.prev_cls_num, self.accu_cls_num, self.threshold)
         if self.task_id > 0:
             random_class_order_list = list(range(self.init_cls_num+(self.task_id-1)*self.inc_cls_num))
             random.shuffle(random_class_order_list)
@@ -278,6 +284,7 @@ class RAPF(nn.Module):
         sample_after_adapt_feature = torch.cat(sample_after_adapt_feature, dim=0)
         model.analyze_mean_cov(sample_data, sample_target)
         model.mix_matrix()
+        self.prev_cls_num = self.accu_cls_num
 
     def get_parameters(self, config):
         return self.model.adapter.parameters()
