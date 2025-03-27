@@ -1,11 +1,14 @@
 import os
 import torch
 import pickle
+import random
 import numpy as np
 
 from PIL import Image
 from torchvision import datasets
 from torch.utils.data import Dataset, DataLoader
+from continuum.datasets import TinyImageNet200
+from continuum import ClassIncremental
 
 class ContinualDatasets:
     def __init__(self, dataset, mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms, batchsize, num_workers, config):
@@ -29,16 +32,61 @@ class ContinualDatasets:
     def create_loaders(self):
         self.dataloaders = []
 
-        for i in range(self.task_num):
-            start_idx = 0 if i == 0 else (self.init_cls_num + (i-1) * self.inc_cls_num)
-            end_idx = start_idx + (self.init_cls_num if i ==0 else self.inc_cls_num)
-            self.dataloaders.append(DataLoader(
-                SingleDataset(self.dataset, self.data_root, self.mode, self.cls_map, start_idx, end_idx, self.trfms),
-                shuffle = True,
-                batch_size = self.batchsize,
-                drop_last = False,
-                num_workers = self.num_workers
-            ))
+        if self.dataset == 'tiny-imagenet':
+
+            if 'class_order' in self.config:
+                class_order = self.config['class_order']
+            else:
+                class_order = list(range(200))
+                random.seed(self.config['seed'])
+                random.shuffle(class_order)
+
+            scenario = ClassIncremental(
+                TinyImageNet200(self.data_root, train=self.mode == 'train', download=True),
+                initial_increment=self.init_cls_num,
+                increment=self.inc_cls_num,
+                class_order=class_order
+            )
+
+            class_ids_per_task = (
+                [class_order[:self.init_cls_num]] + 
+                [class_order[i:i + self.inc_cls_num] for i in range(self.init_cls_num, len(class_order), self.inc_cls_num)]
+            )
+
+            with open(os.path.join(os.getcwd(), "core", "data", "dataset_reqs", f"tinyimagenet_classes.txt"), "r") as f:
+                lines = f.read().splitlines()
+            classes_names = [line.split("\t")[-1] for line in lines]
+
+            for t in range(self.task_num):
+
+                cur_scenario = scenario[t:t+1]
+
+                dataset = SingleDataset(self.dataset, self.data_root, self.mode, self.init_cls_num, self.inc_cls_num, self.cls_map, self.trfms, init=False)
+                dataset.images = cur_scenario._x
+                dataset.labels = cur_scenario._y
+                dataset.labels_name = [classes_names[class_id] for class_id in class_ids_per_task[t]]
+
+                self.dataloaders.append(DataLoader(
+                    dataset,
+                    shuffle = True,
+                    batch_size = self.batchsize,
+                    drop_last = False,
+                    num_workers = self.num_workers
+                ))
+
+        else:
+
+            for i in range(self.task_num):
+
+                start_idx = 0 if i == 0 else (self.init_cls_num + (i-1) * self.inc_cls_num)
+                end_idx = start_idx + (self.init_cls_num if i ==0 else self.inc_cls_num)
+                self.dataloaders.append(DataLoader(
+                    SingleDataset(self.dataset, self.data_root, self.mode, self.init_cls_num, self.inc_cls_num, self.cls_map, self.trfms, start_idx, end_idx),
+                    shuffle = True,
+                    batch_size = self.batchsize,
+                    drop_last = False,
+                    num_workers = self.num_workers
+                ))
 
     def get_loader(self, task_idx):
         assert task_idx >= 0 and task_idx < self.task_num
@@ -46,7 +94,6 @@ class ContinualDatasets:
             return self.dataloaders[task_idx]
         else:
             return self.dataloaders[:task_idx+1]
-
 
 class ImbalancedDatasets(ContinualDatasets):
     def __init__(self, mode, task_num, init_cls_num, inc_cls_num, data_root, cls_map, trfms, batchsize, num_workers, imb_type='exp', imb_factor=0.002, shuffle=False):
@@ -71,7 +118,7 @@ class ImbalancedDatasets(ContinualDatasets):
         for i in range(self.task_num):
             start_idx = 0 if i == 0 else (self.init_cls_num + (i - 1) * self.inc_cls_num)
             end_idx = start_idx + (self.init_cls_num if i == 0 else self.inc_cls_num)
-            dataset = SingleDataset(self.data_root, self.mode, self.cls_map, start_idx, end_idx, self.trfms)
+            dataset = SingleDataset(self.data_root, self.mode, self.cls_map, self.trfms, start_idx, end_idx)
 
             new_imgs, new_labels = [], []
             labels_np = np.array(dataset.labels, dtype=np.int64)
@@ -107,7 +154,6 @@ class ImbalancedDatasets(ContinualDatasets):
             cls_per_group = cls_num//self.task_num
             for cls_idx in range(cls_num):
                 if (cls_idx+1)%cls_per_group==1:
-                    # print(cls_idx)
                     num = img_max * (imb_factor**(cls_idx / (cls_num - 1.0)))
                 img_num_per_cls.append(int(num))
         elif imb_type == 'exp_max_re':
@@ -180,20 +226,21 @@ class ImbalancedDatasets(ContinualDatasets):
             img_num_per_cls.extend([int(img_max)] * cls_num)
         return img_num_per_cls
 
-
-
 class SingleDataset(Dataset):
-    def __init__(self, dataset, data_root, mode, cls_map, start_idx, end_idx, trfms):
+    def __init__(self, dataset, data_root, mode, init_cls_num, inc_cls_num, cls_map, trfms, start_idx=-1, end_idx=-1, init=True):
         super().__init__()
         self.dataset = dataset
         self.data_root = data_root
         self.mode = mode
+        self.init_cls_num = init_cls_num
+        self.inc_cls_num = inc_cls_num
         self.cls_map = cls_map
         self.start_idx = start_idx
         self.end_idx = end_idx
         self.trfms = trfms
 
-        self.images, self.labels, self.labels_name = self._init_datalist()
+        if init:
+            self.images, self.labels, self.labels_name = self._init_datalist()
 
     def __getitem__(self, idx):
 
@@ -201,6 +248,10 @@ class SingleDataset(Dataset):
 
             image = self.images[idx]
             image = Image.fromarray(np.uint8(image))
+
+        elif self.dataset == 'tiny-imagenet':
+            img_path = self.images[idx]
+            image = Image.open(img_path).convert("RGB")
 
         else:
 

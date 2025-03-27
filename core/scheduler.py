@@ -51,6 +51,8 @@ class CosineSchedule(_LRScheduler):
         super().__init__(optimizer, -1)
 
     def cosine(self, base_lr):
+        if self.K == 1:
+            return base_lr * math.cos((99 * math.pi * (self.last_epoch)) / (200 * (2-1)))
         return base_lr * math.cos((99 * math.pi * (self.last_epoch)) / (200 * (self.K-1)))
 
     def get_lr(self):

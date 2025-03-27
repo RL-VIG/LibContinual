@@ -224,8 +224,7 @@ class InfLoRA_OPT(nn.Module):
         print(",\n".join(unfrezeed_params))
 
         for batch in tqdm(train_loader, desc="Forwarding to get input matrix"):
-            x = batch['image'].to(self.device)
-            self._network.update_input_matrix(x)
+            self._network.update_input_matrix(x = batch['image'].to(self.device))
 
         if task_idx == 0:
             for module in self.attention_modules:
@@ -258,21 +257,28 @@ class InfLoRA_OPT(nn.Module):
         for module in self.attention_modules:
             module.merge_weight()
 
-        self._update_feature(task_idx, train_loader)
+        self._update_feature(task_idx, train_loader, test_loaders[0].dataset.trfms)
         if self._use_class_alignment:
             self._create_distribution(train_loader, test_loaders[0].dataset.trfms)
             if task_idx > 0:
                 self._compact_classifier(task_idx)
 
     @torch.no_grad()
-    def _update_feature(self, task_idx, train_loader):
+    def _update_feature(self, task_idx, train_loader, test_trfms):
         '''
         Update feature lists and the corresponding type
         '''
 
+        #train_trfms = train_loader.dataset.trfms
+        #train_loader.dataset.trfms = test_trfms
         for batch in tqdm(train_loader, desc="Forwarding to get input matrix"):
-            x = batch['image'].to(self.device)
-            self._network.update_input_matrix(x)
+            self._network.update_input_matrix(x = batch['image'].to(self.device))
+        #train_loader.dataset.trfms = train_trfms
+
+
+
+
+
 
         threshold = (self.lame - self.lamb)*task_idx/self.task_num + self.lamb
 

@@ -9,6 +9,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from core.model.backbone.alexnet import Linear_TRGP
+
 class Adapter(nn.Module):
     def __init__(self,
                  d_model=None,
@@ -70,6 +72,7 @@ class Adapter(nn.Module):
         
         return output
 
+'''
 class MaskedAdapter(nn.Module):
     def __init__(self,
                  d_model=None,
@@ -147,6 +150,42 @@ class MaskedAdapter(nn.Module):
         down = nn.functional.dropout(down, p=self.dropout, training=self.training)
         
         up = self.up_proj(down)
+        up = up * self.scale
+
+        if self.adapter_layernorm_option == 'out': #  none
+            up = self.adapter_layer_norm_before(up)
+
+        if add_residual:
+            output = up + residual
+        else:
+            output = up
+        
+        return output
+'''
+
+class MaskedAdapter(Adapter):
+    def __init__(self,
+                 d_model=None,
+                 bottleneck=None,
+                 dropout=0.0,
+                 init_option="lora",
+                 adapter_scalar="1.0",
+                 adapter_layernorm_option="in"):
+        super().__init__(d_model, bottleneck, dropout, init_option, adapter_scalar, adapter_layernorm_option)
+
+        self.down_proj = Linear(self.n_embd, 64)
+        self.up_proj = Linear(self.down_size, self.n_embd)
+
+    def forward(self, x, add_residual=True, residual=None, compute_input_matrix=False):
+
+        residual = x if residual is None else residual
+        if self.adapter_layernorm_option == 'in': #  none
+            x = self.adapter_layer_norm_before(x)
+
+        down = self.down_proj(x, compute_input_matrix)
+        down = self.non_linear_func(down)
+
+        up = self.up_proj(down, compute_input_matrix)
         up = up * self.scale
 
         if self.adapter_layernorm_option == 'out': #  none

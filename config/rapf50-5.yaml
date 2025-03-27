@@ -53,7 +53,6 @@ backbone:
     act_layer: QuickGELU
     norm_layer: LayerNorm
 
-
 classifier:
   name: RAPF
   kwargs:

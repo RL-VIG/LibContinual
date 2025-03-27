@@ -246,9 +246,7 @@ class Trainer(object):
         acc_table = np.zeros((self.task_num, self.task_num)) # A numpy array with shape [task_num, task_num], where [i, j] is acc of model on task j after learning task i
         bwt_list, frgt_list = [], []
         
-        if self.config["classifier"]["name"] == 'RAPF':
-            # classes_names = sorted(os.listdir(os.path.join(self.config["data_root"], "train")))
-            # self.model.model.classes_names = classes_names
+        if method_name == 'RAPF':
             self.model.model.classes_names = self.train_loader.cls_map
 
         for task_idx in range(self.task_num):
@@ -297,7 +295,7 @@ class Trainer(object):
                     print(f"================Validation on test set================")
 
                     # Disable validation for some method
-                    if method_name in ['TRGP', 'RanPAC', 'MInfLoRA', 'PRAKA', 'TRGP_CLIP']:
+                    if method_name in ['TRGP', 'RanPAC', 'MInfLoRA', 'MInfLoRA2', 'MInfLoRA3', 'PRAKA', 'TRGP_CLIP'] or 'MInfLoRA' in method_name:
                         print(f" * Disabled validation for this method")
                     else:
                         test_acc = self._validate(task_idx)
@@ -320,6 +318,9 @@ class Trainer(object):
                         break
                 else:
                     self.scheduler.step()
+
+                if self.config['classifier']['name'] == 'MInfLoRA3':
+                    self.model.mid_task(task_idx, self.buffer, self.train_loader.get_loader(task_idx), self.test_loader.get_loader(task_idx))
 
             if hasattr(self.model, 'after_task'):
                 self.model.after_task(task_idx, self.buffer, self.train_loader.get_loader(task_idx), self.test_loader.get_loader(task_idx))
@@ -473,12 +474,14 @@ class Trainer(object):
 
         total = len(dataloader)
         for b, batch in tqdm(enumerate(dataloader), total=total):
+
             batch['batch_id'] = b
             # These method's LR is updated every iterations, not epochs
             if self.config['classifier']['name'] in ['MOE_ADAPTER4CL', 'DMNSP', 'DMNSP_CIL']:
                 self.scheduler.step(total * epoch_idx + b)
 
-            if self.config["classifier"]["name"] in ['TRGP', 'DMNSP', 'DMNSP_CIL', 'TRGP_CLIP', 'GPM', 'MoE_Test2']:
+            if self.config["classifier"]["name"] in ['TRGP', 'DMNSP', 'DMNSP_CIL', 'TRGP_CLIP', 
+                                                    'GPM', 'MoE_Test2', 'API', 'L2P']:
                 self.optimizer.zero_grad()
                 output, acc, loss = self.model.observe(batch)
             elif self.config["classifier"]["name"] in ['bic']:
@@ -494,11 +497,6 @@ class Trainer(object):
 
             meter.update("acc1", 100 * acc)
             meter.update("loss", loss.item())
-
-            # DEBUG, REMOVE
-            #if b > 0:
-            #    break
-
 
         return meter
 
@@ -530,14 +528,8 @@ class Trainer(object):
                     
                     meter.update("acc1", 100 * acc)
                     total_meter.update("acc1", 100 * acc)
-
-                    # DEBUG, REMOVE
-                    #break
-
-
+                
                 per_task_acc.append(round(meter.avg("acc1"), 2))
-
-
 
         return {"avg_acc" : round(total_meter.avg("acc1"), 2), 
                 "per_task_acc" : per_task_acc}

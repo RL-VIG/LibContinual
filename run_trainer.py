@@ -24,8 +24,7 @@ if __name__ == "__main__":
         args.config = args.config + '.yaml' if not args.config.endswith('.yaml') else args.config
         config = Config(f'./config/{args.config}').get_config_dict()
     else:
-        # config = Config("./config/InfLoRA.yaml").get_config_dict()
-        config = Config("./config/rapf10-10.yaml").get_config_dict()
+        config = Config("./config/InfLoRA.yaml").get_config_dict()
 
     if config["n_gpu"] > 1:
         pass

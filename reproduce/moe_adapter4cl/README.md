@@ -27,7 +27,14 @@ Continual learning can empower vision-language models to continuously acquire ne
 
 ## Results
 
-| Dataset  | Backbone | Num of tasks | Reproduced Overall Accuracy | Reported Overall Accuracy |
+| Dataset  | Backbone |   Settings   | Reproduced Overall Accuracy | Reported Overall Accuracy |
 | :------: | :------: | :----------: | :-------------------------: | :-----------------------: |
-| CIFAR100 |   CLIP   |      10      |            85.49            |           85.21           |
-| CIFAR100 |   CLIP   |      5       |            85.52            |           83.72           |
+| CIFAR100 |   CLIP   |   B10-10-10  |            85.49            |           85.21           |
+| CIFAR100 |   CLIP   |   B5-5-20    |            86.51            |           83.72           |
+| CIFAR100 |   CLIP   |   B2-2-50    |            xx.xx            |           83.60           |
+
+|   Dataset    | Backbone |   Settings    | Reproduced Overall Accuracy | Reported Overall Accuracy |
+| :----------: | :------: | :-----------: | :-------------------------: | :-----------------------: |
+| TinyImageNet |   CLIP   |   B100-5-21   |            80.10            |           79.96           |
+| TinyImageNet |   CLIP   |   B100-10-11  |            80.43            |           80.23           |
+| TinyImageNet |   CLIP   |   B100-20-6   |            80.88            |           81.12           |

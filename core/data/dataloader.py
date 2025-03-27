@@ -100,7 +100,14 @@ def get_dataloader(config, mode, cls_map=None):
     else:
         batch_size = config['batch_size']
 
-    if cls_map is None and dataset != 'binary_cifar100':
+    if dataset == 'tiny-imagenet':
+        cls_map = {}
+        with open(os.path.join(os.getcwd(), "core", "data", "dataset_reqs", f"tinyimagenet_classes.txt"), "r") as f:
+            for line in f.readlines():
+                _, cls_code, cls_name = line.strip().split('\t')
+                cls_map[cls_code] = cls_name
+
+    elif cls_map is None and dataset != 'binary_cifar100':
         # Apply class_order for debugging
         cls_list = sorted(os.listdir(os.path.join(data_root, mode)))
         if 'class_order' in config.keys():

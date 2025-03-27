@@ -27,91 +27,96 @@ Adapted from https://github.com/GT-RIPL/CODA-Prompt
 import math
 import copy
 import torch
-import torch.nn as nn
-from torch.nn import Parameter
-import torch.nn.functional as F
-from .finetune import Finetune
-from core.model.backbone.resnet import *
 import numpy as np
-from torch.utils.data import DataLoader
+import torch.nn as nn
+import torch.nn.functional as F
 
+from core.model.backbone.resnet import *
 
 class Model(nn.Module):
-    # A model consists with a backbone and a classifier
-    def __init__(self, backbone, feat_dim, num_class):
+    def __init__(self, backbone, embed_dim, total_cls_num):
         super().__init__()
         self.backbone = backbone
-        self.feat_dim = feat_dim
-        self.num_class = num_class
-        self.classifier = nn.Linear(feat_dim, num_class)
-        
+        self.classifier = nn.Linear(embed_dim, total_cls_num, bias=True)
+
     def forward(self, x, train=True):
-        if train:
-            feat, loss = self.backbone(x, train=True)
-            return self.classifier(feat), loss
-        else:
-            feat = self.backbone(x, train=False)
-            return self.classifier(feat)
+        feat, reduce_sim = self.backbone(x, train=train)
+        return self.classifier(feat), reduce_sim
 
-class L2P(Finetune):
-    def __init__(self, backbone, feat_dim, num_class, **kwargs):
-        super().__init__(backbone, feat_dim, num_class, **kwargs)
-        self.kwargs = kwargs
-        self.network = Model(self.backbone, feat_dim, kwargs['init_cls_num'])
-        self.network.backbone.create_prompt('l2p', n_tasks = kwargs['task_num'], prompt_param=[kwargs['pool_size'], kwargs['prompt_length'], -1])
-        self.task_idx = 0
-        self.kwargs = kwargs
+class L2P(nn.Module):
+    def __init__(self, backbone, device, **kwargs):
+        super().__init__()
+
+        self.device = device
+        self.init_cls_num = kwargs['init_cls_num']
+        self.inc_cls_num = kwargs['inc_cls_num']
+        self.total_cls_num = kwargs['num_class']
+        self.task_num = kwargs['task_num']
+        self.embed_dim = kwargs['feat_dim']
+        self.pull_constraint_coeff = kwargs['pull_constraint_coeff']
+        self.cur_task_id = 0
+        self._known_classes = 0
         
-        self.last_out_dim = 0
-
-    def observe(self, data):
-        x, y = data['image'], data['label']
-        x = x.to(self.device)
-        y = y.to(self.device)
-        logit, loss = self.network(x, train=True)
-
-        logit[:,:self.last_out_dim] = -float('inf')
-        dw_cls = self.dw_k[-1 * torch.ones(y.size()).long()]
-
-        loss += (self.loss_fn(logit, y) * dw_cls).mean()
-        
-        pred = torch.argmax(logit, dim=1)
-        acc = torch.sum(pred == y).item()
-
-        return pred, acc / x.size(0), loss
-    
-    def before_task(self, task_idx, buffer, train_loader, test_loaders):
-        self.task_idx = task_idx
-        self.network.backbone.task_id = task_idx
-        
-        in_features = self.network.classifier.in_features
-        out_features = self.network.classifier.out_features
-        new_out_features = self.kwargs['init_cls_num'] + task_idx * self.kwargs['inc_cls_num']
-        new_fc = nn.Linear(in_features, new_out_features)
-        new_fc.weight.data[:out_features] = self.network.classifier.weight.data
-        new_fc.bias.data[:out_features] = self.network.classifier.bias.data
-        self.network.classifier = new_fc
+        self.network = Model(backbone, self.embed_dim, self.total_cls_num)        
+        self.network.backbone.create_prompt(
+            prompt_flag = 'l2p', 
+            length = kwargs['prompt_length'], # L_p
+            prompt_init = nn.init.uniform_,
+            pool_size = kwargs['pool_size'],  # M
+            top_k = kwargs['top_k'],          # N
+            num_layers = 1,
+            embed_dim = self.embed_dim
+        )
         self.network.to(self.device)
 
-        self.loss_fn = nn.CrossEntropyLoss(reduction='none')
-        
-        self.out_dim = new_out_features
-        self.dw_k = torch.tensor(np.ones(self.out_dim + 1, dtype=np.float32)).to(self.device)
+        self.unfrezeed_params = []
+        for name, param in self.network.named_parameters():
+            param.requires_grad_(False)
+            if 'prompt' in name or 'classifier' in name:
+                param.requires_grad_(True)
+                self.unfrezeed_params.append(param)
+
+    def before_task(self, task_idx, buffer, train_loader, test_loaders):
+
+        self.cur_task_id = task_idx
 
     def after_task(self, task_idx, buffer, train_loader, test_loaders):
-        self.last_out_dim = self.out_dim
+        
+        self._known_classes += self.init_cls_num if task_idx == 0 else self.inc_cls_num
+
+    def observe(self, data):
+
+        x, y = data['image'].to(self.device), data['label'].to(self.device)
+        logits, reduce_sim = self.network(x, train=True)
+
+        if self.cur_task_id == 0:
+            mask = np.arange(self.init_cls_num)
+        else:
+            mask = np.arange(self.inc_cls_num) + self._known_classes
+
+        not_mask = np.setdiff1d(np.arange(self.total_cls_num), mask)
+        not_mask = torch.tensor(not_mask, dtype=torch.int64).to(self.device)
+        logits = logits.index_fill(dim=1, index=not_mask, value=float('-inf'))
+
+        loss = F.cross_entropy(logits, y) - self.pull_constraint_coeff * reduce_sim      
+
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.unfrezeed_params, 1.0)
+
+        pred = torch.argmax(logits, dim=1)
+        acc = torch.sum(pred == y).item() / x.size(0)
+
+        return pred, acc, loss
 
     def inference(self, data):
-        x, y = data['image'], data['label']
-        x = x.to(self.device)
-        y = y.to(self.device)
         
-        logit = self.network(x, train=False)
+        x, y = data['image'].to(self.device), data['label'].to(self.device)
+        logits, _ = self.network(x, train=False)
 
-        pred = torch.argmax(logit, dim=1)
-
-        acc = torch.sum(pred == y).item()
-        return pred, acc / x.size(0)
+        pred = torch.argmax(logits, dim=1)
+        acc = torch.sum(pred == y).item() / x.size(0)
+        return pred, acc
 
     def get_parameters(self, config):
-        return list(self.network.backbone.prompt.parameters()) + list(self.network.classifier.parameters())
+
+        return self.unfrezeed_params

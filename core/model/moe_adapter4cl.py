@@ -48,7 +48,7 @@ class MOE_ADAPTER4CL(nn.Module):
         self.prompt_template = kwargs['prompt_template']
 
         self._network = backbone
-
+        
         self.classifier_pool = nn.ModuleList([
             nn.Linear(kwargs["embd_dim"], kwargs['init_cls_num'], bias=True)] + 
             [nn.Linear(kwargs["embd_dim"], kwargs['inc_cls_num'], bias=True) for _ in range(kwargs['task_num'] - 1)]
@@ -74,7 +74,7 @@ class MOE_ADAPTER4CL(nn.Module):
                 logits_per_img.append(prompts(features))
             logits_per_img = torch.cat(logits_per_img, dim=1)
         else:
-            assert 0
+            raise NotImplementedError
         
         loss = F.cross_entropy(logits_per_img, y, label_smoothing=self.label_smoothing)
 
@@ -96,7 +96,7 @@ class MOE_ADAPTER4CL(nn.Module):
                 logits_per_img.append(prompts(features))
             logits_per_img = torch.cat(logits_per_img, dim=1)
         else:
-            assert 0
+            raise NotImplementedError
 
         preds = logits_per_img.softmax(dim=-1).argmax(dim=1)
         acc = preds.eq(y).sum().item() / y.size(0)

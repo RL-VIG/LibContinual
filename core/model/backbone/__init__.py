@@ -6,11 +6,8 @@ from .vit_dap import vit_pt_imnet_dap
 from .SiNet import SiNet_vit
 
 from .resnet_cbam import *
-from .alexnet import AlexNet
-from .alexnet_trgp import AlexNet_TRGP
+from .alexnet import AlexNet_TRGP, AlexNet_API
 from .clip import clip
-
-#from .vit_inflora_opt import vit_pt_imnet_in21k_lora
 
 def get_backbone(config):
     """
