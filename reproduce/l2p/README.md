@@ -20,7 +20,7 @@ The mainstream paradigm behind continual learning has been to adapt the model pa
 
 - **Step1: Set the path in `run_trainer.py` with `./config/l2p.yaml`**
     ```python
-    config = Config("./config/l2p.yaml").get_config_dict()
+    config = Config("./config/l2p-vit-cifar100-b10-10-10.yaml").get_config_dict()
     ```
 - **Step2: Run command**
     ```python
@@ -31,4 +31,4 @@ The mainstream paradigm behind continual learning has been to adapt the model pa
 ## Results
 | Dataset  |   Backbone     |Num of tasks | Buffer size | Reproduced Accuracy | Reported Accuracy |
 | :------: | :------------: |:----------: | :---------: | :-----------------: | :---------------: |
-| CIFAR100 |  vit_pt_imnet  | 10          |    0        |       81.25         |      82.81        |
+| CIFAR100 |  vit_pt_imnet  | 10          |    0        |       83.56         |       83.83        |

@@ -35,5 +35,5 @@ classifier:
   name: GPM
   kwargs:
     init_cls_num: *init_cls_num
-    inc_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
     task_num: *task_num

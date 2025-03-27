@@ -15,9 +15,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-from .backbone.alexnet_trgp import Conv2d, Linear, AlexNet_TRGP
+from .backbone.alexnet import Conv2d_TRGP, Linear_TRGP, AlexNet_TRGP
 from .backbone.clip import tokenize, CLIP
-from .backbone.petl.adapter import MaskedAdapter
 
 Epsilon = 0.5
 
@@ -100,14 +99,11 @@ class TRGP(nn.Module):
 
             self.prompt_template = kwargs['prompt_template']
 
-            # 12 Visual Transformer's Adapter
+            # 12 Visual Transformer's Adapter * 2 (Down & Up)
             for name, module in self.network.named_modules():
-                if 'visual' in name and isinstance(module, MaskedAdapter):
+                if 'visual' in name and isinstance(module, Linear_TRGP):
                     self.layers.append(module)
             
-            self.down_proj = [[0 for _ in range(len(self.layers))] for _ in range(self.task_num)]
-            self.up_proj = [[0 for _ in range(len(self.layers))] for _ in range(self.task_num)]
-
             for name, param in self.network.named_parameters():
                 param.requires_grad = False
                 if 'adaptmlp' in name:
@@ -116,17 +112,17 @@ class TRGP(nn.Module):
         elif isinstance(backbone, AlexNet):
             self.network = Network(backbone, **kwargs)
 
-            # # 3 Conv2d, Then 2 Linear
+            # # 3 Conv2d and 2 Linear
             for module in self.network.modules(): # 
-                if isinstance(module, Conv2d) or isinstance(module, Linear):
+                if isinstance(module, Conv2d_TRGP) or isinstance(module, Linear_TRGP):
                     self.layers.append(module)
 
         else:
             raise NotImplementedError
 
-        self.feature_list_each_tasks = [[np.zeros((1)) for _ in range(len(self.layers))] for _ in range(self.task_num)]
-        self.scale_param_each_tasks_each_layers = [[np.zeros((1)) for _ in range(len(self.layers))] for _ in range(self.task_num)]
-        self.all_space = [[np.zeros((1)) for _ in range(len(self.layers))] for _ in range(self.task_num)]
+        self.feature_list_each_tasks = [[0 for _ in range(len(self.layers))] for _ in range(self.task_num)]
+        self.scale_param_each_tasks_each_layers = [[0 for _ in range(len(self.layers))] for _ in range(self.task_num)]
+        self.all_space = [[0 for _ in range(len(self.layers))] for _ in range(self.task_num)]
 
         self.network.to(self.device)
 
@@ -145,8 +141,8 @@ class TRGP(nn.Module):
             
             if self.cur_task > 0:
                 for i, module in enumerate(self.layers):
-                    sz = module.scale_proj.weight.grad.data.shape[0]
-                    module.scale_proj.weight.grad.data = module.scale_proj.weight.grad.data - (module.scale_proj.weight.grad.data.view(sz,-1) @ self.feature_mat[i]).view(module.scale_proj.weight.shape)
+                    sz = module.weight.grad.data.shape[0]
+                    module.weight.grad.data = module.weight.grad.data - (module.weight.grad.data.view(sz,-1) @ self.feature_mat[i]).view(module.weight.shape)
 
         elif isinstance(self.backbone, AlexNet):
 
@@ -176,30 +172,30 @@ class TRGP(nn.Module):
         # Task-Aware (Task-Incremetanl Scenario)
         if task_id > -1:
 
+            if task_id == 0:
+                bias_classes = 0
+            elif task_id == 1:
+                bias_classes = self.init_cls_num
+            else:
+                bias_classes = self.init_cls_num + (task_id - 1) * self.inc_cls_num
+
             if isinstance(self.backbone, Clip):
 
                 for i, module in enumerate(self.layers):
-
-                    module.down_proj = self.down_proj[task_id][i]
-                    module.up_proj = self.up_proj[task_id][i]
                     module.space = self.all_space[task_id][i]
-                    module.scale_param = nn.ParameterList([
-                        nn.Parameter(scale_param) for scale_param in self.scale_param_each_tasks_each_layers[task_id][i]
-                    ])
+                    module.scale_param = nn.ParameterList([nn.Parameter(scale_param) for scale_param in self.scale_param_each_tasks_each_layers[task_id][i]])
 
-                features_img, features_txt, logits_per_img, logits_per_txt = self.network(x, self.accm_text_tokens[task_id * self.inc_cls_num : (task_id + 1) * self.inc_cls_num])
-                preds = logits_per_img.softmax(dim=-1).argmax(dim=1) + task_id * self.inc_cls_num
+                features_img, features_txt, logits_per_img, logits_per_txt = self.network(x, self.accm_text_tokens[bias_classes : self.init_cls_num + task_id * self.inc_cls_num])
+                preds = logits_per_img.softmax(dim=-1).argmax(dim=1) + bias_classes
 
             elif isinstance(self.backbone, AlexNet):
 
                 for i, module in enumerate(self.layers):
-                    module.scale_param = nn.ParameterList([
-                        nn.Parameter(scale_param) for scale_param in self.scale_param_each_tasks_each_layers[task_id][i]
-                    ])
                     module.space = self.all_space[task_id][i]
+                    module.scale_param = nn.ParameterList([nn.Parameter(scale_param) for scale_param in self.scale_param_each_tasks_each_layers[task_id][i]])
 
                 logits = self.network(x)
-                preds = logits[task_id].softmax(dim=-1).argmax(dim=1) + task_id * self.inc_cls_num
+                preds = logits[task_id].softmax(dim=-1).argmax(dim=1) + bias_classes
 
             else:
                 raise NotImplementedError
@@ -212,27 +208,25 @@ class TRGP(nn.Module):
             if isinstance(self.backbone, Clip):
 
                 for t in range(self.cur_task + 1):
-
                     for i, module in enumerate(self.layers):
-                        module.down_proj = self.down_proj[t][i]
+                        
                         module.space = self.all_space[t][i]
-                        module.scale_param = nn.ParameterList([
-                            nn.Parameter(scale_param) for scale_param in self.scale_param_each_tasks_each_layers[t][i]
-                        ])
-                        module.up_proj = self.up_proj[t][i]
+                        module.scale_param = nn.ParameterList([nn.Parameter(scale_param) for scale_param in self.scale_param_each_tasks_each_layers[t][i]])
 
-                    features_img, features_txt, logits_per_img, logits_per_txt = self.network(x, self.accm_text_tokens[t * self.inc_cls_num : (t + 1) * self.inc_cls_num])
+                    if t == 0:
+                        features_img, features_txt, logits_per_img, logits_per_txt = self.network(x, self.accm_text_tokens[: self.init_cls_num])
+                    else:
+                        features_img, features_txt, logits_per_img, logits_per_txt = self.network(x, self.accm_text_tokens[self.init_cls_num + (t-1) * self.inc_cls_num : self.init_cls_num + t * self.inc_cls_num])
+                    
                     logits.append(logits_per_img)
 
             elif isinstance(self.backbone, AlexNet):
 
                 for t in range(self.cur_task + 1):
                     for i, module in enumerate(self.layers):
-                        module.scale_param = nn.ParameterList([
-                            nn.Parameter(scale_param) for scale_param in self.scale_param_each_tasks_each_layers[t][i]
-                        ])
                         module.space = self.all_space[t][i]
-
+                        module.scale_param = nn.ParameterList([nn.Parameter(scale_param) for scale_param in self.scale_param_each_tasks_each_layers[t][i]])
+                        
                     logits.append(self.network(x)[t])
 
             else:
@@ -247,29 +241,19 @@ class TRGP(nn.Module):
 
     def before_task(self, task_idx, buffer, train_loader, test_loaders):
 
-        # Last task have leave scale_param and space, need to init again
+        # Last task have scale_param and space, need to init again
         for module in self.layers:
             module.disable_scale()
 
         self.cur_task = task_idx
-
-        if task_idx == 1:
-            self._known_classes += self.init_cls_num
-        elif task_idx > 1:
-            self._known_classes += self.inc_cls_num
 
         if isinstance(self.backbone, Clip):
         
             self.curr_class_names = train_loader.dataset.get_class_names()
             self.accm_class_names += self.curr_class_names
 
-            self.curr_text_tokens = tokenize(
-                [self.prompt_template.format(c) for c in self.curr_class_names]
-            ).to(self.device)
-
-            self.accm_text_tokens = tokenize(
-                [self.prompt_template.format(c) for c in self.accm_class_names]
-            ).to(self.device)
+            self.curr_text_tokens = tokenize([self.prompt_template.format(c) for c in self.curr_class_names]).to(self.device)
+            self.accm_text_tokens = tokenize([self.prompt_template.format(c) for c in self.accm_class_names]).to(self.device)
 
         if task_idx > 0:
 
@@ -300,91 +284,41 @@ class TRGP(nn.Module):
             
             loss.backward()
 
-            if isinstance(self.backbone, Clip):
+            for i, module in enumerate(self.layers):
 
-                for i, module in enumerate(self.layers):
+                topk = TopK(2)
 
-                    topk = TopK(2)
+                grad = module.weight.grad.data.detach().cpu().numpy()
+                if isinstance(self.backbone, AlexNet) and isinstance(module, Conv2d_TRGP):
+                    grad = grad.reshape(grad.shape[0], -1)
 
-                    grad = module.scale_proj.weight.grad.data.detach().cpu().numpy()
+                for task_id in range(task_idx):
 
-                    for task_id in range(task_idx):
-                        
-                        # Projection of down_proj grad into feature spaces of old data
-                        proj = grad @ self.feature_list_each_tasks[task_id][i] @ self.feature_list_each_tasks[task_id][i].T
-                        proj_norm = np.linalg.norm(proj)
+                    proj = grad @ self.feature_list_each_tasks[task_id][i] @ self.feature_list_each_tasks[task_id][i].T
+                    proj_norm = np.linalg.norm(proj)
 
-                        print(f'Down Proj of Layer {i} of {task_idx} to {task_id} : {proj_norm:.4f}/{np.linalg.norm(grad):.4f} ({proj_norm > Epsilon * np.linalg.norm(grad)})')
+                    print(f'Layer {i} of {task_idx} to {task_id} : {proj_norm:.4f}/{np.linalg.norm(grad):.4f} ({proj_norm > Epsilon * np.linalg.norm(grad)})')
 
-                        if proj_norm > Epsilon * np.linalg.norm(grad):
-                            topk.add({'proj_norm':proj_norm, 'task_id': task_id})
+                    if proj_norm > Epsilon * np.linalg.norm(grad):
+                        topk.add({'proj_norm':proj_norm, 'task_id': task_id})
 
-            
-                    final_decision = [dic['task_id'] for dic in topk.get_top_k()]
-
-                    module.enable_scale(
-                        [torch.tensor(self.feature_list_each_tasks[task_id][i], dtype=torch.float32).to(self.device) for task_id in final_decision]
-                    )
-
-                    print(f'Proj of Layer {i} of {task_idx} consider {final_decision} as trust region')
-
-            elif isinstance(self.backbone, AlexNet):
-
-                for i, module in enumerate(self.layers):
-
-                    topk = TopK(2)
-
-                    if isinstance(module, Conv2d):
-                        grad = module.weight.grad.data.detach().cpu().numpy() # weight of conv
-                        grad = grad.reshape(grad.shape[0], -1)
-                    elif isinstance(module, Linear):
-                        grad = module.weight.grad.data.detach().cpu().numpy() # weight of linear
-
-                    for task_id in range(task_idx):
-
-                        proj = grad @ self.feature_list_each_tasks[task_id][i] @ self.feature_list_each_tasks[task_id][i].T
-                        proj_norm = np.linalg.norm(proj)
-
-                        print(f'Layer {i} of {task_idx} to {task_id} : {proj_norm:.4f}/{np.linalg.norm(grad):.4f} ({proj_norm > Epsilon * np.linalg.norm(grad)})')
-
-                        if proj_norm > Epsilon * np.linalg.norm(grad):
-                            topk.add({'proj_norm':proj_norm, 'task_id': task_id})
-
-                    final_decision = [dic['task_id'] for dic in topk.get_top_k()]
-                    module.enable_scale([
-                        torch.tensor(self.feature_list_each_tasks[task_id][i], dtype=torch.float32).to(self.device) for task_id in final_decision
-                    ])
-                    print(f'Layer {i} of {task_idx} consider {final_decision} as trust region')
+                final_decision = [dic['task_id'] for dic in topk.get_top_k()]
+                module.enable_scale([
+                    torch.tensor(self.feature_list_each_tasks[task_id][i], dtype=torch.float32).to(self.device) for task_id in final_decision
+                ])
+                print(f'Layer {i} of {task_idx} consider {final_decision} as trust region')
 
     def after_task(self, task_idx, buffer, train_loader, test_loaders):
 
+        self._known_classes += self.init_cls_num if task_idx == 0 else self.inc_cls_num
+
         # Save the scale param
+        for i, module in enumerate(self.layers):
+            self.scale_param_each_tasks_each_layers[task_idx][i] = [scale_param.data for scale_param in module.scale_param] # top2
+            self.all_space[task_idx][i] = module.space
+            module.disable_scale()
 
-        if isinstance(self.backbone, Clip):
-
-            # Save the scale param
-            for i, module in enumerate(self.layers):
-
-                self.down_proj[task_idx][i] = module.down_proj
-                self.up_proj[task_idx][i] = module.up_proj
-                
-                self.scale_param_each_tasks_each_layers[task_idx][i] = [scale_param.data for scale_param in module.scale_param] # top2
-                self.all_space[task_idx][i] = module.space
-                module.disable_scale()
-
-        elif isinstance(self.backbone, AlexNet):
-
-            # Save the scale param
-            for i, module in enumerate(self.layers):
-
-                self.scale_param_each_tasks_each_layers[task_idx][i] = [scale_param.data for scale_param in module.scale_param] # top2
-                self.all_space[task_idx][i] = module.space
-                module.disable_scale()
-            
-        x = []
-        for batch in train_loader:
-            x.append(batch['image'].to(self.device))
-        x = torch.cat(x, dim = 0)
+        x = torch.cat([batch['image'].to(self.device) for batch in train_loader], dim = 0)
 
         # hardcoded, choose 125 input from it
         indices = torch.randperm(x.size(0))
@@ -393,7 +327,9 @@ class TRGP(nn.Module):
 
         self.network.eval()
 
-        mat_list = [] # representation (activation) of each layer
+        mat_list = [] # Representation / Activation of each layer
+        threshold = 0.97 + task_idx * 0.003
+
         if isinstance(self.backbone, Clip):
 
             self.network(x, self.curr_text_tokens, compute_input_matrix = True)
@@ -401,25 +337,21 @@ class TRGP(nn.Module):
             for module in self.layers:
 
                 assert module.input_matrix.shape[0] == 125
-                input_matrix = module.input_matrix.view(-1, module.input_matrix.shape[-1]).detach().cpu().numpy().T
-                mat_list.append(input_matrix)
+                mat_list.append(module.input_matrix.view(-1, module.input_matrix.shape[-1]).detach().cpu().numpy().T)
 
         elif isinstance(self.backbone, AlexNet):
 
             self.network(x, compute_input_matrix = True)
             
-            batch_list = [2*12,100,100,125,125] 
-            map_list = [32, 14, 6, 1024, 2048] # harcoded, this is the input size of data in each layer of network
+            batch_list = [2*12,100,100] 
             ksize = [4, 3, 2] # kernel size of each conv layer
             conv_output_size = [29, 12, 5] # output size of each conv layer
             in_channel = [3, 64, 128] # input channel of each conv layer
 
             for i, module in enumerate(self.layers):
                 
-                if isinstance(module, Conv2d):
+                if isinstance(module, Conv2d_TRGP):
                     bsz, ksz, s, inc = batch_list[i], ksize[i], conv_output_size[i], in_channel[i]
-
-                    # act is the input of each layer (both conv and linear)
 
                     mat = np.zeros((ksz * ksz * inc, s * s * bsz))
                     act = module.input_matrix.detach().cpu().numpy()
@@ -432,10 +364,8 @@ class TRGP(nn.Module):
                                 k += 1
 
                     mat_list.append(mat)
-                elif isinstance(module, Linear):
+                elif isinstance(module, Linear_TRGP):
                     mat_list.append(module.input_matrix.detach().cpu().numpy().T)
-
-        threshold = 0.97 + task_idx * 0.003
 
         # get the space for each layer
         if task_idx == 0:
@@ -457,14 +387,6 @@ class TRGP(nn.Module):
                 _, S, _ = np.linalg.svd(activation, full_matrices = False)
                 sval_total = (S**2).sum()
                 
-                #delta = []
-                #R2 = np.dot(activation,activation.transpose())
-                #for ki in range(self.feature_list[i].shape[1]):
-                #    space = self.feature_list[i].transpose()[ki]
-                #    delta_i = np.dot(np.dot(space.transpose(), R2), space)
-                #    delta.append(delta_i)
-                #delta = np.array(delta)
-
                 delta = (self.feature_list[i].T @ activation @ activation.T @ self.feature_list[i]).diagonal()
 
                 # following the GPM to get the sigma (S**2)

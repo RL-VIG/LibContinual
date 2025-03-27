@@ -3,7 +3,7 @@ includesL:
   - headers/device.yaml
   - headers/model.yaml
 
-data_root: /home/chenyiyang/dataset/cifar100
+data_root: /home/xtx/datasets/cifar100
 image_size: &image_size 224
 num_workers: &num_workers 16
 
@@ -52,7 +52,6 @@ backbone:
     step: 1
     act_layer: QuickGELU
     norm_layer: LayerNorm
-
 
 classifier:
   name: RAPF

@@ -17,7 +17,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 
-from .backbone.alexnet_trgp import Conv2d, Linear
+from .backbone.alexnet import Conv2d_TRGP, Linear_TRGP
 
 class Network(nn.Module):
 
@@ -57,7 +57,7 @@ class GPM(nn.Module):
 
         self.layers = [] # 3 Conv2d, Then 2 Linear
         for module in self.network.modules():
-            if isinstance(module, Conv2d) or isinstance(module, Linear):
+            if isinstance(module, Conv2d_TRGP) or isinstance(module, Linear_TRGP):
                 self.layers.append(module)
 
         self.network.to(self.device)
@@ -84,18 +84,23 @@ class GPM(nn.Module):
     
     def inference(self, data, task_id = -1):
 
+        x, y = data['image'].to(self.device), data['label'].to(self.device)
+
         # Task-Aware (Task-Incremetanl Scenario)
         if task_id > -1:
 
-            x, y = data['image'].to(self.device), data['label'].to(self.device) - task_id * self.inc_cls_num
-
+            if task_id == 0:
+                bias_classes = 0
+            elif task_id == 1:
+                bias_classes = self.init_cls_num
+            else:
+                bias_classes = self.init_cls_num + (task_id - 1) * self.inc_cls_num
+            
             logits = self.network(x)
-            preds = logits[task_id].max(1)[1]
+            preds = logits[task_id].max(1)[1] + bias_classes
 
         # Task-Agnostic (Class-Incremetanl Scenario)
         else:
-
-            x, y = data['image'].to(self.device), data['label'].to(self.device)
 
             logits = torch.cat(self.network(x), dim=-1)
             preds = logits.max(1)[1]
@@ -118,7 +123,6 @@ class GPM(nn.Module):
 
             self.feature_mat = [torch.tensor(feat @ feat.T, dtype=torch.float32, device=self.device) for feat in self.feature_list] 
             
-            # TODO: either this or manually set grad to 0 in observe
             for name, param in self.network.named_parameters():
                 param.requires_grad_(True)
                 if 'bn' in name:
@@ -140,8 +144,7 @@ class GPM(nn.Module):
         self.network.eval()
         self.network(x, compute_input_matrix = True)
 
-        batch_list = [2*12,100,100,125,125] 
-        map_list = [32, 14, 6, 1024, 2048] # harcoded, this is the input size of data in each layer of network
+        batch_list = [2*12,100,100] 
         ksize = [4, 3, 2] # kernel size of each conv layer
         conv_output_size = [29, 12, 5] # output size of each conv layer
         in_channel = [3, 64, 128] # input channel of each conv layer
@@ -150,11 +153,10 @@ class GPM(nn.Module):
 
         for i, module in enumerate(self.layers):
             
-            if isinstance(module, Conv2d):
+            if isinstance(module, Conv2d_TRGP):
                 bsz, ksz, s, inc = batch_list[i], ksize[i], conv_output_size[i], in_channel[i]
 
                 # act is the input of each layer (both conv and linear)
-
                 mat = np.zeros((ksz * ksz * inc, s * s * bsz))
                 act = module.input_matrix.detach().cpu().numpy()
 
@@ -166,7 +168,7 @@ class GPM(nn.Module):
                             k += 1
 
                 mat_list.append(mat)
-            elif isinstance(module, Linear):
+            elif isinstance(module, Linear_TRGP):
                 mat_list.append(module.input_matrix.detach().cpu().numpy().T)
 
         threshold = 0.97 + task_idx * 0.003

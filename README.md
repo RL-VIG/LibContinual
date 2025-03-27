@@ -20,6 +20,7 @@ LibContinual is an open source continual learning toolbox based on PyTorch. The 
 + [ERACE, ERAML (ICLR 2022)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/erace,eraml/README.md)
 + [GPM (ICLR 2021)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/gpm/README.md)
 + [TRGP (ICLR 2022)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/trgp/README.md)
++ [API (CVPR 2023)]((https://github.com/RL-VIG/LibContinual/blob/master/reproduce/api/README.md))
 + [PRAKA (ICCV 2023)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/praka/README.md)
 + [RanPAC (NeurIPS 2023)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/ranpac/README.md)
 
@@ -39,7 +40,7 @@ Complete tutorials can be found at [`./docs`](https://libcontinual.readthedocs.i
 ## Datasets
 [CIFAR-100](https://www.cs.toronto.edu/~kriz/cifar.html) are available at [Google Drive](https://drive.google.com/drive/folders/1EL46LQ3ww-F1NVTwFDPIg-nO198cUqWm?usp=sharing)  <br>
 CUB200, ImageNet-R, Tiny-Imagenet are available at [Google Drive](https://drive.google.com/drive/folders/16afRW2952coWJSbiH7cZT1b8pRibA8nH?usp=sharing)  <br>
-CIFAR-10 is avaliable at [Google Drive](https://drive.google.com/drive/folders/1sl2aW1sRpEfQJuJZwajXO2QhR06gQYZx?usp=drive_link) <br>
+CIFAR-10 are avaliable at [Google Drive](https://drive.google.com/drive/folders/1sl2aW1sRpEfQJuJZwajXO2QhR06gQYZx?usp=drive_link) <br>
 
 After the dataset is downloaded, please extract the compressed file to the specified path.
 ```

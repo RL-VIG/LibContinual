@@ -343,25 +343,67 @@ class DualPrompt(nn.Module):
 #   pages={139--149},
 #   year={2022}
 # }
-class L2P(DualPrompt):
-    def __init__(self, emb_d, n_tasks, prompt_param, key_dim=768):
-        super().__init__(emb_d, n_tasks, prompt_param, key_dim)
+class L2P(nn.Module):
 
-    def _init_smart(self, emb_d, prompt_param):
-        self.top_k = 4 # Acorrding to source code of L2P, was 5 before
-        self.task_id_bootstrap = False
+    def __init__(self, length, prompt_init=nn.init.uniform_, prompt_key=False, 
+                 pool_size=None, top_k=None, num_layers=1, embed_dim=768):
 
-        # prompt locations
-        self.g_layers = []
-        if prompt_param[2] > 0:
-            self.e_layers = [0,1,2,3,4]
-        else:
-            self.e_layers = [0]
+        super().__init__()
+        self.length = length
+        self.prompt_init = prompt_init
+        self.pool_size = pool_size
+        self.top_k = top_k
+        self.num_layers = num_layers
+        self.embed_dim = embed_dim
 
-        # prompt pool size
-        self.g_p_length = -1
-        self.e_p_length = int(prompt_param[1])
-        self.e_pool_size = int(prompt_param[0])
+        # Initialize prompt parameters
+        self.prompt = nn.Parameter(
+            torch.empty((self.num_layers, self.pool_size, self.length, embed_dim))
+        )
+        self.prompt_key = nn.Parameter(
+            torch.empty((self.pool_size, embed_dim))
+        )
+        self.prompt_init(self.prompt)
+        self.prompt_init(self.prompt_key)
+
+    def forward(self, x_embed, cls_features=None):
+
+        B, N, C = x_embed.shape
+        assert C == self.embed_dim
+
+        # Normalize key features
+        prompt_key_norm = F.normalize(self.prompt_key, p=2, dim=-1, eps=1e-12)
+        x_embed_norm = F.normalize(cls_features, p=2, dim=-1, eps=1e-12)
+
+        sim = x_embed_norm @ prompt_key_norm.T
+        _, idx = torch.topk(sim, self.top_k, dim=1)
+
+        prompt_id, id_counts = torch.unique(idx, return_counts=True, sorted=True)
+        
+        # Manually pad to pool_size, equivalent as jnp.unique()
+        prompt_id = F.pad(prompt_id, (0, self.pool_size - len(prompt_id)), "constant", prompt_id[0])
+        id_counts = F.pad(id_counts, (0, self.pool_size - len(id_counts)), "constant", 0)
+
+        _, major_idx = torch.topk(id_counts, self.top_k)
+        
+        major_prompt_id = prompt_id[major_idx]
+        idx = major_prompt_id.unsqueeze(0).repeat(B, 1)
+
+        batched_prompt_raw = self.prompt[:, idx]
+
+        batched_prompt = batched_prompt_raw.reshape(
+            batched_prompt_raw.shape[0], 
+            batched_prompt_raw.shape[1], 
+            -1, 
+            batched_prompt_raw.shape[-1]
+        )
+            
+        # Calculate pull constraint loss
+        batched_key_norm = prompt_key_norm[idx]
+        sim_pull = batched_key_norm * x_embed_norm.unsqueeze(1)
+        reduce_sim = torch.sum(sim_pull) / B
+
+        return batched_prompt, reduce_sim
 
 # note - ortho init has not been found to help l2p/dual prompt
 def tensor_prompt(a, b, c=None, ortho=False):

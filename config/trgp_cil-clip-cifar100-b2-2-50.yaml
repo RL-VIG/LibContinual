@@ -8,10 +8,10 @@ task_num: *task_num
 init_cls_num: *init_cls_num
 inc_cls_num: *inc_cls_num
 total_cls_num: *total_cls_num
-epoch: 1 # 4
-testing_times: 1 # delete
+epoch: 4
 val_per_epoch: 4
 
+testing_times: 1
 train_batch_size: 128
 test_batch_size: 64
 
@@ -61,7 +61,7 @@ classifier:
   name: TRGP
   kwargs:
     init_cls_num: *init_cls_num
-    inc_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
     task_num: *task_num
     label_smoothing: 0.
     prompt_template : "a bad photo of a {}."

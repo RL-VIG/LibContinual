@@ -55,8 +55,6 @@ class ViTZoo(nn.Module):
                                     **kwargs
                                     )
 
-        # Hardcoded to be mutlheadattention_Lora, for now
-
         if pretrained:
             print(f'Using pretrained model : {model_name}')
 
@@ -78,31 +76,16 @@ class ViTZoo(nn.Module):
 
                 modified_load_dict[new_key] = load_dict[key]
 
-
-            '''
-            original_keys = set(self.feat.state_dict().keys())
-            modified_keys = set(modified_state_dict.keys())
-
-            # Print differences
-            print("Keys in original state dict but not in modified state dict:")
-            print('\n'.join(original_keys - modified_keys))  # Original keys that are missing in modified
-
-            print('\n')
-            print("Keys in modified state dict but not in original state dict:")
-            print('\n'.join(modified_keys - original_keys))  # Modified keys that are extra in modified
-            assert 0
-            '''
-
             self.feat.load_state_dict(modified_load_dict, strict = False)
 
         self.prompt = None
+        self.prompt_flag = ''
         
     def create_prompt(self, prompt_flag, **kwargs):
         self.prompt_flag = prompt_flag
-        # self.prompt_param = prompt_param
-        # create prompting module
+
         if self.prompt_flag == 'l2p':
-            self.prompt = L2P(768, **kwargs)
+            self.prompt = L2P(**kwargs)
         elif self.prompt_flag == 'dual':
             self.prompt = DualPrompt(768, **kwargs)
         elif self.prompt_flag == 'coda':
@@ -111,7 +94,25 @@ class ViTZoo(nn.Module):
     # pen: get penultimate features    
     def forward(self, image, text=None, pen=False, train=False, **kwargs):
 
-        if self.prompt is not None:
+        if self.prompt_flag == 'l2p':
+
+            with torch.no_grad():
+                self.eval()
+                cls_features = self.feat(image, prompt_flag = self.prompt_flag)
+
+            if train:
+                self.train()
+
+            out, reduce_sim = self.feat(
+                x = image,
+                prompt = self.prompt,
+                cls_features = cls_features,
+                prompt_flag = self.prompt_flag
+            )
+
+            return out, reduce_sim
+
+        elif self.prompt is not None:
             with torch.no_grad():
                 q, _ = self.feat(image)
                 q = q[:,0,:]
@@ -124,8 +125,7 @@ class ViTZoo(nn.Module):
             out = out[:,0,:]
             
         out = out.view(out.size(0), -1)
-        # if not pen:
-        #     out = self.last(out)
+
         if self.prompt is not None and train:
             return out, prompt_loss
         else:
