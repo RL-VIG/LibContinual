@@ -20,7 +20,7 @@ LibContinual is an open source continual learning toolbox based on PyTorch. The 
 + [ERACE, ERAML (ICLR 2022)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/erace,eraml/README.md)
 + [GPM (ICLR 2021)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/gpm/README.md)
 + [TRGP (ICLR 2022)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/trgp/README.md)
-+ [API (CVPR 2023)]((https://github.com/RL-VIG/LibContinual/blob/master/reproduce/api/README.md))
++ [API (CVPR 2023)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/api/README.md)
 + [PRAKA (ICCV 2023)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/praka/README.md)
 + [RanPAC (NeurIPS 2023)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/ranpac/README.md)
 
