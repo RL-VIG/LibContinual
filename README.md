@@ -21,14 +21,14 @@ LibContinual is an open-source continual learning toolbox based on PyTorch. The 
 + [BiC (CVPR 2019)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/bic/README.md): Large Scale Incremental Learning.
 + [LUCIR (CVPR 2019)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/lucir/README.md): Learning a Unified Classifier Incrementally via Rebalancing.
 + [WA (CVPR 2020)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/wa/README.md): Maintaining Discrimination and Fairness in Class Incremental Learning.
-+ [DER (CVPR 2021)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/der/README.md): Dynamically Expandable Representation for Class Incremental Learning.
 + [OCM (ICML 2022)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/ocm/README.md): Online Continual Learning through Mutual Information Maximization.
 + [ERACE, ERAML (ICLR 2022)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/erace,eraml/README.md): New Insights on reducing abrupt representation change in online continual learning.
 + [GPM (ICLR 2021)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/gpm/README.md): Gradient Projection Memory for Continual Learning.
 + [TRGP (ICLR 2022)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/trgp/README.md): Trust Region Gradient Projection for Continual Learning.
 + [API (CVPR 2023)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/api/README.md): Adaptive Plasticity Improvement for Continual Learning.
-+ [PRAKA (ICCV 2023)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/praka/README.md): Prototype Reminiscence and Augmented Asymmetric Knowledge Aggregation for Non-Exemplar Class-Incremental Learning.
 + [RanPAC (NeurIPS 2023)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/ranpac/README.md): Random Projections and Pre-trained Models for Continual Learning.
+<!-- + [PRAKA (ICCV 2023)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/praka/README.md): Prototype Reminiscence and Augmented Asymmetric Knowledge Aggregation for Non-Exemplar Class-Incremental Learning. -->
+<!-- + [DER (CVPR 2021)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/der/README.md): Dynamically Expandable Representation for Class Incremental Learning. -->
 
 ### Foundation model based methods
 + [L2P (CVPR 2022)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/l2p/README.md): Learning to Prompt for Continual Learning.
