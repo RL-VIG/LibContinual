@@ -84,7 +84,7 @@ We adopt standardized evaluation metrics from continual learning literature. Giv
 
 ### Evaluation Metrics
 
-#### **1.** Last Average Accuracy (Batch Version) 
+#### **1.** Last Average Accuracy 
 $$ 
  Acc_T=R_{T, {0\sim T}} \quad (1)
 $$
@@ -101,20 +101,22 @@ $$
 $$
 > Equivalent to Positive BwT in ["new metrics for Continual Learning"](https://arxiv.org/pdf/1810.13166)
 
+<!--
 #### **4.** Overall Average Accuracy (Batch Version) 
 $$ 
  \overline{Acc_T}=\frac{1}{T}\sum_{t=1}^T(R_{t,{0\sim T}}) \quad (4)
 $$
-
-#### **5.** Overall Average Accuracy (Task Version) 
+-->
+#### **4.** Overall Average Accuracy
 $$ 
- \overline{Acc_T}=\frac{1}{T}\sum_{t=1}^T(\frac{1}{t}\sum_{i=1}^t R_{t,i}) \quad (5)
+ \overline{Acc_T}=\frac{1}{T}\sum_{t=1}^T(\frac{1}{t}\sum_{i=1}^t R_{t,i}) \quad (4)
 $$
-
+<!--
 > **Note**:  
-> - “Overall” and “Batch“ versions are equivalent when initial class count equals incremental class count  
-> - Implementation follows: **Lucir** (Task), **Praka** (Batch)
+> - “Overall” and “Batch“ versions are equivalent when initial class count equals incremental class count
 
+> - Implementation follows: **Lucir** (Task), **Praka** (Batch)
+-->
 
 <!--
 ### \[Batch\] Last Average Accuracy
