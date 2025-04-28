@@ -57,7 +57,7 @@ class IncrementalModel(nn.Module):
         self.backbone = backbone
         self.feat_dim = feat_dim
         self.num_class = num_class
-        self.classifier = nn.Linear(feat_dim, num_class)
+        self.classifier = None
         
     def forward(self, x):
         return self.get_logits(x)
@@ -89,7 +89,7 @@ class IncrementalModel(nn.Module):
             bias = copy.deepcopy(self.classifier.bias.data)
             classifier.weight.data[:number_output] = weight
             classifier.bias.data[:number_output] = bias
-
+        
         del self.classifier
         self.classifier = classifier
 
@@ -213,7 +213,7 @@ class WA(Finetune):
             train_loader (DataLoader): DataLoader for training data.
             test_loaders (list): List of DataLoaders for test data.
         '''
-        self.total_classes = buffer.total_classes
+        self.total_classes += self.kwargs['init_cls_num']
         self.network.update_classifier(self.total_classes)
 
         self.total_classes_indexes = np.arange(self.known_classes, self.total_classes)

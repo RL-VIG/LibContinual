@@ -66,7 +66,6 @@ class CIFARTransform:
         else:
             raise ValueError("Unsupported model type")
     
-    
 class ImageNetTransform:
     MEAN=[0.4914, 0.4822, 0.4465]
     STD=[0.2023, 0.1994, 0.2010]
@@ -189,9 +188,6 @@ class ImageNetRTransform:
         else:
             raise ValueError("Unsupported model type")
 
-    
-
-
 class TinyImageNetTransform:
     # Standard normalization values for Tiny-ImageNet
     MEAN = [0.485, 0.456, 0.406]
@@ -266,7 +262,6 @@ class TinyImageNetTransform:
                 return TinyImageNetTransform.alexnet_test_transform
         else:
             raise ValueError("Unsupported model type")
-
 
 transform_classes = {
     'cifar': CIFARTransform,

@@ -684,17 +684,21 @@ def normalize(x, dim=1, eps=1e-8):
 
 def rot_inner_all(x):
     num = x.shape[0]
+
+    image_size = x.shape[2]
+
     R = x.repeat(4, 1, 1, 1)
     a = x.permute(0, 1, 3, 2)
-    a = a.view(num,3, 2, 16, 32)
+
+    a = a.view(num, 3, 2, image_size//2, image_size)
     a = a.permute(2, 0, 1, 3, 4)
     s1 = a[0]
     s2 = a[1]
     s1_1 = torch.rot90(s1, 2, (2, 3))
     s2_2 = torch.rot90(s2, 2, (2, 3))
-    R[num: 2 * num] = torch.cat((s1_1.unsqueeze(2), s2.unsqueeze(2)), dim=2).reshape(num,3, 32, 32).permute(0, 1, 3, 2)
-    R[3 * num:] = torch.cat((s1.unsqueeze(2), s2_2.unsqueeze(2)), dim=2).reshape(num,3, 32, 32).permute(0, 1, 3, 2)
-    R[2 * num: 3 * num] = torch.cat((s1_1.unsqueeze(2), s2_2.unsqueeze(2)), dim=2).reshape(num,3, 32, 32).permute(0, 1, 3, 2)
+    R[num: 2 * num] = torch.cat((s1_1.unsqueeze(2), s2.unsqueeze(2)), dim=2).reshape(num,3, image_size, image_size).permute(0, 1, 3, 2)
+    R[3 * num:] = torch.cat((s1.unsqueeze(2), s2_2.unsqueeze(2)), dim=2).reshape(num,3, image_size, image_size).permute(0, 1, 3, 2)
+    R[2 * num: 3 * num] = torch.cat((s1_1.unsqueeze(2), s2_2.unsqueeze(2)), dim=2).reshape(num,3, image_size, image_size).permute(0, 1, 3, 2)
     return R
 
 
@@ -823,8 +827,6 @@ class OCM_Model(nn.Module):
         self.classifier = nn.Linear(feat_dim, num_class)
         self.head = nn.Linear(feat_dim, 128)  # for self-supervise
         self.device = device
-        self.simclr_aug = self.get_simclr_aug()
-
 
     def get_features(self, x):
         out = self.backbone(x)['features']
@@ -841,32 +843,6 @@ class OCM_Model(nn.Module):
         feat = self.get_features(x)
         logits = self.classifier(feat)
         return logits
-    
-
-    def get_simclr_aug(self):
-        #assert 0, 'change this to original implementation, org impl not get from transform, instead it implement itself.'
-        #hflip = RandomHorizontalFlip()
-        #color_gray = RandomGrayscale(p=0.25)
-        # resize_crop = transforms.RandomResizedCrop(size=(32, 32), scale=(0.3, 1.0), antialias=True)
-        #resize_crop = RandomResizedCrop(size=(32, 32), scale=(0.3, 1.0))
-
-        with torch.no_grad():
-            hflip = HorizontalFlipLayer().to(self.device)
-            color_gray = RandomColorGrayLayer(p=0.25).to(self.device)
-            resize_crop = RandomResizedCropLayer(scale=(0.3, 1.0), size=[32, 32, 3]).to(self.device)
-
-
-            
-            simclr_aug = torch.nn.Sequential(
-                hflip,
-                color_gray,
-                resize_crop
-            )
-
-        return simclr_aug
-
-
-
 
 class OCM(nn.Module):
 
@@ -897,10 +873,14 @@ class OCM(nn.Module):
         self.init_cls_num = kwargs['init_cls_num']
         self.inc_cls_num  = kwargs['inc_cls_num']
         self.task_num     = kwargs['task_num']
-        
-    
-    
+        self.image_size   = kwargs['image_size']
 
+        self.simclr_aug = torch.nn.Sequential(
+            HorizontalFlipLayer().to(self.device),
+            RandomColorGrayLayer(p=0.25).to(self.device),
+            RandomResizedCropLayer(scale=(0.3, 1.0), size=[self.image_size, self.image_size, 3]).to(self.device)
+        )
+        
     def observe(self, data):
         # get data and labels
         x, y = data['image'], data['label']
@@ -935,7 +915,7 @@ class OCM(nn.Module):
         https://github.com/gydpku/OCM/blob/main/test_cifar10.py
         """
         images1, rot_sim_labels = Rotation(x, y)
-        images_pair = torch.cat([images1, self.model.simclr_aug(images1)], dim=0)
+        images_pair = torch.cat([images1, self.simclr_aug(images1)], dim=0)
         rot_sim_labels = rot_sim_labels.cuda()
         feature_map,outputs_aux = self.model.forward_head(images_pair)
         simclr = normalize(outputs_aux) 
@@ -947,7 +927,7 @@ class OCM(nn.Module):
         sim_matrix += get_similarity_matrix(simclr)
         loss_sim1 = Supervised_NT_xent_n(sim_matrix, labels=rot_sim_labels, temperature=0.07)
         lo1 = loss_sim1
-        y_pred = self.model.forward_classifier(self.model.simclr_aug(x))
+        y_pred = self.model.forward_classifier(self.simclr_aug(x))
         loss = F.cross_entropy(y_pred, y) + lo1
         pred = torch.argmin(y_pred, dim=1)
         acc = torch.sum(pred == y).item() / x.size(0)
@@ -967,8 +947,8 @@ class OCM(nn.Module):
         images1, rot_sim_labels = Rotation(x, y) 
         images1_r, rot_sim_labels_r = Rotation(mem_x,
                                                mem_y)
-        images_pair = torch.cat([images1, self.model.simclr_aug(images1)], dim=0)
-        images_pair_r = torch.cat([images1_r, self.model.simclr_aug(images1_r)], dim=0)
+        images_pair = torch.cat([images1, self.simclr_aug(images1)], dim=0)
+        images_pair_r = torch.cat([images1_r, self.simclr_aug(images1_r)], dim=0)
         t = torch.cat((images_pair,images_pair_r),dim=0)
         feature_map, u = self.model.forward_head(t)
         pre_u_feature, pre_u = self.previous_model.forward_head(images1_r)
@@ -993,8 +973,8 @@ class OCM(nn.Module):
         loss_sim_pre = Supervised_NT_xent_pre(sim_matrix_r_pre, labels=rot_sim_labels_r, temperature=0.07)
         loss_sim = Supervised_NT_xent_n(sim_matrix, labels=rot_sim_labels, temperature=0.07)
         lo1 = loss_sim_r + loss_sim + loss_sim_pre
-        y_label = self.model.forward_classifier(self.model.simclr_aug(mem_x))
-        y_label_pre = self.previous_model.forward_classifier(self.model.simclr_aug(mem_x))
+        y_label = self.model.forward_classifier(self.simclr_aug(mem_x))
+        y_label_pre = self.previous_model.forward_classifier(self.simclr_aug(mem_x))
         loss =  F.cross_entropy(y_label, mem_y) + lo1 + F.mse_loss(y_label_pre[:, :self.prev_cls_num],
                                                                             y_label[:,
                                                                             :self.prev_cls_num])

@@ -12,14 +12,14 @@ init_cls_num: *init_cls_num
 inc_cls_num: *inc_cls_num
 task_num: *task_num
 
-epoch: 250 # 250
-stage2_epoch: 250 # 250, 2 in source code?
+epoch: 250
+stage2_epoch: 250
 val_per_epoch: 50
 batch_size: 128
 
-testing_times: 10 # 10
+testing_times: 5
 
-seed: 1993
+seed: 2
 
 num_workers: 0
 

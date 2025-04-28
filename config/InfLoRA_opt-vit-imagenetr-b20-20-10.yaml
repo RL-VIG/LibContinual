@@ -1,52 +1,67 @@
-# Dataset ImageNet-R
+
 dataset: &dataset "imagenet-r"
-data_root: "/data/lqx/imagenet-r/"
+data_root: "/home/lvqiexuan/temp_data/imagenet-r/"
 init_cls_num: &init_cls_num 20
 inc_cls_num: &inc_cls_num 20
 task_num: &task_num 10
-epoch: &epoch 30
 image_size: &image_size 224
-
-image_size: *image_size
+epoch: &epoch 20
+ 
 dataset: *dataset
 task_num: *task_num
 init_cls_num: *init_cls_num
 inc_cls_num: *inc_cls_num
 epoch: *epoch
 val_per_epoch: *epoch
+
 workers: 24
 
+seed: 42
+
 batch_size: 128
+
+setting: task-agnostic 
+
 testing_times: 1
 
-setting: task-agnostic
+train_trfms:
+  - RandomResizedCrop:
+      size: *image_size
+      scale: [0.05, 1.0]
+      ratio: [0.75, 1.333]
+  - RandomHorizontalFlip:
+      p: 0.5
+  - ToTensor: {}
+
+test_trfms: 
+  - Resize:
+      size: 256
+      interpolation: BICUBIC
+  - CenterCrop:
+      size: *image_size
+  - ToTensor: {}
 
 optimizer:
-  name: Adam
+  name: SGD
   kwargs:
-    lr: 0.0005
-    weight_decay: 0.
-    betas: [0.9, 0.999]
+    lr: 8e-3
+    momentum: 0.9
 
 lr_scheduler:
-  name: CosineSchedule # CosineAnnealingLR
-  kwargs:
-    # T_max: *epoch
-    K: *epoch
+  name: Constant
 
 backbone:
   name: vit_pt_imnet
   kwargs:
     pretrained: True
-    model_name : vit_base_patch16_224_in21k
-    attn_layer: MultiHeadAttention_MultiMaskedLoRA3
-    block_layer: ResidualAttentionBiBlock # Bi
-    transformer_layer: Transformer_Proj
+    model_name : vit_base_patch16_224_in21k # vit_base_patch16_224
+    attn_layer: MultiHeadAttention_LoRA
     lora_rank: 10
 
 classifier:
-  name: MInfLoRA3
+  name: InfLoRA_OPT
   kwargs:
+    use_ca: False
     dataset: *dataset
     init_cls_num: *init_cls_num
     inc_cls_num: *inc_cls_num
@@ -54,5 +69,4 @@ classifier:
     lame: 1.0
     lamb: 0.95
     embd_dim: 768
-    use_ca: False
-    eval_mat: False
+    

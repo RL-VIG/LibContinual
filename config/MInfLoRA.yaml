@@ -3,7 +3,7 @@ dataset: &dataset cifar100
 init_cls_num: &init_cls_num 10
 inc_cls_num: &inc_cls_num 10
 task_num: &task_num 10
-epoch: &epoch 5
+epoch: &epoch 20
 image_size: &image_size 224
 
 dataset: *dataset
@@ -14,10 +14,9 @@ epoch: *epoch
 val_per_epoch: *epoch
 
 batch_size: 128
-testing_times: 10
+testing_times: 1
 
 setting: task-agnostic
-#setting: task-aware
 
 train_trfms:
   - RandomResizedCrop:
@@ -53,7 +52,9 @@ backbone:
   kwargs:
     pretrained: True
     model_name : vit_base_patch16_224_in21k
-    attn_layer: MultiHeadAttention_MaskedLoRA
+    attn_layer: MultiHeadAttention_MaskedLoRA1
+    block_layer: ResidualAttentionBiBlock # Bi
+    transformer_layer: Transformer_Proj
     lora_rank: 10
 
 classifier:
@@ -67,3 +68,4 @@ classifier:
     lamb: 0.95
     embd_dim: 768
     use_ca: False
+    eval_mat: False

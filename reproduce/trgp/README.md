@@ -14,7 +14,7 @@ Catastrophic forgetting is one of the major challenges in continual learning. To
 }
 ```
 
-## How to Reproduce RanPAC
+## How to Reproduce
 
 - **Step1: Set the path in `run_trainer.py` with `./config/trgp.yaml`**
   ```python

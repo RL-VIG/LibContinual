@@ -173,8 +173,8 @@ class MaskedAdapter(Adapter):
                  adapter_layernorm_option="in"):
         super().__init__(d_model, bottleneck, dropout, init_option, adapter_scalar, adapter_layernorm_option)
 
-        self.down_proj = Linear(self.n_embd, 64)
-        self.up_proj = Linear(self.down_size, self.n_embd)
+        self.down_proj = Linear_TRGP(self.n_embd, 64)
+        self.up_proj = Linear_TRGP(self.down_size, self.n_embd)
 
     def forward(self, x, add_residual=True, residual=None, compute_input_matrix=False):
 

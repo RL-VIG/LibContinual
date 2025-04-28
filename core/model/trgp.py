@@ -129,6 +129,8 @@ class TRGP(nn.Module):
     def observe(self, data):
         
         x, y = data['image'].to(self.device), data['label'].to(self.device) - self._known_classes
+        if len(y) == 1: # Ignore batch_size == 1
+            return None, 0., torch.zeros(1, requires_grad=True)
 
         if isinstance(self.backbone, Clip):
 
@@ -169,6 +171,10 @@ class TRGP(nn.Module):
 
         x, y = data['image'].to(self.device), data['label'].to(self.device)
         
+        # Add dummy, to prevert batch_size == 1
+        dummy_x = torch.randn_like(x[:1])  # only one dummy sample
+        x = torch.cat([x, dummy_x], dim=0)
+
         # Task-Aware (Task-Incremetanl Scenario)
         if task_id > -1:
 
@@ -233,6 +239,9 @@ class TRGP(nn.Module):
                 raise NotImplementedError
 
             preds = torch.cat(logits, dim=-1).softmax(dim=-1).argmax(dim=1)
+
+        # Remove dummy
+        preds = preds[:-1]
 
         correct_count = preds.eq(y).sum().item()
         acc = correct_count / y.size(0)

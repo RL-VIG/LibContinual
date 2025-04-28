@@ -225,6 +225,7 @@ class MultiHeadAttention_LoRA(MultiHeadAttention):
         self.apply_lora = True
 
     def merge_weight(self):
+        
         q_weight, k_weight, v_weight = self.qkv.weight.chunk(3, dim=0)
         k_weight = k_weight + self.lora_B_k.weight @ self.lora_A_k.weight
         v_weight = v_weight + self.lora_B_v.weight @ self.lora_A_v.weight
@@ -240,7 +241,7 @@ class MultiHeadAttention_LoRA(MultiHeadAttention):
         if get_input_matrix:
             self.cur_matrix = (self.cur_matrix * self.n_cur_matrix + torch.bmm(x.detach().permute(0, 2, 1), x.detach()).sum(dim=0).cpu())/(self.n_cur_matrix + x.shape[0] * x.shape[1])
             self.n_cur_matrix += x.shape[0]*x.shape[1]
-            
+
         B, N, C = x.shape
 
         q_weight, k_weight, v_weight = self.qkv.weight.chunk(3, dim=0)
@@ -252,6 +253,89 @@ class MultiHeadAttention_LoRA(MultiHeadAttention):
         qkv = F.linear(x, torch.cat([q_weight, k_weight, v_weight], dim=0), self.qkv.bias.data).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
         
         q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
+
+        attn = (q @ k.transpose(-2, -1)) * self.scale
+
+        if attn_mask is not None:
+            attn += attn_mask.unsqueeze(0) # For head axis broadcasting
+
+        attn = attn.softmax(dim=-1)
+        attn = self.attn_drop(attn)
+                
+        if register_hook:
+            self.save_attention_map(attn)
+            attn.register_hook(self.save_attn_gradients)        
+
+        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        x = self.proj(x)
+        x = self.proj_drop(x)
+
+        return x
+
+class MultiHeadAttention_SDLoRA(MultiHeadAttention):
+    def __init__(self, dim, num_heads=8, qkv_bias=True, qk_scale=None, attn_drop=0., proj_drop=0., lora_rank=10, lora_bias=False):
+        super().__init__(dim, num_heads, qkv_bias, qk_scale, attn_drop, proj_drop)
+
+        self.lora_rank = lora_rank
+        self.lora_bias = lora_bias
+        
+        self.lora_A_q_list = nn.ModuleList([])
+        self.lora_B_q_list = nn.ModuleList([])
+        self.lora_A_v_list = nn.ModuleList([])
+        self.lora_B_v_list = nn.ModuleList([])
+
+        self.assimilated_mag_lora_q = []
+        self.assimilated_mag_lora_v = []
+
+    def init_param(self):
+
+        self.lora_A_q_list.append(nn.Linear(self.dim, self.lora_rank, bias=self.lora_bias))
+        self.lora_B_q_list.append(nn.Linear(self.lora_rank, self.dim, bias=self.lora_bias))
+        self.lora_A_v_list.append(nn.Linear(self.dim, self.lora_rank, bias=self.lora_bias))
+        self.lora_B_v_list.append(nn.Linear(self.lora_rank, self.dim, bias=self.lora_bias))
+
+        nn.init.kaiming_uniform_(self.lora_A_q_list[-1].weight, a=math.sqrt(5))
+        nn.init.kaiming_uniform_(self.lora_A_v_list[-1].weight, a=math.sqrt(5))
+        nn.init.zeros_(self.lora_B_q_list[-1].weight)
+        nn.init.zeros_(self.lora_B_v_list[-1].weight)
+
+        self.assimilated_mag_lora_q.append(
+            torch.Tensor([0.0]).to(self.qkv.weight.device)
+        )
+        self.assimilated_mag_lora_v.append(
+            torch.Tensor([0.0]).to(self.qkv.weight.device)
+        )
+
+        assert len(self.lora_A_q_list) == len(self.mag_lora)
+        assert len(self.mag_lora) == len(self.assimilated_mag_lora_q)
+
+    def forward(self, x, attn_mask=None, register_hook=False, prompt=None):
+    
+        B, N, C = x.shape
+
+        qq = self.mag_lora[-1] * self.lora_B_q_list[-1](self.lora_A_q_list[-1](x))
+        vv = self.mag_lora[-1] * self.lora_B_v_list[-1](self.lora_A_v_list[-1](x))
+
+        for i in range(len(self.lora_A_q_list) - 1):
+
+            norm_B = torch.norm(self.lora_B_q_list[i].weight)
+            norm_A = torch.norm(self.lora_A_q_list[i].weight)
+            
+            if norm_B != 0 and norm_A != 0: # Only in SD-LoRA-KD, where direction of lora being decomposed
+                qq += (self.mag_lora[i] + self.assimilated_mag_lora_q[i]) * self.lora_B_q_list[i](self.lora_A_q_list[i](x)) / (norm_B * norm_A)
+
+            norm_B = torch.norm(self.lora_B_v_list[i].weight)
+            norm_A = torch.norm(self.lora_A_v_list[i].weight)
+
+            if norm_B != 0 and norm_A != 0:
+                vv += (self.mag_lora[i] + self.assimilated_mag_lora_v[i]) * self.lora_B_v_list[i](self.lora_A_v_list[i](x)) / (norm_B * norm_A)
+
+        qkv = self.qkv(x)
+        qkv[:, :, : self.dim] += qq
+        qkv[:, :, -self.dim :] += vv
+
+        qkv = qkv.reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        q, k, v = qkv[0], qkv[1], qkv[2]
 
         attn = (q @ k.transpose(-2, -1)) * self.scale
 
@@ -350,6 +434,165 @@ class MultiHeadAttention_MaskedLoRA(MultiHeadAttention_LoRA):
         x = self.proj_drop(x)
         return x
 
+# MInfLoRA1
+class MultiHeadAttention_MaskedLoRA1(MultiHeadAttention):
+    def __init__(self, dim, num_heads=8, qkv_bias=True, qk_scale=None, attn_drop=0., proj_drop=0., lora_rank=10, lora_bias=False):
+        super().__init__(dim, num_heads, qkv_bias, qk_scale, attn_drop, proj_drop)
+
+        self.cur_task = -1
+        self.lora_rank = lora_rank
+        
+        self.cur_matrix = torch.zeros(self.dim ,self.dim)
+        self.n_cur_matrix = 0
+
+        self.lora_bias = lora_bias
+
+        self.lora_A_k_list = nn.ModuleList([])
+        self.lora_B_k_list = nn.ModuleList([])
+        self.lora_A_v_list = nn.ModuleList([])
+        self.lora_B_v_list = nn.ModuleList([]) 
+
+        self.space_k = [0 for _ in range(10)]
+        self.space_v = [0 for _ in range(10)]
+        self.identity_matrix = torch.eye(self.qkv.weight.shape[1])
+        self.scale_param = nn.ParameterList([])
+
+    def init_param(self):
+
+        self.lora_A_k_list.append(nn.Linear(self.dim, self.lora_rank, bias=self.lora_bias))
+        self.lora_B_k_list.append(nn.Linear(self.lora_rank, self.dim, bias=self.lora_bias))
+        self.lora_A_v_list.append(nn.Linear(self.dim, self.lora_rank, bias=self.lora_bias))
+        self.lora_B_v_list.append(nn.Linear(self.lora_rank, self.dim, bias=self.lora_bias))
+        self.scale_param.append(nn.Parameter(self.identity_matrix))
+
+        nn.init.kaiming_uniform_(self.lora_A_k_list[-1].weight, a=math.sqrt(5))
+        nn.init.kaiming_uniform_(self.lora_A_v_list[-1].weight, a=math.sqrt(5))
+        nn.init.zeros_(self.lora_B_k_list[-1].weight)
+        nn.init.zeros_(self.lora_B_v_list[-1].weight)
+
+        self.cur_task += 1
+
+    def reset_input_matrix(self):
+        self.cur_matrixs = []
+
+    def forward(self, x, x_proj, probs, attn_mask=None, expert_id=0, register_hook=False, prompt=None, get_input_matrix=False):
+        
+        if get_input_matrix:            
+            assert x.shape[0] < 512
+            self.cur_matrixs.append(x.detach())
+
+        if x.shape[0] > 128:
+            # do some drift check here
+            activation = torch.bmm(x.permute(0, 2, 1), x).sum(dim=0) / x.shape[0]
+
+            # get the intersect between previous activation and curr activation
+            activation = self.lora_A_k_list[-1].weight.data.T @ self.lora_A_k_list[-1].weight.data @ activation
+
+            if self.cur_task > 0:
+                activation = activation - self.feature_mat @ activation
+
+            U, _, _ = torch.linalg.svd(activation, full_matrices = False)
+            A_new = U[:,:self.lora_rank].T / math.sqrt(3)
+            A_old = self.lora_A_k_list[-1].weight.data
+            Bk_old = self.lora_B_k_list[-1].weight.data
+            Bv_old = self.lora_B_v_list[-1].weight.data
+
+            tmp = A_old @ torch.pinverse(A_new)
+            Bk_new = Bk_old @ tmp
+            Bv_new = Bv_old @ tmp
+
+            '''
+            # Compute matmul results
+            Bk_old_A_old = Bk_old @ A_old
+            Bk_new_A_new = Bk_new @ A_new
+            Bv_old_A_old = Bv_old @ A_old
+            Bv_new_A_new = Bv_new @ A_new
+
+            # Compute the Frobenius norm of the difference between old and new matmul results
+            frobenius_norm_Bk = torch.norm(Bk_old_A_old - Bk_new_A_new, p='fro')
+            frobenius_norm_Bv = torch.norm(Bv_old_A_old - Bv_new_A_new, p='fro')
+
+            # Printing the results
+            print(f"Frobenius norm difference between Bk_old @ A_old and Bk_new @ A_new: {frobenius_norm_Bk.item()}")
+            print(f"Frobenius norm difference between Bv_old @ A_old and Bv_new @ A_new: {frobenius_norm_Bv.item()}")
+            '''
+
+            self.lora_A_k_list[-1].weight.data.copy_(A_new)
+            self.lora_A_v_list[-1].weight.data.copy_(A_new)
+            self.lora_B_k_list[-1].weight.data.copy_(Bk_new)
+            self.lora_B_v_list[-1].weight.data.copy_(Bv_new)
+
+        B, N, C = x.shape
+        q_weight, k_weight, v_weight = self.qkv.weight.chunk(3, dim=0)
+
+        for ii in range(self.cur_task):
+            k_weight = k_weight + self.lora_B_k_list[ii].weight @ self.lora_A_k_list[ii].weight
+            v_weight = v_weight + self.lora_B_v_list[ii].weight @ self.lora_A_v_list[ii].weight
+
+        k_weight = k_weight + self.lora_B_k_list[-1].weight @ self.lora_A_k_list[-1].weight
+        v_weight = v_weight + self.lora_B_v_list[-1].weight @ self.lora_A_v_list[-1].weight
+
+        '''
+        for ii in range(self.cur_task):
+            if not isinstance(self.space_k[ii], int):
+
+                space_k = self.space_k[ii]
+                space_v = self.space_v[ii]
+                scale_k = self.scale_param[ii]
+
+                # Q Scaling
+                scalee = scale_k[:space_k.shape[0], :space_k.shape[0]]
+
+                # QQ^T Scaling
+                scalee = scale_k[:space_k.shape[0], :space_k.shape[0]] @ scale_k[:space_k.shape[0], :space_k.shape[0]].T
+
+                # QQ^T Diagonal Scaling12
+                #scalee = torch.diag(torch.diag(scale_k[:space_k.shape[0], :space_k.shape[0]] @ scale_k[:space_k.shape[0], :space_k.shape[0]].T))
+
+                # Q Diagonal Scaling
+                #scalee = torch.diag(torch.diag(scale_k[:space_k.shape[0], :space_k.shape[0]]))
+
+                #scalee = scale_k[0, 0]
+                scalee = self.mag_lora[ii]
+
+                use_scale = False
+                if use_scale:
+
+                    norm_B = torch.norm(self.lora_B_k_list[ii].weight)
+                    norm_A = torch.norm(self.lora_A_k_list[ii].weight)
+
+                    k_weight = k_weight - self.lora_B_k_list[ii].weight @ self.lora_A_k_list[ii].weight @ space_k.T @ space_k
+                    k_weight = k_weight + scalee * (self.lora_B_k_list[ii].weight @ self.lora_A_k_list[ii].weight @ space_k.T @ space_k) / (norm_B * norm_A)
+
+                    norm_B = torch.norm(self.lora_B_v_list[ii].weight)
+                    norm_A = torch.norm(self.lora_A_v_list[ii].weight)
+
+                    v_weight = v_weight - self.lora_B_v_list[ii].weight @ self.lora_A_v_list[ii].weight @ space_v.T @ space_v
+                    v_weight = v_weight + scalee * (self.lora_B_v_list[ii].weight @ self.lora_A_v_list[ii].weight @ space_v.T @ space_v) / (norm_B * norm_A)
+        '''
+
+        qkv = F.linear(x, torch.cat([q_weight, k_weight, v_weight], dim=0), self.qkv.bias.data).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        
+        q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
+
+        attn = (q @ k.transpose(-2, -1)) * self.scale
+
+        if attn_mask is not None:
+            attn += attn_mask.unsqueeze(0) # For head axis broadcasting
+
+        attn = attn.softmax(dim=-1)
+        attn = self.attn_drop(attn)
+                
+        if register_hook:
+            self.save_attention_map(attn)
+            attn.register_hook(self.save_attn_gradients)        
+
+        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        x = self.proj(x)
+        x = self.proj_drop(x)
+
+        return x, x, probs
+
 # MInfLoRA2
 class MultiHeadAttention_MultiMaskedLoRA(MultiHeadAttention_MaskedLoRA):
     def __init__(self, dim, num_heads=8, qkv_bias=True, qk_scale=None, attn_drop=0., proj_drop=0., lora_rank=10, lora_bias=False):
@@ -395,71 +638,6 @@ class MultiHeadAttention_MultiMaskedLoRA(MultiHeadAttention_MaskedLoRA):
             assert expert_id == 0
             self.cur_matrix = (self.cur_matrix * self.n_cur_matrix + torch.bmm(x.detach().permute(0, 2, 1), x.detach()).sum(dim=0).cpu())/(self.n_cur_matrix + B * N)            
             self.n_cur_matrix += B * N
-        
-        ''' # By each
-        if not self.training and not get_input_matrix:
-            with torch.no_grad():
-
-                # Task Save Space
-                cur_cur_matrix = torch.bmm(x.detach().permute(0, 2, 1), x.detach())
-                # (C, C, B)
-                cur_cur_matrix = cur_cur_matrix.permute(1, 2, 0)
-                
-                saved = torch.stack([self.saved_space[idd][0] for idd in range(self.activated_expert + 1)]).to(x.device)
-                # (task_num, C, C)
-                proj_mat = torch.bmm(saved, saved.transpose(1, 2))
-                
-                # (task_num, C, C, B)
-                proj_mat = torch.einsum('ijk,klm->ijlm', proj_mat, cur_cur_matrix)
-                
-                # (task_num, B)
-                proj_norm1 = np.linalg.norm(proj_mat, axis=(1, 2))
-
-                # Scaling Mask
-                sccaling = False
-                if self.activated_expert >= 1 and sccaling:
-                    proj_norm2 = []
-                    for idd in range(1, self.activated_expert + 1):
-                        proj_mat = self.space[idd][0] @ self.space[idd][0].T
-                        proj_mat = proj_mat.unsqueeze(0)
-                        print(proj_mat.shape)
-                        proj_mat = torch.einsum('ijk,klm->ijlm', proj_mat, cur_cur_matrix)
-                        proj_norm2.append(np.linalg.norm(proj_mat, axis=(1, 2)))
-                    proj_norm2 = np.concatenate(proj_norm2, axis=0)
-
-                    proj_norm = proj_norm1 + proj_norm2
-                else:
-                    proj_norm = proj_norm1
-
-                # (B, )
-                selected_expert_id = np.argmax(proj_norm, axis = 0)
-
-                self.hit += np.sum(selected_expert_id == expert_id)
-                self.total += selected_expert_id.size
-        '''
-
-        '''# By Batch
-        if not self.training and not get_input_matrix:
-            with torch.no_grad():
-
-                # Task Save Space
-                cur_cur_matrix = torch.bmm(x.detach().permute(0, 2, 1), x.detach()) 
-                cur_cur_matrix = cur_cur_matrix.permute(1, 2, 0) # (C, C, B)
-                saved = torch.stack([self.saved_space[idd][0] for idd in range(self.activated_expert + 1)]).to(x.device) # (task_num, C, C)
-                
-                proj_mat = saved.transpose(1, 2) # (task_num, r, C)
-                proj_mat = torch.einsum('ijk,klm->ijlm', proj_mat, cur_cur_matrix) # (task_num, r, C) @ # (C, C, B) -> (task_num, r, C, B)
-                
-                proj_norm = np.linalg.norm(proj_mat, axis=(1, 2)) # (task_num, B)
-
-                # (B, )
-                selected_expert_id = np.argmax(proj_norm, axis = 0)
-                selected_expert_id = np.bincount(selected_expert_id).argmax()
-
-                if selected_expert_id == expert_id:
-                    self.hit += 1
-                self.total += 1
-        '''
 
         # By Sum and Batch
         if not self.training and not get_input_matrix:
@@ -467,19 +645,18 @@ class MultiHeadAttention_MultiMaskedLoRA(MultiHeadAttention_MaskedLoRA):
 
                 cur_cur_matrix = torch.bmm(x.detach().permute(0, 2, 1), x.detach()).sum(dim=0) / (B * N) # (C, C)
                 saved = torch.stack([self.saved_space[idd][0] for idd in range(self.activated_expert + 1)]).to(x.device) # (task_num, C, r)
-                
+                #saved = torch.stack([self.space[idd][0] for idd in range(self.activated_expert + 1)]).to(x.device) # (task_num, C, r)
+
                 proj_mat = saved.transpose(1, 2) # (task_num, r, C)
                 proj_mat = torch.einsum('ijk,kl->ijl', proj_mat, cur_cur_matrix) # (task_num, r, C) @ (C, C)
                 
-                proj_norm = np.linalg.norm(proj_mat, axis=(1, 2)) # (task_num, )
+                proj_norm = np.linalg.norm(proj_mat.cpu(), axis=(1, 2)) # (task_num, )
                 
                 proj_norm = softmax(proj_norm)
                 probs.append(proj_norm)
                 selected_expert_id = np.argmax(proj_norm, axis = 0) # (task_num, )
-
-                if selected_expert_id == expert_id:
-                    self.hit += 1
-                self.total += 1
+                
+                expert_id = selected_expert_id
 
         q_weight, k_weight, v_weight = self.qkv.weight.chunk(3, dim=0)
 
@@ -545,196 +722,8 @@ class MultiHeadAttention_MultiMaskedLoRA(MultiHeadAttention_MaskedLoRA):
         x_proj = self.proj_drop(x_proj)
 
         return x, x_proj, probs
-
-# MInfLoRA3
-class MultiHeadAttention_MultiMaskedLoRA3(MultiHeadAttention_MaskedLoRA):
-    def __init__(self, dim, num_heads=8, qkv_bias=True, qk_scale=None, attn_drop=0., proj_drop=0., lora_rank=10, lora_bias=False):
-        super().__init__(dim, num_heads, qkv_bias, qk_scale, attn_drop, proj_drop, lora_rank, lora_bias)
-
-        self.activated_expert = 0
-        self.saved_space = [[] for _ in range(10)]
-
-        self.hit = 0
-        self.total = 0
-        self.projected_cur_matrix = torch.zeros(self.dim ,self.dim)
-        self.n_projected_cur_matrix = 0
-
-    def reset_input_matrix(self):
-        super().reset_input_matrix()
-        self.projected_cur_matrix.zero_()
-        self.n_projected_cur_matrix = 0
-
-    def enable_scale(self, task_id, space):
-        
-        if len(space) == 2:
-            self.space[task_id][0] = space[0]
-            self.space[task_id][1] = space[1]
-            self.scaling_mask[task_id][0] = True
-            self.scaling_mask[task_id][1] = True
-        elif len(space) == 1:
-            self.space[task_id][0] = space[0]
-            self.scaling_mask[task_id][0] = True
-
-        for scale_param_list in self.scale_param:
-            for scale_param in scale_param_list:
-                scale_param = scale_param.to(self.qkv.weight.device)
-
-    def save_space(self, task_id, space):
-        self.activated_expert = task_id
-        self.saved_space[task_id].append(space)
 
     def forward1(self, x, x_proj, probs, attn_mask=None, expert_id=0, register_hook=False, prompt=None, get_input_matrix=False):
-        
-        B, N, C = x.shape
-
-        if get_input_matrix:
-            assert expert_id == 0
-            self.cur_matrix = (self.cur_matrix * self.n_cur_matrix + torch.bmm(x.detach().permute(0, 2, 1), x.detach()).sum(dim=0).cpu())/(self.n_cur_matrix + B * N)            
-            self.n_cur_matrix += B * N
-
-        '''
-        # By each
-        if not self.training and not get_input_matrix:
-            with torch.no_grad():
-
-                # Task Save Space
-                cur_cur_matrix = torch.bmm(x.detach().permute(0, 2, 1), x.detach()) / (B * N) # (B, C, C)
-                cur_cur_matrix = cur_cur_matrix.permute(1, 2, 0) # (C, C, B)
-                saved = torch.stack([self.saved_space[idd][0] for idd in range(self.activated_expert + 1)]).to(x.device) # (task_num, C, r)
-                proj_mat = saved.transpose(1, 2) # (task_num, r, C)
-
-                proj_mat = torch.einsum('ijk,klm->ijlm', proj_mat, cur_cur_matrix) # (task_num, r, C) @ (C, C, B) -> (task_num, r, C, B)
-
-                proj_norm = np.linalg.norm(proj_mat, axis=(1, 2)) # (task_num, B)
-                selected_expert_id = np.argmax(proj_norm, axis = 0) # (B, )
-        '''
-
-        '''# By Batch
-        if not self.training and not get_input_matrix:
-            with torch.no_grad():
-
-                # Task Save Space
-                cur_cur_matrix = torch.bmm(x.detach().permute(0, 2, 1), x.detach()) 
-                cur_cur_matrix = cur_cur_matrix.permute(1, 2, 0) # (C, C, B)
-                saved = torch.stack([self.saved_space[idd][0] for idd in range(self.activated_expert + 1)]).to(x.device) # (task_num, C, C)
-                
-                proj_mat = saved.transpose(1, 2) # (task_num, r, C)
-                proj_mat = torch.einsum('ijk,klm->ijlm', proj_mat, cur_cur_matrix) # (task_num, r, C) @ # (C, C, B) -> (task_num, r, C, B)
-                
-                proj_norm = np.linalg.norm(proj_mat, axis=(1, 2)) # (task_num, B)
-
-                # (B, )
-                selected_expert_id = np.argmax(proj_norm, axis = 0)
-                selected_expert_id = np.bincount(selected_expert_id).argmax()
-
-                if selected_expert_id == expert_id:
-                    self.hit += 1
-                self.total += 1
-        '''
-
-        # By Sum and Batch
-        if not self.training and not get_input_matrix:
-            with torch.no_grad():
-                '''
-                cur_cur_matrix = torch.bmm(x.detach().permute(0, 2, 1), x.detach()).sum(dim=0) / (B * N) # (C, C)
-                saved = torch.stack([self.saved_space[idd][0] for idd in range(self.activated_expert + 1)]).to(x.device) # (task_num, C, r)
-
-                proj_mat = saved.transpose(1, 2) # (task_num, r, C)
-                proj_mat = torch.einsum('ijk,kl->ijl', proj_mat, cur_cur_matrix) # (task_num, r, C) @ (C, C)
-                
-                proj_norm = np.linalg.norm(proj_mat, axis=(1, 2)) # (task_num, )
-                
-                proj_norm = softmax(proj_norm)
-                probs.append(proj_norm)
-                selected_expert_id = np.argmax(proj_norm, axis = 0) # (task_num, )
-                
-                expert_id = selected_expert_id
-                print(expert_id)
-                '''
-                cur_cur_matrix = torch.bmm(x.detach().permute(0, 2, 1), x.detach()).sum(dim=0) / (B * N) # (C, C)
-                proj_mat = torch.cat([
-                    torch.stack([sp.T for sp in self.saved_space[idd]])
-                    for idd in range(self.activated_expert + 1)], dim=0).to(x.device) # (task_num, r, C)
-
-                proj_mat = torch.einsum('ijk,kl->ijl', proj_mat, cur_cur_matrix) # (task_num, r, C) @ (C, C)
-                proj_norm = np.linalg.norm(proj_mat, axis=(1, 2)) # (task_num, )
-                
-                proj_norm = softmax(proj_norm)
-                probs.append(proj_norm)
-                selected_expert_id = np.argmax(proj_norm, axis = 0) # (task_num, )
-                #selected_expert_id = int(selected_expert_id // 10) # inc_cls_num
-                
-                #print(selected_expert_id)
-
-                expert_id = selected_expert_id
-                
-
-        q_weight, k_weight, v_weight = self.qkv.weight.chunk(3, dim=0)
-
-        if self.apply_lora:
-            k_weight = k_weight + self.lora_B_k.weight @ self.lora_A_k.weight
-            v_weight = v_weight + self.lora_B_v.weight @ self.lora_A_v.weight
-        
-        qkv = F.linear(x, torch.cat([q_weight, k_weight, v_weight], dim=0), self.qkv.bias.data).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
-        
-        q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
-
-        attn = (q @ k.transpose(-2, -1)) * self.scale
-
-        if attn_mask is not None:
-            attn += attn_mask.unsqueeze(0) # For head axis broadcasting
-
-        attn = attn.softmax(dim=-1)
-        attn = self.attn_drop(attn)
-                
-        if register_hook:
-            self.save_attention_map(attn)
-            attn.register_hook(self.save_attn_gradients)        
-
-        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
-        x = self.proj(x)
-        x = self.proj_drop(x)
-
-        # ----
-
-        for mask, scale, space in zip(self.scaling_mask[expert_id], self.scale_param[expert_id], self.space[expert_id]):
-
-            if not mask:
-                break
-
-            scale_size = space.shape[1]
-            cropped_scale = scale[:scale_size, :scale_size]
-
-            cropped_scale = cropped_scale @ cropped_scale.T # better, idk why
-
-            cropped_identity_matrix = self.identity_matrix[:scale_size, :scale_size].to(self.qkv.weight.device)
-
-            k_weight = k_weight + k_weight @ space @ (cropped_scale - cropped_identity_matrix) @ space.T
-            v_weight = v_weight + v_weight @ space @ (cropped_scale - cropped_identity_matrix) @ space.T
-        
-        qkv = F.linear(x_proj, torch.cat([q_weight, k_weight, v_weight], dim=0), self.qkv.bias.data).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
-        
-        q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
-
-        attn = (q @ k.transpose(-2, -1)) * self.scale
-
-        if attn_mask is not None:
-            attn += attn_mask.unsqueeze(0) # For head axis broadcasting
-
-        attn = attn.softmax(dim=-1)
-        attn = self.attn_drop(attn)
-                
-        if register_hook:
-            self.save_attention_map(attn)
-            attn.register_hook(self.save_attn_gradients)        
-
-        x_proj = (attn @ v).transpose(1, 2).reshape(B, N, C)
-        x_proj = self.proj(x_proj)
-        x_proj = self.proj_drop(x_proj)
-
-        return x, x_proj, probs
-
-    def forward(self, x, x_proj, probs, attn_mask=None, expert_id=0, register_hook=False, prompt=None, get_input_matrix=False):
         
         B, N, C = x.shape
 
@@ -749,13 +738,12 @@ class MultiHeadAttention_MultiMaskedLoRA3(MultiHeadAttention_MaskedLoRA):
 
                 cur_cur_matrix = torch.bmm(x.detach().permute(0, 2, 1), x.detach()) / N # (B, C, C)
                 cur_cur_matrix = cur_cur_matrix.permute(1, 2, 0) # (C, C, B)
-
-                proj_mat = torch.stack([self.saved_space[idd][0].T for idd in range(self.activated_expert + 1)]).to(x.device) # (task_num, r, C)
+                saved = torch.stack([self.saved_space[idd][0] for idd in range(self.activated_expert + 1)]).to(x.device) # (task_num, C, r)
+                proj_mat = saved.transpose(1, 2) # (task_num, r, C)
 
                 proj_mat = torch.einsum('ijk,klm->ijlm', proj_mat, cur_cur_matrix) # (task_num, r, C) @ (C, C, B) -> (task_num, r, C, B)
 
                 proj_norm = np.linalg.norm(proj_mat, axis=(1, 2)) # (task_num, B)
-
                 proj_norm = softmax(proj_norm, axis=0) # (task_num, B)
                 
                 probs.append(proj_norm)
@@ -852,12 +840,6 @@ class MultiHeadAttention_MultiMaskedLoRA3(MultiHeadAttention_MaskedLoRA):
 
         else:
 
-            if expert_id == 1:
-                proj = self.lora_B_k.weight @ self.lora_A_k.weight @ self.space[expert_id][0] @ self.space[expert_id][0].T
-                print(np.linalg.norm(
-                    proj.detach().cpu().numpy()
-                ))
-
             for mask, scale, space in zip(self.scaling_mask[expert_id], self.scale_param[expert_id], self.space[expert_id]):
 
                 if not mask:
@@ -869,12 +851,6 @@ class MultiHeadAttention_MultiMaskedLoRA3(MultiHeadAttention_MaskedLoRA):
                 cropped_scale = cropped_scale @ cropped_scale.T # better, idk why
 
                 cropped_identity_matrix = self.identity_matrix[:scale_size, :scale_size].to(self.qkv.weight.device)
-
-                proj = self.lora_B_k.weight @ self.lora_A_k.weight @ self.space[expert_id][0] @ cropped_scale @ self.space[expert_id][0].T
-
-                print(np.linalg.norm(
-                    proj.detach().cpu().numpy()
-                ))
 
                 k_weight = k_weight + k_weight @ space @ (cropped_scale - cropped_identity_matrix) @ space.T
                 v_weight = v_weight + v_weight @ space @ (cropped_scale - cropped_identity_matrix) @ space.T
@@ -900,6 +876,210 @@ class MultiHeadAttention_MultiMaskedLoRA3(MultiHeadAttention_MaskedLoRA):
             x_proj = self.proj_drop(x_proj)
 
         return x, x_proj, probs
+
+# MInfLoRA3
+class MultiHeadAttention_MultiMaskedLoRA3(MultiHeadAttention_MaskedLoRA):
+    def __init__(self, dim, num_heads=8, qkv_bias=True, qk_scale=None, attn_drop=0., proj_drop=0., lora_rank=10, lora_bias=False):
+        super().__init__(dim, num_heads, qkv_bias, qk_scale, attn_drop, proj_drop, lora_rank, lora_bias)
+
+        self.cur_task = -1
+
+        self.lora_A_k_list = nn.ModuleList([nn.Linear(self.dim, self.lora_rank, bias=lora_bias) for _ in range(10)])
+        self.lora_B_k_list = nn.ModuleList([nn.Linear(self.lora_rank, self.dim, bias=lora_bias) for _ in range(10)])
+        self.lora_A_v_list = nn.ModuleList([nn.Linear(self.dim, self.lora_rank, bias=lora_bias) for _ in range(10)])
+        self.lora_B_v_list = nn.ModuleList([nn.Linear(self.lora_rank, self.dim, bias=lora_bias) for _ in range(10)]) 
+
+        self.space_k = [0 for _ in range(10)]
+        self.space_v = [0 for _ in range(10)]
+        self.scale_param = nn.ParameterList([nn.Parameter(self.identity_matrix) for _ in range(10)])
+
+    def init_param(self):
+
+        self.cur_task += 1
+
+        i = self.cur_task
+
+        nn.init.kaiming_uniform_(self.lora_A_k_list[i].weight, a=math.sqrt(5))
+        nn.init.kaiming_uniform_(self.lora_A_v_list[i].weight, a=math.sqrt(5))
+        nn.init.zeros_(self.lora_B_k_list[i].weight)
+        nn.init.zeros_(self.lora_B_v_list[i].weight)
+
+    def merge_weight(self):
+
+        print('Not MERGED')
+        return 0
+
+        q_weight, k_weight, v_weight = self.qkv.weight.chunk(3, dim=0)
+        k_weight = k_weight + self.lora_B_k.weight @ self.lora_A_k.weight
+        v_weight = v_weight + self.lora_B_v.weight @ self.lora_A_v.weight
+
+        self.apply_lora = False
+
+        for exp_id in range(10):
+            for ii, mask, scale_k, scale_v, space_k, space_v in zip([0, 1], self.scaling_mask[exp_id], self.scale_param_k[exp_id], self.scale_param_v[exp_id], self.space_k[exp_id], self.space_v[exp_id]):
+
+                if isinstance(space_k, int):
+                    break
+
+                k_weight = k_weight - k_weight @ space_k.T @ space_k + k_weight @ space_k.T @ scale_k[:space_k.shape[0], :space_k.shape[0]] @ space_k
+                v_weight = v_weight - v_weight @ space_v.T @ space_v + v_weight @ space_v.T @ scale_k[:space_v.shape[0], :space_v.shape[0]] @ space_v
+
+                self.space_k[exp_id][ii] = 0
+
+        self.qkv.weight.data = torch.cat([q_weight, k_weight, v_weight], dim=0)
+
+    def save_dir(self):
+
+        return 0
+
+        self.cur_task += 1
+
+        '''
+
+        norm = torch.linalg.matrix_norm(self.lora_B_k.weight @ self.lora_A_k.weight)
+
+        self.lora_A_k.weight.data = self.lora_A_k.weight.data / norm
+        self.lora_B_k.weight.data = self.lora_B_k.weight.data / norm
+
+        self.space_k[self.cur_task][0] = self.lora_A_k.weight.data.clone() / norm
+
+        norm = torch.linalg.matrix_norm(self.lora_B_v.weight @ self.lora_A_v.weight)
+
+        self.lora_A_v.weight.data = self.lora_A_v.weight.data / norm
+        self.lora_B_v.weight.data = self.lora_B_v.weight.data / norm
+        
+        self.space_v[self.cur_task][0] = self.lora_A_v.weight.data.clone() / norm]
+        '''
+
+        _, k_weight, v_weight = self.qkv.weight.chunk(3, dim=0)
+
+        U, _, _ = np.linalg.svd(k_weight.data, full_matrices = False)
+        U, _, _ = np.linalg.svd(U[:, :10], full_matrices = False)
+        orto_proj = U[:, -50:]
+
+        self.space_k[self.cur_task][0] = torch.Tensor(orto_proj.T).to(self.qkv.weight.device)
+
+        U, _, _ = np.linalg.svd(v_weight.data, full_matrices = False)
+        U, _, _ = np.linalg.svd(U[:, :10], full_matrices = False)
+        orto_proj = U[:, -50:]
+
+        self.space_v[self.cur_task][0] = torch.Tensor(orto_proj.T).to(self.qkv.weight.device)
+
+        self.scaling_mask[self.cur_task][0] = True
+
+    def enable_scale(self, task_id, space):
+        
+        if len(space) == 2:
+            self.space[task_id][0] = space[0]
+            self.space[task_id][1] = space[1]
+            self.scaling_mask[task_id][0] = True
+            self.scaling_mask[task_id][1] = True
+        elif len(space) == 1:
+            self.space[task_id][0] = space[0]
+            self.scaling_mask[task_id][0] = True
+
+        for scale_param_list in self.scale_param:
+            for scale_param in scale_param_list:
+                scale_param = scale_param.to(self.qkv.weight.device)
+
+    def save_space(self, task_id, space):
+        self.activated_expert = task_id
+        self.saved_space[task_id].append(space)
+
+    def forward(self, x, x_proj, probs, attn_mask=None, expert_id=0, register_hook=False, prompt=None, get_input_matrix=False):
+        
+        B, N, C = x.shape
+
+        if get_input_matrix:
+            self.cur_matrix = (self.cur_matrix * self.n_cur_matrix + torch.bmm(x.detach().permute(0, 2, 1), x.detach()).sum(dim=0).cpu())/(self.n_cur_matrix + B * N)            
+            self.n_cur_matrix += B * N
+        
+        q_weight, k_weight, v_weight = self.qkv.weight.chunk(3, dim=0)
+
+        # DEBUG
+        for exp_id in range(10):
+
+            break
+
+            for mask, scale, space_k, space_v in zip(self.scaling_mask[exp_id], self.scale_param[exp_id], self.space_k[exp_id], self.space_v[exp_id]):
+
+                if isinstance(space_k, int):
+                    break
+
+                cropped_scale = scale[:space_k.shape[0], :space_k.shape[0]]
+                print(
+                    round(torch.linalg.norm(k_weight @ space_k.T @ space_k, ord='fro').item(), 2),
+                    round(torch.linalg.norm(k_weight @ space_k.T @ cropped_scale @ space_k, ord='fro').item(), 2),
+                    round(torch.linalg.norm(self.lora_B_k.weight @ self.lora_A_k.weight @ space_k.T @ space_k, ord='fro').item(), 2),
+                    round(torch.linalg.norm(self.lora_B_k.weight @ self.lora_A_k.weight @ space_k.T @ cropped_scale @ space_k, ord='fro').item(), 2),
+                )
+
+        for ii in range(self.cur_task + 1):
+            k_weight = k_weight + self.lora_B_k_list[ii].weight @ self.lora_A_k_list[ii].weight
+            v_weight = v_weight + self.lora_B_v_list[ii].weight @ self.lora_A_v_list[ii].weight
+
+            if not isinstance(self.space_k[ii], int):
+
+                space_k = self.space_k[ii]
+                space_v = self.space_v[ii]
+                scale_k = self.scale_param[ii]
+
+                # Q Scaling
+                scalee = scale_k[:space_k.shape[0], :space_k.shape[0]] #@ scale_k[:space_k.shape[0], :space_k.shape[0]].T
+
+                # QQ^T Scaling
+                scalee = scale_k[:space_k.shape[0], :space_k.shape[0]] @ scale_k[:space_k.shape[0], :space_k.shape[0]].T
+
+                # QQ^T Diagonal Scaling
+                scalee = torch.diag(torch.diag(scale_k[:space_k.shape[0], :space_k.shape[0]] @ scale_k[:space_k.shape[0], :space_k.shape[0]].T))
+
+                # Q Diagonal Scaling
+                scalee = torch.diag(torch.diag(scale_k[:space_k.shape[0], :space_k.shape[0]]))
+
+                # TODO: Change the Scale to remove scale, and scale by magnitude and direction
+                # TODO2: following TODO 1, but now unfreeze the previous scale
+
+                use_scale = True
+                if use_scale:
+                    #print('Enabled scale')
+                    #magnitude = torch.linalg.matrix_norm(space_k, ord='fro')
+                    dir_k = space_k # / magnitude
+                    k_weight = k_weight - k_weight @ space_k.T @ space_k + k_weight @ dir_k.T @ scalee @ dir_k
+
+                    #magnitude = torch.linalg.matrix_norm(space_v, ord='fro')
+                    dir_v = space_v # / magnitude
+
+                    v_weight = v_weight - v_weight @ space_v.T @ space_v + v_weight @ dir_v.T @ scalee @ dir_v
+                else:
+                    pass
+                    #print('Disabled scale')
+
+                #if not self.training and not get_input_matrix:
+                #    diagonal_elements = torch.diag(scalee)
+                #    print(ii, diagonal_elements)
+
+        qkv = F.linear(x, torch.cat([q_weight, k_weight, v_weight], dim=0), self.qkv.bias.data).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        
+        q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
+
+        attn = (q @ k.transpose(-2, -1)) * self.scale
+
+        if attn_mask is not None:
+            attn += attn_mask.unsqueeze(0) # For head axis broadcasting
+
+        attn = attn.softmax(dim=-1)
+        attn = self.attn_drop(attn)
+                
+        if register_hook:
+            self.save_attention_map(attn)
+            attn.register_hook(self.save_attn_gradients)        
+
+        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        x = self.proj(x)
+        x = self.proj_drop(x)
+
+        return x, x, probs
+
 
 # MLP
 class Mlp(nn.Module):
@@ -948,10 +1128,10 @@ class ResidualAttentionBlock(nn.Module):
             self.attn = attn_layer(d_model, n_head, qkv_bias, qk_scale, attn_drop, proj_drop)
         elif attn_layer == MultiHeadAttention_LoRA:
             self.attn = attn_layer(d_model, n_head, qkv_bias, qk_scale, attn_drop, proj_drop, lora_rank, lora_bias)
+        elif attn_layer == MultiHeadAttention_SDLoRA:
+            self.attn = attn_layer(d_model, n_head, qkv_bias, qk_scale, attn_drop, proj_drop, lora_rank, lora_bias)
         elif attn_layer == MultiHeadAttention_MaskedLoRA:
             self.attn = attn_layer(d_model, n_head, qkv_bias, qk_scale, attn_drop, proj_drop, lora_rank, lora_bias)
-        #elif attn_layer == MultiHeadAttention_MoEMaskedLoRA:
-        #    self.attn = attn_layer(d_model, n_head, qkv_bias, qk_scale, attn_drop, proj_drop, lora_rank, lora_bias)
         elif attn_layer == MultiHeadAttention_MultiMaskedLoRA:
             self.attn = attn_layer(d_model, n_head, qkv_bias, qk_scale, attn_drop, proj_drop, lora_rank, lora_bias)
         else:
@@ -1557,7 +1737,7 @@ class ResidualAttentionBiBlock(nn.Module):
             self.attn = attn_layer(d_model, n_head, qkv_bias, qk_scale, attn_drop, proj_drop, lora_rank, lora_bias)
         elif attn_layer == MultiHeadAttention_MaskedLoRA:
             self.attn = attn_layer(d_model, n_head, qkv_bias, qk_scale, attn_drop, proj_drop, lora_rank, lora_bias)
-        elif attn_layer == MultiHeadAttention_MultiMaskedLoRA or attn_layer == MultiHeadAttention_MultiMaskedLoRA3 or attn_layer == MultiHeadAttention_MultiMaskedLoRA4:
+        elif attn_layer == MultiHeadAttention_MultiMaskedLoRA or attn_layer == MultiHeadAttention_MultiMaskedLoRA3 or attn_layer == MultiHeadAttention_MaskedLoRA1:
             self.attn = attn_layer(d_model, n_head, qkv_bias, qk_scale, attn_drop, proj_drop, lora_rank, lora_bias)
         else:
             assert 0, f'{attn_layer} not Implemented'
@@ -1650,7 +1830,7 @@ class Transformer(nn.Module):
                 for _ in range(layers)])
 
     def forward(self, x: torch.Tensor, l2p_prompt=None, l2p_e_prompt_layer_idx=[], **kwargs):
-        
+
         prompt_counter = -1
         for i, block in enumerate(self.blocks):
             if l2p_prompt is not None and (i in l2p_e_prompt_layer_idx):

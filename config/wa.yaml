@@ -14,8 +14,8 @@ task_num: *task_num
 image_size: *image_size
 
 # Training setting
-init_epoch: 250
-epoch: 250
+init_epoch: 1 #250
+epoch: 1 #250
 val_per_epoch: 250
 batch_size: 128
 

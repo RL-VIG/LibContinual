@@ -11,7 +11,7 @@ inc_cls_num: *inc_cls_num
 total_cls_num: *total_cls_num
 task_num: *task_num
 
-epoch: 20 # 20
+epoch: 20
 val_per_epoch: 20
 
 batch_size: 128 # 128

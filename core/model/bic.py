@@ -252,6 +252,8 @@ class bic(nn.Module):
     
     @staticmethod
     def spilt_and_update1(dataloader, buffer, task_idx, config):
+
+        print('using spilt_and_update1')
         
         train_dataset = deepcopy(dataloader.dataset)
         val_dataset = deepcopy(dataloader.dataset)
@@ -362,6 +364,8 @@ class bic(nn.Module):
 
     @staticmethod
     def spilt_and_update2(dataloader, buffer, task_idx, config):
+
+        print('using spilt_and_update2')
         
         train_dataset = deepcopy(dataloader.dataset)
         val_dataset = deepcopy(dataloader.dataset)
@@ -449,6 +453,8 @@ class bic(nn.Module):
         return train_dataloader, val_dataloader
 
     def spilt_and_update11(dataloader, buffer, task_idx, config):
+
+        print('using spilt_and_update11')
         
         train_dataset = deepcopy(dataloader.dataset)
         val_dataset = deepcopy(dataloader.dataset)
@@ -559,6 +565,8 @@ class bic(nn.Module):
 
     @staticmethod
     def spilt_and_update22(dataloader, buffer, task_idx, config):
+
+        print('using spilt_and_update22')
         
         train_dataset = deepcopy(dataloader.dataset)
         val_dataset = deepcopy(dataloader.dataset)
@@ -650,6 +658,8 @@ class bic(nn.Module):
 
     @staticmethod
     def spilt_and_update4(dataloader, buffer, task_idx, config):
+
+        print('using spilt_and_update4')
 
         buffer_size = config['buffer']['kwargs']['buffer_size']
 

@@ -1,4 +1,5 @@
 import os
+import random
 import numpy as np
 import core.data.custom_transforms as cstf
 
@@ -60,10 +61,11 @@ def get_augment(config, mode='train'):
          'mode': mode}
     
     if 'dataset' in config.keys():
-        if config['dataset'] == 'cifar100':
+        if 'cifar' in config['dataset']:
             d['dataset'] = 'cifar'
         else:
             d['dataset'] = config['dataset']
+
     if 'vit' in config['backbone']['name'].lower():
         d['backbone'] = 'vit'
     if 'alexnet' in config['backbone']['name'].lower():
@@ -71,7 +73,6 @@ def get_augment(config, mode='train'):
         
     return transform_classes[d['dataset']].get_transform(d['backbone'], d['mode'])
     
-
 def get_dataloader(config, mode, cls_map=None):
     '''
     Initialize the dataloaders for Continual Learning.
@@ -110,6 +111,7 @@ def get_dataloader(config, mode, cls_map=None):
     elif cls_map is None and dataset != 'binary_cifar100':
         # Apply class_order for debugging
         cls_list = sorted(os.listdir(os.path.join(data_root, mode)))
+        random.shuffle(cls_list)
         if 'class_order' in config.keys():
             class_order = config['class_order']
             perm = class_order
