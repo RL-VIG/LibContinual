@@ -1,10 +1,14 @@
 import os
 import sys
 import torch
+
 import numpy as np
 import core.model as arch
 import torch.optim as optim
+import torch.distributed as dist
+import torch.multiprocessing as mp
 
+from pprint import pprint
 from time import time
 from tqdm import tqdm
 from core.data import get_dataloader
@@ -15,7 +19,7 @@ from torch.utils.data import DataLoader
 from core.utils import Logger, fmt_date_str
 from torch.optim.lr_scheduler import MultiStepLR, LambdaLR
 from copy import deepcopy
-from pprint import pprint
+
 from core.scheduler import CosineSchedule, PatienceSchedule, CosineAnnealingWarmUp
 
 class Trainer(object):
@@ -29,13 +33,15 @@ class Trainer(object):
 
         self.rank = rank
         self.config = config
-        self.config['rank'] = rank
         self.distribute = self.config['n_gpu'] > 1  # 暂时不考虑分布式训练
+        assert not self.distribute
+        if self.distribute:
+            dist.init_process_group(backend='nccl', init_method='tcp://127.0.0.1:23456', world_size=self.config['n_gpu'], rank=rank)
         self.logger = self._init_logger(config)           
-        self.device = self._init_device(config) 
-        
-        pprint(self.config)
+        self.device = self._init_device(config)
 
+        pprint(config)
+        
         self.init_cls_num, self.inc_cls_num, self.task_num = self._init_data(config)
         self.model = self._init_model(config) 
         (
@@ -98,23 +104,8 @@ class Trainer(object):
         """
         init_seed(config['seed'], config['deterministic'])
 
-        if config['device_ids'] == 'auto':
-
-            least_utilized_device = 0
-            most_free_mem_perc = float('-inf')
-
-            for device_id in range(torch.cuda.device_count()):
-                free_mem, total_mem = torch.cuda.mem_get_info(device_id)
-                if total_mem > 0 and free_mem/total_mem > most_free_mem_perc:
-                    least_utilized_device = device_id
-                    most_free_mem_perc = free_mem/total_mem
-
-            print(f'Using GPU {least_utilized_device}')
-            device = torch.device(f'cuda:{least_utilized_device}')
-            torch.cuda.empty_cache()
-
-        else:
-            device = torch.device("cuda:{}".format(config['device_ids']))
+        device = torch.device(f'cuda:{config["device_ids"][self.rank]}')
+        torch.cuda.set_device(device)
 
         return device
 
@@ -159,10 +150,17 @@ class Trainer(object):
         else:
             init_epoch = config['epoch']
 
-        optimizer = get_instance(
-            torch.optim, "optimizer", config, params=self.model.get_parameters(config)
-        )
-        
+        model = self.model.module if self.distribute else self.model
+
+        if self.task_idx == 0 and 'init_optimizer' in config.keys():
+            optimizer = get_instance(
+                torch.optim, "init_optimizer", config, params=model.get_parameters(config)
+            )
+        else:
+            optimizer = get_instance(
+                torch.optim, "optimizer", config, params=model.get_parameters(config)
+            )
+
         # Check if the learning rate scheduler specified in the configuration is "CosineSchedule"
         if config['lr_scheduler']['name'] == "CosineSchedule":
             scheduler = CosineSchedule(optimizer, K=config['lr_scheduler']['kwargs']['K'])
@@ -193,13 +191,19 @@ class Trainer(object):
         Returns:
             tuple: A tuple of the model and model's type.
         """
-        # TODO: For backward compatibility, some backbone initialization doesn't take device as argument
+        # For backward compatibility, some backbone initialization doesn't take device as argument
         try:
             backbone = get_instance(arch, "backbone", config, **{'device': self.device})
         except TypeError:
             backbone = get_instance(arch, "backbone", config)
 
         model = get_instance(arch, "classifier", config, **{'device': self.device, 'backbone': backbone}).to(self.device)
+
+        if self.distribute:
+            model = torch.nn.parallel.DistributedDataParallel(
+                model,
+                device_ids=[self.device]
+            )
 
         return model
     
@@ -214,8 +218,23 @@ class Trainer(object):
             train_loaders (list): Each task's train dataloader.
             test_loaders (list): Each task's test dataloader.
         '''
+
         train_loaders = get_dataloader(config, "train")
         test_loaders = get_dataloader(config, "test", cls_map=train_loaders.cls_map)
+
+        # Add DistributedSampler to each dataloader
+        if self.distribute:
+            for loaders in [train_loaders, test_loaders]:
+                for i, dataloader in enumerate(loaders.dataloaders):
+                    dataset = dataloader.dataset
+                    sampler = torch.utils.data.distributed.DistributedSampler(dataset, shuffle=True)
+                    loaders.dataloaders[i] = DataLoader(
+                        dataset,
+                        sampler=sampler,
+                        batch_size=dataloader.batch_size // self.config['n_gpu'],
+                        num_workers=dataloader.num_workers,
+                        drop_last=dataloader.drop_last
+                    )
 
         return train_loaders, test_loaders
     
@@ -245,18 +264,22 @@ class Trainer(object):
         best_avg_acc_list = np.zeros((self.task_num))
         acc_table = np.zeros((self.task_num, self.task_num)) # A numpy array with shape [task_num, task_num], where [i, j] is acc of model on task j after learning task i
         bwt_list, frgt_list = [], []
+
+        model = self.model.module if self.distribute else self.model
         
         if method_name == 'RAPF':
-            self.model.model.classes_names = self.train_loader.cls_map
+            model.model.classes_names = self.train_loader.cls_map
 
         for task_idx in range(self.task_num):
             self.task_idx = task_idx
-            print(f"================Task {task_idx} Start!================")
+            if self.rank == 0:
+                print(f"================Task {task_idx} Start!================")
             
-            if hasattr(self.model, 'before_task'):
-                self.model.before_task(task_idx, self.buffer, self.train_loader.get_loader(task_idx), self.test_loader.get_loader(task_idx))
+            if hasattr(model, 'before_task'):
+                model.before_task(task_idx, self.buffer, self.train_loader.get_loader(task_idx), self.test_loader.get_loader(task_idx))
             
-            print(f"Trainable Parameters for Task {task_idx} : {count_parameters(self.model)} / {count_all_parameters(self.model)} ({count_parameters(self.model)*100/count_all_parameters(self.model):.2f}%)")
+            if self.rank == 0:
+                print(f"Trainable Parameters for Task {task_idx} : {count_parameters(model)} / {count_all_parameters(model)} ({count_parameters(model)*100/count_all_parameters(model):.2f}%)")
 
             _, _, self.optimizer, self.scheduler = self._init_optim(self.config)
             dataloader = self.train_loader.get_loader(task_idx)
@@ -264,7 +287,7 @@ class Trainer(object):
             if method_name == "bic":
 
                 w_decay = 2e-4 * self.task_num / (task_idx + 1) # in source code?
-                self.optimizer = optim.SGD(self.model.get_parameters(self.config), lr = 0.1, momentum = 0.9, weight_decay = w_decay)
+                self.optimizer = optim.SGD(model.get_parameters(self.config), lr = 0.1, momentum = 0.9, weight_decay = w_decay)
                 self.scheduler = MultiStepLR(self.optimizer, milestones = [100, 150, 200], gamma = 0.1)
 
                 dataloader, val_bias_dataloader = bic.spilt_and_update11(dataloader, self.buffer, task_idx, self.config)
@@ -281,22 +304,42 @@ class Trainer(object):
                     num_workers = self.config['num_workers']
                 )
 
-            print(f"================Task {task_idx} Training!================")
-            print(f"The training samples number : {len(dataloader.dataset)}")
+            if self.rank == 0:
+                print(f"================Task {task_idx} Training!================")
+                print(f"The training samples number : {len(dataloader.dataset)}")
 
             best_avg_acc, best_bwt, best_frgt = 0., float('-inf'), float('inf')
             for epoch_idx in range(self.init_epoch if task_idx == 0 else self.inc_epoch):
-                
-                print("================Train on train set================")
+                if self.rank == 0:
+                    print("================Train on train set================")
                 train_meter = self._train(epoch_idx, dataloader)
-                print(f"Epoch [{epoch_idx}/{self.init_epoch if task_idx == 0 else self.inc_epoch}] Learning Rate {self.scheduler.get_last_lr()}\t|\tLoss: {train_meter.avg('loss'):.4f} \tAverage Acc: {train_meter.avg('acc1'):.2f} ")
+
+                acc1 = torch.tensor(train_meter.avg("acc1"), device=self.device)
+                loss = torch.tensor(train_meter.avg("loss"), device=self.device)
+                if self.distribute:
+                    # Aggregate accuracy across all processes
+                    dist.barrier()
+                    dist.all_reduce(acc1, op=dist.ReduceOp.SUM)  # Sum accuracy across processes
+                    dist.all_reduce(loss, op=dist.ReduceOp.SUM)
+                    acc1 = acc1 / self.config['n_gpu']  # Normalize by world size
+                    loss = loss / self.config['n_gpu']
+                    dist.barrier()
+
+                acc1 = acc1.item()
+                loss = loss.item()
+                
+                if self.rank == 0:
+                    print(f"Epoch [{epoch_idx}/{self.init_epoch if task_idx == 0 else self.inc_epoch}] Learning Rate {self.scheduler.get_last_lr()}\t|\tLoss: {loss:.4f} \tAverage Acc: {acc1:.2f} ")
 
                 if (epoch_idx+1) % self.val_per_epoch == 0 or (epoch_idx+1) == self.inc_epoch:
-                    print(f"================Validation on test set================")
+                    if self.rank == 0:
+                        print(f"================Validation on test set================")
 
                     # Disable validation for some method
-                    if method_name in ['TRGP', 'RanPAC', 'MInfLoRA', 'MInfLoRA2', 'MInfLoRA3', 'PRAKA', 'TRGP_CLIP'] or 'MInfLoRA' in method_name:
-                        print(f" * Disabled validation for this method")
+                    #if method_name in ['TRGP', 'RanPAC', 'MInfLoRA', 'MInfLoRA2', 'MInfLoRA3', 'PRAKA', 'TRGP_CLIP'] or 'MInfLoRA' in method_name:
+                    if method_name in ['TRGP', 'RanPAC', 'MInfLoRA2', 'MInfLoRA3', 'PRAKA', 'TRGP_CLIP']:
+                        if self.rank == 0:
+                            print(f" * Disabled validation for this method")
                     else:
                         test_acc = self._validate(task_idx)
 
@@ -306,31 +349,30 @@ class Trainer(object):
                         frgt, bwt = compute_frgt(acc_table, per_task_acc, task_idx), compute_bwt(acc_table, per_task_acc, task_idx)
                         best_frgt, best_bwt = min(frgt, best_frgt), max(bwt, best_bwt)
 
-                        print(f" * [Batch] Last Average Acc (Best Last Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
-                        print(f" * Forgetting (Best Forgetting) : {frgt:.3f} ({best_frgt:.3f})")
-                        print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
-                        print(f" * Per-Task Acc : {per_task_acc}")
+                        if self.rank == 0:
+                            print(f" * [Batch] Last Average Acc (Best Last Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
+                            print(f" * Forgetting (Best Forgetting) : {frgt:.3f} ({best_frgt:.3f})")
+                            print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
+                            print(f" * Per-Task Acc : {per_task_acc}")
             
                 if self.config['lr_scheduler']['name'] == "PatienceSchedule":
                     self.scheduler.step(train_meter.avg('loss'))
                     if self.scheduler.get_last_lr() < self.config['lr_scheduler']['kwargs']['stopping_lr']:
-                        print(f"{self.scheduler.get_last_lr()} < {self.config['lr_scheduler']['kwargs']['stopping_lr']}, stopping this task now")
+                        if self.rank == 0:
+                            print(f"{self.scheduler.get_last_lr()} < {self.config['lr_scheduler']['kwargs']['stopping_lr']}, stopping this task now")
                         break
                 else:
                     self.scheduler.step()
 
-                if self.config['classifier']['name'] == 'MInfLoRA3':
-                    self.model.mid_task(task_idx, self.buffer, self.train_loader.get_loader(task_idx), self.test_loader.get_loader(task_idx))
-
-            if hasattr(self.model, 'after_task'):
-                self.model.after_task(task_idx, self.buffer, self.train_loader.get_loader(task_idx), self.test_loader.get_loader(task_idx))
+            if hasattr(model, 'after_task'):
+                model.after_task(task_idx, self.buffer, self.train_loader.get_loader(task_idx), self.test_loader.get_loader(task_idx))
 
             # Update Buffer
-            if method_name != 'bic':
+            if method_name not in ['bic', 'ERACE', 'ERAML']:
                 self.buffer.total_classes += self.init_cls_num if task_idx == 0 else self.inc_cls_num
                 if self.buffer.buffer_size > 0:
                     if self.buffer.strategy == 'herding':
-                        herding_update(self.train_loader.get_loader(task_idx).dataset, self.buffer, self.model.backbone, self.device)
+                        herding_update(self.train_loader.get_loader(task_idx).dataset, self.buffer, model.backbone, self.device)
                     elif self.buffer.strategy == 'random':
                         random_update(self.train_loader.get_loader(task_idx).dataset, self.buffer)
                     elif self.buffer.strategy == 'balance_random':
@@ -339,16 +381,19 @@ class Trainer(object):
             # Stage 2 Training : BIC (Stage 2 start after buffer being updated)
             if self.config["classifier"]["name"] == "bic" and task_idx > 0:
 
-                bias_scheduler = optim.lr_scheduler.LambdaLR(self.model.bias_optimizer, lr_lambda=lambda e: 1)
+                bias_scheduler = optim.lr_scheduler.LambdaLR(model.bias_optimizer, lr_lambda=lambda e: 1)
 
                 for epoch_idx in range(self.stage2_epoch):
-                    print("================ Train on the train set (stage2)================")
+                    if self.rank == 0:
+                        print("================ Train on the train set (stage2)================")
                     train_meter = self.stage2_train(epoch_idx, val_bias_dataloader)
 
-                    print(f"Epoch [{epoch_idx}/{self.stage2_epoch}] Learning Rate {bias_scheduler.get_last_lr()}\t|\tLoss: {train_meter.avg('loss'):.4f} \tAverage Acc: {train_meter.avg('acc1'):.2f} ")
+                    if self.rank == 0:
+                        print(f"Epoch [{epoch_idx}/{self.stage2_epoch}] Learning Rate {bias_scheduler.get_last_lr()}\t|\tLoss: {train_meter.avg('loss'):.4f} \tAverage Acc: {train_meter.avg('acc1'):.2f} ")
 
                     if (epoch_idx+1) % self.val_per_epoch == 0 or (epoch_idx+1) == self.inc_epoch:
-                        print("================ Test on the test set (stage2)================")
+                        if self.rank == 0:
+                            print("================ Test on the test set (stage2)================")
 
                         test_acc = self._validate(task_idx)
 
@@ -358,15 +403,17 @@ class Trainer(object):
                         frgt, bwt = compute_frgt(acc_table, per_task_acc, task_idx), compute_bwt(acc_table, per_task_acc, task_idx)
                         best_frgt, best_bwt = min(frgt, best_frgt), max(bwt, best_bwt)
 
-                        print(f" * [Batch] Last Average Acc (Best Last Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
-                        print(f" * Forgetting (Best Forgetting) : {frgt:.3f} ({best_frgt:.3f})")
-                        print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
-                        print(f" * Per-Task Acc : {per_task_acc}")
+                        if self.rank == 0:
+                            print(f" * [Batch] Last Average Acc (Best Last Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
+                            print(f" * Forgetting (Best Forgetting) : {frgt:.3f} ({best_frgt:.3f})")
+                            print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
+                            print(f" * Per-Task Acc : {per_task_acc}")
             
                     #bias_scheduler.step()
 
             for test_idx in range(testing_times):
-                print(f"================Test {test_idx+1}/{testing_times} of Task {task_idx}!================")
+                if self.rank == 0:
+                    print(f"================Test {test_idx+1}/{testing_times} of Task {task_idx}!================")
 
                 test_acc = self._validate(task_idx)
                 avg_acc, per_task_acc = test_acc['avg_acc'], test_acc['per_task_acc']
@@ -375,17 +422,18 @@ class Trainer(object):
                 frgt, bwt = compute_frgt(acc_table, per_task_acc, task_idx), compute_bwt(acc_table, per_task_acc, task_idx)
                 best_frgt, best_bwt = min(frgt, best_frgt), max(bwt, best_bwt)
 
-                print(f" * [Batch] Last Average Acc (Best Last Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
-                print(f" * Forgetting (Best Forgetting) : {frgt:.3f} ({best_frgt:.3f})")
-                print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
-                print(f" * Per-Task Acc : {per_task_acc}")
+                if self.rank == 0:
+                    print(f" * [Batch] Last Average Acc (Best Last Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
+                    print(f" * Forgetting (Best Forgetting) : {frgt:.3f} ({best_frgt:.3f})")
+                    print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
+                    print(f" * Per-Task Acc : {per_task_acc}")
 
                 avg_acc_list[task_idx] += avg_acc
                 acc_table[task_idx][:task_idx + 1] += np.array(per_task_acc)
 
             # Take mean of testing_times
             best_avg_acc_list[task_idx] = best_avg_acc
-            avg_acc_list[task_idx] /= testing_times
+            avg_acc_list[task_idx] /= testing_times 
             acc_table[task_idx] /= testing_times 
 
             #avg_acc = np.mean(acc_table[task_idx][:task_idx + 1])
@@ -397,11 +445,12 @@ class Trainer(object):
                 frgt_list.append(frgt)
                 bwt_list.append(bwt)
                 
-            print(f"================Result of Task {task_idx} Testing!================")
-            print(f" * [Batch] Last Average Acc (Best Last Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
-            print(f" * Forgetting (Best Forgetting) : {frgt:.3f} ({best_frgt:.3f})")
-            print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
-            print(f" * Per-Task Acc : {acc_table[task_idx][:task_idx + 1]}")
+            if self.rank == 0:
+                print(f"================Result of Task {task_idx} Testing!================")
+                print(f" * [Batch] Last Average Acc (Best Last Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
+                print(f" * Forgetting (Best Forgetting) : {frgt:.3f} ({best_frgt:.3f})")
+                print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
+                print(f" * Per-Task Acc : {acc_table[task_idx][:task_idx + 1]}")
 
         batch_ovr_avg_acc = np.mean(avg_acc_list)
         best_batch_ovr_avg_acc = np.mean(best_avg_acc_list)
@@ -410,21 +459,22 @@ class Trainer(object):
         ovr_bwt = np.mean(bwt_list) if len(bwt_list) > 0 else float('-inf')
         ovr_frgt = np.mean(frgt_list) if len(frgt_list) > 0 else float('inf')
 
-        print(f"================Overall Result of {self.task_num} Tasks!================")
-        print(f" * [Batch] Last Average Acc (Best Last Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
-        print(f" * Forgetting (Best Forgetting) : {frgt:.3f} ({best_frgt:.3f})")
-        print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
-        print(f" * [Batch] Overall Avg Acc : {batch_ovr_avg_acc:.2f} ({best_batch_ovr_avg_acc:.2f})")
-        print(f" * [Task] Overall Avg Acc : {task_ovr_avg_acc:.2f}")
-        print(f" * Overall Frgt : {ovr_frgt:.3f}")
-        print(f" * Overall BwT : {ovr_bwt:.2f}")
-        print(f" * Average Acc Table : \n{acc_table}")
+        if self.rank == 0:
+            print(f"================Overall Result of {self.task_num} Tasks!================")
+            print(f" * [Batch] Last Average Acc (Best Last Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
+            print(f" * Forgetting (Best Forgetting) : {frgt:.3f} ({best_frgt:.3f})")
+            print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
+            print(f" * [Batch] Overall Avg Acc : {batch_ovr_avg_acc:.2f} ({best_batch_ovr_avg_acc:.2f})")
+            print(f" * [Task] Overall Avg Acc : {task_ovr_avg_acc:.2f}")
+            print(f" * Overall Frgt : {ovr_frgt:.3f}")
+            print(f" * Overall BwT : {ovr_bwt:.2f}")
+            print(f" * Average Acc Table : \n{acc_table}")
 
-        print(f"================Model Performance Analysis================")
-        print(f" * Time Costs : {(time() - experiment_begin):.2f} sec")
-        fps = compute_fps(self.model, self.config)
-        avg_fps, best_fps = fps['avg_fps'], fps['best_fps']
-        print(f" * Average FPS (Best FPS) : {avg_fps:.0f} ({best_fps:.0f})")
+            print(f"================Model Performance Analysis================")
+            print(f" * Time Costs : {(time() - experiment_begin):.2f} sec")
+            fps = compute_fps(model, self.config)
+            avg_fps, best_fps = fps['avg_fps'], fps['best_fps']
+            print(f" * Average FPS (Best FPS) : {avg_fps:.0f} ({best_fps:.0f})")
 
     def stage2_train(self, epoch_idx, dataloader):
         """
@@ -436,18 +486,19 @@ class Trainer(object):
         Returns:
             dict:  {"avg_acc": float}
         """
+        model = self.model.module if self.distribute else self.model
 
-        self.model.eval()
-        for layer in self.model.bias_layers:
+        model.eval()
+        for layer in model.bias_layers:
             layer.train()
 
         meter = self.train_meter
         meter.reset()
         
         total = len(dataloader)
-        for b, batch in tqdm(enumerate(dataloader), total=total):
+        for b, batch in tqdm(enumerate(dataloader), total=total, disable=(self.rank != 0)):
 
-            output, acc, loss = self.model.stage2(batch)
+            output, acc, loss = model.stage2(batch)
             
             meter.update("acc1", 100 * acc)
             meter.update("loss", loss.item())
@@ -464,16 +515,19 @@ class Trainer(object):
         Returns:
             dict:  {"avg_acc": float}
         """
-        self.model.train()
+        model = self.model.module if self.distribute else self.model
+
+        model.train()
         if self.config['classifier']['name'] == 'bic':
-            for layer in self.model.bias_layers:
+            for layer in model.bias_layers:
                 layer.eval()
         
         meter = deepcopy(self.train_meter)
         meter.reset()
 
         total = len(dataloader)
-        for b, batch in tqdm(enumerate(dataloader), total=total):
+        init_seed(self.config['seed'] + epoch_idx, self.config['deterministic']) # Ensure Reproducibility
+        for b, batch in tqdm(enumerate(dataloader), total=total, disable=(self.rank != 0)):
 
             batch['batch_id'] = b
             # These method's LR is updated every iterations, not epochs
@@ -483,17 +537,20 @@ class Trainer(object):
             if self.config["classifier"]["name"] in ['TRGP', 'DMNSP', 'DMNSP_CIL', 'TRGP_CLIP', 
                                                     'GPM', 'MoE_Test2', 'API', 'L2P']:
                 self.optimizer.zero_grad()
-                output, acc, loss = self.model.observe(batch)
+                output, acc, loss = model.observe(batch)
             elif self.config["classifier"]["name"] in ['bic']:
-                output, acc, loss = self.model.observe(batch)
+                output, acc, loss = model.observe(batch)
                 self.optimizer.zero_grad()
                 loss.backward(retain_graph=True)
             else:
-                output, acc, loss = self.model.observe(batch)
+                output, acc, loss = model.observe(batch)
                 self.optimizer.zero_grad()
                 loss.backward()
 
             self.optimizer.step()
+
+            if self.config["classifier"]["name"] in ['ERACE', 'ERAML']:
+                model.add_reservoir()
 
             meter.update("acc1", 100 * acc)
             meter.update("loss", loss.item())
@@ -501,35 +558,46 @@ class Trainer(object):
         return meter
 
     def _validate(self, task_idx):
+
         dataloaders = self.test_loader.get_loader(task_idx)
 
-        self.model.eval()
+        model = self.model.module if self.distribute else self.model
+
+        model.eval()
         if self.config["classifier"]["name"] == 'bic':
-            for layer in self.model.bias_layers:
+            for layer in model.bias_layers:
                 layer.eval()
 
-        total_meter = deepcopy(self.test_meter)
-        meter = deepcopy(self.test_meter)
-        
-        total_meter.reset()
-        meter.reset()
-        
         per_task_acc = []
+        correct_task, correct_all = 0, 0
+        count_task, count_all = 0, 0
+
         with torch.no_grad():
             for t, dataloader in enumerate(dataloaders):
-                meter.reset()
+                correct_task, count_task = 0, 0
 
-                for batch in tqdm(dataloader, desc = f"Testing on Task {t} data"):
+                for batch in tqdm(dataloader, desc = f"Testing on Task {t} data", disable=self.rank != 0):  # Disable tqdm for non-master processes
                     
                     if self.config['setting'] == 'task-aware':
-                        output, acc = self.model.inference(batch, task_id=t)
+                        output, acc = model.inference(batch, task_id=t)
                     elif self.config['setting'] == 'task-agnostic':
-                        output, acc = self.model.inference(batch)
+                        output, acc = model.inference(batch)
                     
-                    meter.update("acc1", 100 * acc)
-                    total_meter.update("acc1", 100 * acc)
-                
-                per_task_acc.append(round(meter.avg("acc1"), 2))
+                    correct_task += int(acc * batch['label'].shape[0])
+                    count_task += batch['label'].shape[0]
 
-        return {"avg_acc" : round(total_meter.avg("acc1"), 2), 
-                "per_task_acc" : per_task_acc}
+                correct_all += correct_task
+                count_all += count_task
+
+                if self.distribute:
+                    pass
+
+                per_task_acc.append(round(correct_task * 100 / count_task, 2))
+
+        if self.distribute:
+            pass
+
+        avg_acc = round(correct_all * 100 / count_all, 2)
+
+        return {"avg_acc": avg_acc, 
+                "per_task_acc": per_task_acc}

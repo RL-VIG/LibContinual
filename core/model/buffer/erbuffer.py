@@ -1,16 +1,12 @@
 import numpy as np
-import math
-import pdb
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-# import kornia
 
 from collections import OrderedDict
 from collections.abc import Iterable
 
 class ERBuffer(nn.Module):
-    def __init__(self, capacity, input_size):
+    def __init__(self, capacity):
         super().__init__()
 
         # create placeholders for each item
@@ -26,30 +22,9 @@ class ERBuffer(nn.Module):
         self.add = self.add_reservoir
         self.sample = self.sample_random
 
-        # freshly add
-        self.total_classes = 0
-        self.strategy = ''
-
     def __len__(self):
         return self.current_index
 
-    def n_bits(self):
-        total = 0
-
-        for name in self.buffers:
-            buffer = getattr(self, name)
-
-            if buffer.dtype == torch.float32:
-                bits_per_item = 8 if name == 'bx' else 32
-            elif buffer.dtype == torch.int64:
-                bits_per_item = buffer.max().float().log2().clamp_(min=1).int().item()
-
-            total += bits_per_item * buffer.numel()
-
-        return total
-
-    def set_device(self, device):
-        self.device = device
 
     def add_buffer(self, name, dtype, size):
         """ used to add extra containers (e.g. for logit storage) """
@@ -64,7 +39,7 @@ class ERBuffer(nn.Module):
         for name, tensor in batch.items():
             bname = f'b{name}'
             if bname not in self.buffers:
-
+                
                 if not type(tensor) == torch.Tensor:
                     tensor = torch.from_numpy(np.array([tensor]))
 
@@ -79,7 +54,7 @@ class ERBuffer(nn.Module):
 
         self._init_buffers(batch)
 
-        n_elem = batch['x'].size(0)
+        n_elem = batch['x'].shape[0]
 
         place_left = max(0, self.cap - self.current_index)
 
@@ -218,42 +193,6 @@ class ERBuffer(nn.Module):
         indices        = torch.multinomial(per_sample_p, amt)
 
         return OrderedDict({k:v[indices] for (k,v) in buffers.items()})
-
-    def sample_mir(self, amt, subsample, model, exclude_task=None, lr=0.1, head_only=False, **kwargs):
-        subsample = self.sample_random(subsample, exclude_task=exclude_task)
-
-        if not hasattr(model, 'grad_dims'):
-            model.mir_grad_dims = []
-            if head_only:
-                for param in model.linear.parameters():
-                    model.mir_grad_dims += [param.data.numel()]
-            else:
-                for param in model.parameters():
-                    model.mir_grad_dims += [param.data.numel()]
-
-        if head_only:
-            grad_vector = get_grad_vector(list(model.linear.parameters()), model.mir_grad_dims)
-            model_temp  = get_future_step_parameters(model.linear, grad_vector, model.mir_grad_dims, lr=lr)
-        else:
-            grad_vector = get_grad_vector(list(model.parameters()), model.mir_grad_dims)
-            model_temp  = get_future_step_parameters(model, grad_vector, model.mir_grad_dims, lr=lr)
-
-        with torch.no_grad():
-            hidden_pre  = model.return_hidden(subsample['x'])
-            logits_pre  = model.linear(hidden_pre)
-
-            if head_only:
-                logits_post = model_temp(hidden_pre)
-            else:
-                logits_post = model_temp(subsample['x'])
-
-            pre_loss  = F.cross_entropy(logits_pre,  subsample['y'], reduction='none')
-            post_loss = F.cross_entropy(logits_post, subsample['y'], reduction='none')
-
-            scores  = post_loss - pre_loss
-            indices = scores.sort(descending=True)[1][:amt]
-
-        return OrderedDict({k:v[indices] for (k,v) in subsample.items()})
 
     def sample_pos_neg(self, inc_data, task_free=True, same_task_neg=True):
 
@@ -410,5 +349,3 @@ class ERBuffer(nn.Module):
             n_fwd += n_new_fwd
 
         return pos_x, neg_x, pos_y, neg_y, is_invalid, n_fwd
-
-

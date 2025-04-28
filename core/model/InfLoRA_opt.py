@@ -10,8 +10,10 @@
 Adapted from https://github.com/liangyanshuo/InfLoRA
 """
 
+import os
 import math
 import torch
+import random
 import torch.nn as nn
 import numpy as np
 
@@ -26,6 +28,21 @@ from .backbone.vit import ViTZoo
 VIT = ViTZoo
 CLIP = CLIP
 
+def _set_random(seed):
+    '''
+    Set random values on various devices to ensure repeatable results
+    '''
+
+    seed = int(seed)
+
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
 class SiNet(nn.Module):
     def __init__(self, backbone, device, **kwargs):
         super().__init__()
@@ -35,6 +52,7 @@ class SiNet(nn.Module):
         self.device = device
 
         if isinstance(backbone, VIT):
+            _set_random(os.environ["PYTHONHASHSEED"])
             self.classifier_pool = nn.ModuleList([
                 nn.Linear(kwargs["embd_dim"], kwargs['init_cls_num'], bias=True)] + 
                 [nn.Linear(kwargs["embd_dim"], kwargs['inc_cls_num'], bias=True) for _ in range(kwargs['task_num'] - 1)]
@@ -92,6 +110,7 @@ class SiNet(nn.Module):
             
             logits = []
             features = self.backbone(x)
+
             if inference:
                 for prompts in self.classifier_pool[:self._cur_task_id + 1]:
                     logits.append(prompts(features))
@@ -157,7 +176,7 @@ class InfLoRA_OPT(nn.Module):
         '''
         Called during the training phase, it inputs a batch of training examples and returns the prediction, accuracy, and forward loss.
         '''
-
+        
         x, y = data['image'].to(self.device), data['label'].to(self.device) - self._known_classes
 
         logits = self._network(x)
@@ -196,6 +215,7 @@ class InfLoRA_OPT(nn.Module):
             self._known_classes += self.inc_cls_num
         self._network.update_fc(train_loader)
 
+        _set_random(os.environ["PYTHONHASHSEED"])
         for module in self.attention_modules:
             module.init_param()
 
@@ -203,7 +223,7 @@ class InfLoRA_OPT(nn.Module):
         if isinstance(self._network.backbone, VIT):
             for name, param in self._network.named_parameters():
                 param.requires_grad_(False)
-                if "classifier_pool." + str(task_idx) in name or "lora_B" in name:
+                if f"classifier_pool.{task_idx}." in name or "lora_B" in name:
                     param.requires_grad_(True)
                     unfrezeed_params.append(name)
         elif isinstance(self._network.backbone, CLIP):
@@ -223,12 +243,16 @@ class InfLoRA_OPT(nn.Module):
         print(f"Current task : {task_idx}, Parameters to be updated: {len(unfrezeed_params)}")
         print(",\n".join(unfrezeed_params))
 
+        _set_random(os.environ["PYTHONHASHSEED"])
         for batch in tqdm(train_loader, desc="Forwarding to get input matrix"):
             self._network.update_input_matrix(x = batch['image'].to(self.device))
 
+
         if task_idx == 0:
             for module in self.attention_modules:
-                U, _, _ = torch.linalg.svd(module.cur_matrix)
+                assert module.n_cur_matrix > 0
+                U, S, _ = torch.linalg.svd(module.cur_matrix, full_matrices=False)
+
                 module.lora_A_k.weight.data.copy_(U[:,:module.lora_rank].T/math.sqrt(3))
                 module.lora_A_v.weight.data.copy_(U[:,:module.lora_rank].T/math.sqrt(3))
                 module.reset_input_matrix()
@@ -269,16 +293,10 @@ class InfLoRA_OPT(nn.Module):
         Update feature lists and the corresponding type
         '''
 
-        #train_trfms = train_loader.dataset.trfms
-        #train_loader.dataset.trfms = test_trfms
+        _set_random(os.environ["PYTHONHASHSEED"])
         for batch in tqdm(train_loader, desc="Forwarding to get input matrix"):
+
             self._network.update_input_matrix(x = batch['image'].to(self.device))
-        #train_loader.dataset.trfms = train_trfms
-
-
-
-
-
 
         threshold = (self.lame - self.lamb)*task_idx/self.task_num + self.lamb
 
@@ -439,3 +457,4 @@ class InfLoRA_OPT(nn.Module):
 
     def get_parameters(self, config):
         return self._network.parameters()
+

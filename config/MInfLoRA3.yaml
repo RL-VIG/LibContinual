@@ -3,7 +3,7 @@ dataset: &dataset cifar100
 init_cls_num: &init_cls_num 10
 inc_cls_num: &inc_cls_num 10
 task_num: &task_num 10
-epoch: &epoch 1 # 5
+epoch: &epoch 20
 image_size: &image_size 224
 
 dataset: *dataset
@@ -17,6 +17,10 @@ batch_size: 128
 testing_times: 1 #10
 
 setting: task-agnostic
+
+# Distributed training
+n_gpu: 1
+pin_memory: True
 
 train_trfms:
   - RandomResizedCrop:
@@ -68,4 +72,4 @@ classifier:
     lamb: 0.95
     embd_dim: 768
     use_ca: False
-    eval_mat: True
+    eval_mat: False

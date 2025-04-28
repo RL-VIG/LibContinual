@@ -7,6 +7,7 @@ import numpy as np
 from PIL import Image
 from torchvision import datasets
 from torch.utils.data import Dataset, DataLoader
+from torch.utils.data.distributed import DistributedSampler
 from continuum.datasets import TinyImageNet200
 from continuum import ClassIncremental
 
@@ -71,7 +72,8 @@ class ContinualDatasets:
                     shuffle = True,
                     batch_size = self.batchsize,
                     drop_last = False,
-                    num_workers = self.num_workers
+                    num_workers = self.num_workers,
+                    pin_memory=self.config['pin_memory']
                 ))
 
         else:
@@ -85,7 +87,8 @@ class ContinualDatasets:
                     shuffle = True,
                     batch_size = self.batchsize,
                     drop_last = False,
-                    num_workers = self.num_workers
+                    num_workers = self.num_workers,
+                    pin_memory=False
                 ))
 
     def get_loader(self, task_idx):
@@ -243,7 +246,6 @@ class SingleDataset(Dataset):
             self.images, self.labels, self.labels_name = self._init_datalist()
 
     def __getitem__(self, idx):
-
         if self.dataset == 'binary_cifar100':
 
             image = self.images[idx]
@@ -254,7 +256,7 @@ class SingleDataset(Dataset):
             image = Image.open(img_path).convert("RGB")
 
         else:
-
+            
             img_path = self.images[idx]
             image = Image.open(os.path.join(self.data_root, self.mode, img_path)).convert("RGB")
             

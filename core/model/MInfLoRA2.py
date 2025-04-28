@@ -84,37 +84,24 @@ class SiNet(nn.Module):
         features = self.backbone(x, expert_id = expert_id)
         return features
 
-    def forward(self, x, expert_id = -1, inference = False):
+    def forward(self, x, expert_id, inference = False):
         logits = []
-        
-        if inference:
+        features = self.backbone(x, expert_id = expert_id)
 
-            features = self.backbone(x, expert_id = 0)
+        if inference:
 
             probs = self.transformer_module.probs
             probs = torch.Tensor(probs[-1]).to(x.device) # consider only last layer
-            features = self.backbone(x, expert_id = np.argmax(probs, axis = 0))
 
             # Bayesian
-            for prompts in self.classifier_pool[:self._cur_task_id + 1]: 
+            for i, prompts in enumerate(self.classifier_pool[:self._cur_task_id + 1]):
                 logits.append(prompts(features))
 
             logits = torch.cat(logits, dim=1)
-            assert self.inc_cls_num == self.init_cls_num
-            logits = logits * probs.repeat_interleave(self.inc_cls_num)
-            
+
             return logits
 
-            # Masking
-            #for prompts in self.classifier_pool[:expert_id+1]:
-            #    logits.append(prompts(features))
-            #if expert_id < self._cur_task_id:
-            #    for prompts in self.classifier_pool[expert_id+1:self._cur_task_id+1]:
-            #        logits.append(torch.full_like(prompts(features), 1e-10))
-
         else:
-            features = self.backbone(x, expert_id = expert_id)
-
             logits.append(self.classifier_pool[self._cur_task_id](features))
             return torch.cat(logits, dim=1)
 
@@ -146,6 +133,8 @@ class MInfLoRA2(nn.Module):
         self.feature_list_each_tasks = [[np.zeros((1)) for _ in range(len(self.attention_modules))] for _ in range(self.task_num)]
         self.final_decision = [[np.zeros((1)) for _ in range(len(self.attention_modules))] for _ in range(self.task_num)]
         self.before_mat = [[0 for _ in range(len(self.attention_modules))] for _ in range(self.task_num)]
+
+        self.experts_distributions = []
 
         # Class Alignment Implementation
         self._use_class_alignment = kwargs['use_ca']
@@ -181,7 +170,7 @@ class MInfLoRA2(nn.Module):
         task_id = kwargs['task_id'] if 'task_id' in kwargs else None
         x, y = data['image'].to(self.device), data['label'].to(self.device)
 
-        logits = self._network(x, inference = True)
+        logits = self._network(x, expert_id = 0, inference = True)
         preds = logits.max(1)[1]
         acc = preds.eq(y).sum().item() / y.shape[0]
 
@@ -248,7 +237,7 @@ class MInfLoRA2(nn.Module):
 
         for name, param in self._network.named_parameters():
             param.requires_grad_(False)
-            if f"classifier_pool.{task_idx}" in name or f"lora_B" in name or f"scale_param.{task_idx}" in name or 'eye' in name:
+            if f"classifier_pool.{task_idx}" in name or f"lora_B" in name or f"scale_param.{task_idx}" in name:
                 param.requires_grad_(True)
         unfrezeed_params = [name for name, param in self._network.named_parameters() if param.requires_grad]
 
@@ -396,7 +385,6 @@ class MInfLoRA2(nn.Module):
         if self.eval_mat:
             self._network.train()
             train_loader.dataset.trfms = train_trfms
-
 
     def get_parameters(self, config):
         return self._network.parameters()        

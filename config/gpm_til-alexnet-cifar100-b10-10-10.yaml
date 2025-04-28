@@ -13,7 +13,7 @@ batch_size: 64
 val_per_epoch: 200
 
 setting: task-aware # [task-aware, task-agnostic] 
-seed: 1993
+seed: 2
 
 optimizer:
   name: SGD

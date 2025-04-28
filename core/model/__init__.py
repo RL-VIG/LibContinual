@@ -15,10 +15,10 @@ from .der import DER
 from .dualprompt import DualPrompt
 from .l2p import L2P
 from .codaprompt import CodaPrompt
-from .InfLoRA import InfLoRA
 from .praka import PRAKA
 from .ranpac import RanPAC
 from .trgp import TRGP
+from .InfLoRA import InfLoRA
 from .InfLoRA_opt import InfLoRA_OPT
 from .MInfLoRA import MInfLoRA
 from .MInfLoRA2 import MInfLoRA2
@@ -29,3 +29,4 @@ from .rapf import RAPF
 from .gpm import GPM
 from .api import API
 from .dap import DAP
+from .sd_lora import SD_LoRA

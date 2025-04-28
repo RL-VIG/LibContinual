@@ -3,6 +3,8 @@ Code Reference:
 Adapted from https://github.com/GT-RIPL/CODA-Prompt
 '''
 
+import os
+import timm
 import math
 import torch
 import torch.nn as nn
@@ -58,8 +60,11 @@ class ViTZoo(nn.Module):
         if pretrained:
             print(f'Using pretrained model : {model_name}')
 
-            import timm
-            load_dict = timm.create_model(model_name, pretrained = pretrained).state_dict()
+            if model_name == 'vit_base_patch16_224.augreg2_in21k_ft_in1k' and os.path.exists('/home/lvqiexuan/.cache/torch/hub/checkpoints/vit_base_patch16_224.augreg2_in21k_ft_in1k.pt'):
+                # Manually Loading weight
+                load_dict = torch.load('/home/lvqiexuan/.cache/torch/hub/checkpoints/vit_base_patch16_224.augreg2_in21k_ft_in1k.pt')
+            else:
+                load_dict = timm.create_model(model_name, pretrained = pretrained).state_dict()
             
             key_mapping = {
                 ".norm1.": ".ln_1.",

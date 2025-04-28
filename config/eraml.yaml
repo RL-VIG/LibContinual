@@ -1,16 +1,13 @@
-# 10-subsets on CiFar100
-#task_num: 10 
-#init_cls_num: 10 
-#inc_cls_num: 10 
+dataset: &dataset binary_cifar100
+total_cls_num: &total_cls_num 100
+init_cls_num: &init_cls_num 5
+inc_cls_num: &inc_cls_num 5
+task_num: &task_num 20
+image_size: &image_size 32
 
-# 20-subsets on CiFar100
-task_num: 20
-init_cls_num: 5 
-inc_cls_num: 5
+data_root: /home/lvqiexuan/temp_data/binary_cifar100
 
-init_epoch: 1
 epoch: 1
-val_per_epoch: 1
 
 batch_size: 10
 testing_times: 1
@@ -18,14 +15,20 @@ testing_times: 1
 train_trfms:
   - ToTensor: {}
   - Normalize:
-      mean: [0.5071,  0.4866,  0.4409]
-      std: [0.2675, 0.2565, 0.2761]
+      mean: [0.5, 0.5, 0.5]
+      std: [0.5, 0.5, 0.5]
+  - RandomCrop:
+      size: *image_size
+      padding: 4
+      padding_mode: constant
+      fill: -1
+  - RandomHorizontalFlip: {}
 
-test_trfms: 
+test_trfms:
   - ToTensor: {}
   - Normalize:
-      mean: [0.5071,  0.4866,  0.4409]
-      std: [0.2675, 0.2565, 0.2761]
+      mean: [0.5, 0.5, 0.5]
+      std: [0.5, 0.5, 0.5]
 
 optimizer:
   name: SGD
@@ -36,16 +39,20 @@ buffer:
   name: ERBuffer
   kwargs:
     capacity: 10000 # num_classes * M
-    input_size: (3, 32, 32)
 
 backbone: 
-  name: resnet18
+  name: resnet18_AML
   kwargs:
-    args: 
-      dataset: cifar100
+    dataset: *dataset
+    num_classes: *total_cls_num
 
 classifier:
   name: ERAML
   kwargs:
-    num_classes: 100
-    task_free: False
+    num_classes: *total_cls_num
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    task_free: True
+    use_augs: False
+    supcon_temperature: 0.2
+    use_minimal_selection: False

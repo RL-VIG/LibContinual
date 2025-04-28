@@ -7,12 +7,12 @@ task_num: *task_num
 init_cls_num: *init_cls_num
 inc_cls_num: *inc_cls_num
 total_cls_num: *total_cls_num
-epoch: 200 # 200
+epoch: 200
 batch_size: 64 
 val_per_epoch: 200
 
 setting: task-aware # task-aware
-seed: 1993
+seed: 2
 testing_times: 1 # Don't set too high, it will take eternity
 
 optimizer:
