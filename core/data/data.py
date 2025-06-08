@@ -263,9 +263,78 @@ class TinyImageNetTransform:
         else:
             raise ValueError("Unsupported model type")
 
+
+class FiveDatasetsTransform:
+    MEAN = [0.5071, 0.4866,  0.4409]
+    STD = [0.2675, 0.2565, 0.2761]
+    
+    common_trfs = [transforms.ToTensor(),
+                   transforms.Normalize(mean=MEAN, std=STD)]
+    
+    resnet_train_transform = transforms.Compose([
+        transforms.RandomCrop(32, padding=4),
+        transforms.RandomHorizontalFlip(),
+        transforms.ColorJitter(brightness=63 / 255),
+        *common_trfs
+    ])
+    
+    resnet_test_transform = transforms.Compose([
+        transforms.Resize(32),
+        *common_trfs
+    ])
+
+    # from 
+    dset_mean = (0., 0., 0.)
+    dset_std = (1., 1., 1.)
+    vit_train_transform = transforms.Compose([
+        transforms.RandomResizedCrop(224),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize(dset_mean, dset_std)])
+    
+    vit_test_transform = transforms.Compose([
+        transforms.Resize(224),
+        transforms.ToTensor(),
+        transforms.Normalize(dset_mean, dset_std)])
+
+    # from trust region gradient projection
+    mean=[x/255 for x in [125.3,123.0,113.9]]
+    std=[x/255 for x in [63.0,62.1,66.7]]
+
+    alexnet_train_transform = transforms.Compose([
+        transforms.Resize(32),
+        transforms.ToTensor(),
+        transforms.Normalize(mean,std)])
+
+    alexnet_test_transform = transforms.Compose([
+        transforms.Resize(32),
+        transforms.ToTensor(),
+        transforms.Normalize(mean,std)])
+
+    @staticmethod
+    def get_transform(model_type, mode):
+        if model_type == 'resnet':
+            if mode == 'train':
+                return FiveDatasetsTransform.resnet_train_transform
+            elif mode == 'test':
+                return FiveDatasetsTransform.resnet_test_transform
+        elif model_type == 'vit':
+            if mode == 'train':
+                return FiveDatasetsTransform.vit_train_transform
+            elif mode == 'test':
+                return FiveDatasetsTransform.vit_test_transform
+        elif model_type == 'alexnet':
+            if mode == 'train':
+                return FiveDatasetsTransform.alexnet_train_transform
+            elif mode == 'test':
+                return FiveDatasetsTransform.alexnet_test_transform
+        else:
+            raise ValueError("Unsupported model type")
+
 transform_classes = {
     'cifar': CIFARTransform,
     'imagenet': ImageNetTransform,
     'imagenet-r': ImageNetRTransform,
-    'tiny-imagenet': TinyImageNetTransform
+    'tiny-imagenet': TinyImageNetTransform,
+    '5-datasets': FiveDatasetsTransform
 }
