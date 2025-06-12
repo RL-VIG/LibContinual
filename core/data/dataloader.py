@@ -111,7 +111,7 @@ def get_dataloader(config, mode, cls_map=None):
     elif cls_map is None and dataset != 'binary_cifar100':
         # Apply class_order for debugging
         cls_list = sorted(os.listdir(os.path.join(data_root, mode)))
-        random.shuffle(cls_list)
+        #random.shuffle(cls_list)
         if 'class_order' in config.keys():
             class_order = config['class_order']
             perm = class_order
