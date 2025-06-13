@@ -1,0 +1,58 @@
+
+dataset: &dataset binary_cifar100
+data_root: /home/lvqiexuan/temp_data/binary_cifar100
+
+total_cls_num: &total_cls_num 100
+init_cls_num: &init_cls_num 5
+inc_cls_num: &inc_cls_num 5
+task_num: &task_num 20
+image_size: &image_size 32
+
+epoch: 1
+seed: 2
+
+batch_size: 10
+testing_times: 1
+
+train_trfms:
+  - ToTensor: {}
+  - Normalize:
+      mean: [0.5, 0.5, 0.5]
+      std: [0.5, 0.5, 0.5]
+  - RandomCrop:
+      size: *image_size
+      padding: 4
+      padding_mode: constant
+      fill: -1
+  - RandomHorizontalFlip: {}
+
+test_trfms:
+  - ToTensor: {}
+  - Normalize:
+      mean: [0.5, 0.5, 0.5]
+      std: [0.5, 0.5, 0.5]
+
+optimizer:
+  name: SGD
+  kwargs:
+    lr: 0.1
+
+buffer:
+  name: ERBuffer
+  kwargs:
+    capacity: 10000 # num_classes * M
+
+backbone: 
+  name: resnet18_AML
+  kwargs:
+    dataset: *dataset
+    num_classes: *total_cls_num
+
+classifier:
+  name: ERACE
+  kwargs:
+    num_classes: *total_cls_num
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    task_free: True
+    use_augs: False

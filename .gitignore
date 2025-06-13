@@ -1,0 +1,6 @@
+*.log
+/log
+.vscode
+__pycache__
+.venv-3.8/
+

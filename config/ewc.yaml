@@ -1,0 +1,41 @@
+image_size: 32
+
+# data
+init_cls_num: 10 # 50
+inc_cls_num: 10 # 25
+task_num: 10 # 3
+
+epoch: 100 # 100
+n_gpu: 1
+val_per_epoch: 50
+
+batch_size: 128
+
+optimizer:
+  name: SGD
+  kwargs:
+    lr: 0.1
+    momentum: 0.9
+    weight_decay: 0.0005
+
+lr_scheduler:
+  name: MultiStepLR
+  kwargs:
+    gamma: 0.1
+    milestones: [60, 120, 170]
+
+backbone:
+  name: resnet34 # cifar_resnet32
+  kwargs:
+    num_classes: 100
+    args: 
+      dataset: cifar100
+
+classifier:
+  name: EWC
+  kwargs:
+    num_class: 100
+    feat_dim: 512 # 64 for backbone cifar_resnet32
+    init_cls_num: 10
+    inc_cls_num: 10
+    lamda: 1000

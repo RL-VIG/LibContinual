@@ -1,0 +1,74 @@
+includesL:
+  - headers/data.yaml
+  - headers/device.yaml
+  - headers/model.yaml
+
+data_root: /home/xtx/datasets/cifar100
+image_size: &image_size 224
+num_workers: &num_workers 16
+
+save_path: ./
+
+seed: &seed 1993
+
+is_rapf: True
+
+
+# Control B and 
+init_cls_num: &init_cls_num 10
+inc_cls_num: &inc_cls_num 10
+task_num: &task_num 10
+
+epoch: &epoch 15
+batch_size: &batch_size 128
+train_batch_size: &train_batch_size 100
+n_gpu: 1
+beta: &beta 2
+shrinkage: &shrinkage False
+threshold: &threshold 0.55
+val_per_epoch: &val_per_epoch 10
+
+optimizer:
+  name: Adam
+  kwargs:
+    lr: 0.001
+    weight_decay: 0.0000
+
+lr_scheduler:
+  name: MultiStepLR
+  kwargs:
+    gamma: 0.1
+    milestones: [4, 10]
+    last_epoch: -1
+
+backbone:
+  name: clip
+  kwargs:
+    model_name: ViT-B/16
+    device: cuda
+    experts_num: 1
+    block_layer: ResidualAttentionBlock_MoE_MLP
+    top_k : 1
+    step: 1
+    act_layer: QuickGELU
+    norm_layer: LayerNorm
+
+classifier:
+  name: RAPF
+  kwargs:
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    threshold: *threshold
+    beta: *beta
+    shrinkage: *shrinkage
+    train_batch_size: *train_batch_size
+    batch_size: *batch_size
+    num_workers: *num_workers
+    prompt_template: "a good photo of a {}"
+    seed: *seed
+    fp16: False
+    # class_order: *class_order
+    mix_bias: 0.6
+    feat_dim: 64
+    num_class: 100
+

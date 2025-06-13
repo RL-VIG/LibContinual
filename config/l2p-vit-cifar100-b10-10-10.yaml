@@ -1,0 +1,67 @@
+
+dataset: &dataset cifar100
+init_cls_num: &init_cls_num 10
+inc_cls_num: &inc_cls_num 10
+total_cls_num: &total_cls_num 100
+task_num: &task_num 10
+image_size: &image_size 224
+
+init_cls_num: *init_cls_num
+inc_cls_num: *inc_cls_num
+task_num: *task_num
+epoch: 1 # 5
+val_per_epoch: 5
+
+batch_size: 16 # Source code is 16 per device * 8 devices, since we don't use distribution device, set batch_size to 16
+testing_times: 1
+
+seed: 2
+
+train_trfms:
+  - RandomResizedCrop: 
+      size: *image_size
+      scale: [0.05, 1.0]
+      ratio: [0.75, 1.3333] # [0.75, 1.3333333333]
+      interpolation: BILINEAR
+  - RandomHorizontalFlip: 
+      p: 0.5
+  - ToTensor: {}
+
+test_trfms: 
+  - Resize:
+      size: 256 # Stated in source code of L2P
+      interpolation: BICUBIC # 3 # LANCZOS
+  - CenterCrop: 
+      size: *image_size
+  - ToTensor: {}
+
+optimizer:
+  name: Adam
+  kwargs:
+    lr: 0.001875 # 0.03
+    betas: [0.9, 0.999]
+    weight_decay: 0
+
+lr_scheduler:
+  name: Constant
+
+backbone:
+  name: vit_pt_imnet
+  kwargs:
+    num_classes: 100
+    pretrained: true
+    model_name : vit_base_patch16_224
+
+classifier:
+  name: L2P
+  kwargs:
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    num_class: *total_cls_num
+    task_num: *task_num
+    feat_dim: 768
+    prompt_length: 5 # L_p in paper
+    pool_size: 10 # M in paper
+    top_k: 5 # N in paper
+    pull_constraint_coeff: 1.0 # -0.5 in paper, 1.0 in source code
+

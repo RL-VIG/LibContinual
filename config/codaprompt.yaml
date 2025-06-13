@@ -1,0 +1,72 @@
+
+dataset: &dataset cifar100
+init_cls_num: &init_cls_num 10
+inc_cls_num: &inc_cls_num 10
+total_cls_num: &total_cls_num 100
+task_num: &task_num 10
+image_size: &image_size 224
+
+image_size: *image_size
+init_cls_num: *init_cls_num
+inc_cls_num: *inc_cls_num
+task_num: *task_num
+
+epoch: 20
+val_per_epoch: 20
+
+batch_size: 128
+
+train_trfms:
+  - RandomResizedCrop: 
+      size: *image_size
+  - RandomHorizontalFlip: {}
+  - ToTensor: {}
+  - Normalize:
+      mean: [0., 0., 0.]
+      std: [1., 1., 1.]
+
+test_trfms: 
+  - Resize: 
+      size: *image_size
+  - ToTensor: {}
+  - Normalize:
+      mean: [0., 0., 0.]
+      std: [1., 1., 1.]
+
+optimizer:
+  name: Adam
+  kwargs:
+    lr: 0.001
+    betas: [0.9, 0.999]
+    weight_decay: 0
+
+#lr_scheduler:
+#  name: MultiStepLR
+#  kwargs:
+#    gamma: 0.1
+#    milestones: [80, 120]
+
+lr_scheduler:
+  name: CosineSchedule
+  kwargs:
+    K: 20
+
+backbone:
+  name: vit_pt_imnet
+  kwargs:
+    num_classes: *total_cls_num
+    pretrained: true
+    model_name : vit_base_patch16_224
+
+classifier:
+  name: CodaPrompt
+  kwargs:
+    num_class: *total_cls_num
+    task_num: *task_num
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    feat_dim: 768
+    prompt_length: 8
+    pool_size: 100
+    mu: 0.0
+

@@ -1,0 +1,40 @@
+init_cls_num: &init_cls_num 2
+inc_cls_num: &inc_cls_num 2
+total_cls_num: &total_cls_num 100
+task_num: &task_num 50
+
+task_num: *task_num
+init_cls_num: *init_cls_num
+inc_cls_num: *inc_cls_num
+total_cls_num: *total_cls_num
+epoch: 200
+batch_size: 64 
+val_per_epoch: 200
+
+setting: task-agnostic
+testing_times: 1 # Don't set too high, it will take eternity
+
+
+optimizer:
+  name: SGD
+  kwargs:
+    lr: 0.01
+
+lr_scheduler:
+  name: PatienceSchedule
+  kwargs:
+    patience: 6
+    factor: 2
+    stopping_lr: 1e-5
+
+backbone:
+  name: AlexNet_TRGP
+  kwargs:
+
+classifier:
+  name: TRGP
+  kwargs:
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    task_num: *task_num
+    label_smoothing: 0.

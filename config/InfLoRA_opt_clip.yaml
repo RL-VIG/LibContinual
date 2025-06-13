@@ -1,0 +1,75 @@
+dataset: &dataset cifar100
+init_cls_num: &init_cls_num 20
+inc_cls_num: &inc_cls_num 20
+total_cls_num: &total_cls_num 100
+task_num: &task_num 5
+image_size: &image_size 224
+
+dataset: *dataset
+init_cls_num: *init_cls_num
+inc_cls_num: *inc_cls_num
+total_cls_num: *total_cls_num
+task_num: *task_num
+
+epoch: 20 # 20
+val_per_epoch: 20
+
+batch_size: 128 # 128
+
+setting: task-agnostic 
+
+testing_times: 5
+
+train_trfms:
+  - RandomResizedCrop:
+      size: *image_size
+  - RandomHorizontalFlip: {}
+  - ToTensor: {}
+  - Normalize:
+      mean: [0., 0., 0.]
+      std: [1., 1., 1.]
+
+test_trfms: 
+  - Resize:
+      size: *image_size
+  - ToTensor: {}
+  - Normalize:
+      mean: [0., 0., 0.]
+      std: [1., 1., 1.]
+
+optimizer:
+  name: Adam
+  kwargs:
+    lr: 0.0005
+    weight_decay: 0
+    betas: [0.9, 0.999]
+
+lr_scheduler:
+  name: CosineSchedule
+  kwargs:
+    K: 20
+
+
+backbone:
+  name: clip
+  kwargs:
+    pretrained : True
+    model_name : ViT-B/16
+    experts_num: 0
+    act_layer: QuickGELU
+    norm_layer: LayerNorm
+    attn_layer: MultiHeadAttention_LoRA
+
+classifier:
+  name: InfLoRA_OPT
+  kwargs:
+    use_ca: False
+    dataset: *dataset
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    task_num: *task_num
+    lame: 1.0
+    lamb: 0.95
+    embd_dim: 768
+    prompt_template : "a bad photo of a {}." # For CLIP
+    visual_only: True # For CLIP, apply lora to only visual encoder or visual and text encoder

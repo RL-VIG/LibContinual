@@ -1,0 +1,55 @@
+
+dataset: &dataset "imagenet-r"
+data_root: "/home/lvqiexuan/temp_data/imagenet-r/"
+
+init_cls_num: &init_cls_num 10
+inc_cls_num: &inc_cls_num 10
+total_cls_num: &total_cls_num 200
+task_num: &task_num 20
+image_size: &image_size 224
+
+dataset: *dataset
+task_num: *task_num
+init_cls_num: *init_cls_num
+inc_cls_num: *inc_cls_num
+total_cls_num: *total_cls_num
+epoch: 4
+val_per_epoch: 4
+
+train_batch_size: 128
+test_batch_size: 64
+
+testing_times: 10
+
+#setting: task-agnostic 
+setting: task-aware
+
+optimizer:
+  name: AdamW
+  kwargs:
+    lr: 1e-3
+    weight_decay: 0.
+
+lr_scheduler:
+  name: CosineAnnealingWarmUp
+  kwargs:
+    T_max: 0 # Will be replaced in trainter.py with epoch * len(dataloader)
+    warmup_length: 30
+
+backbone:
+  name: clip
+  kwargs:
+    model_name : ViT-B/16
+    pretrained : True
+    block_layer: ResidualAttentionBlock_MLP
+    act_layer: QuickGELU
+    norm_layer: LayerNorm
+
+classifier:
+  name: DMNSP
+  kwargs:
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    prompt_template : "a bad photo of a {}."
+    label_smoothing: 0.
+    lamda_scale: 30
