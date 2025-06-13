@@ -19,9 +19,6 @@ from .backbone.transformer import MultiHeadAttention_MultiMaskedLoRA
 
 Epsilon = 0.5
 
-## Testing
-
-
 class TopK:
 
     '''
