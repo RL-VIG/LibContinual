@@ -1,0 +1,63 @@
+dataset: &dataset cifar100
+total_cls_num: &total_cls_num 100 
+init_cls_num: &init_cls_num 10 #2
+inc_cls_num: &inc_cls_num 10 #2
+task_num: &task_num 10 #50
+image_size: &image_size 32
+
+image_size: *image_size
+warmup: 0
+
+task_num: *task_num
+init_cls_num: *init_cls_num 
+inc_cls_num: *inc_cls_num
+
+batch_size: 10
+epoch: 1
+val_per_epoch: 1
+
+testing_times: 1
+seed: 1993
+
+train_trfms:
+  - ToTensor: {}
+  - Normalize:
+      mean: [0.4913725490196078, 0.4823529411764706, 0.4466666666666667] # [x / 255 for x in [125.3, 123.0, 113.9]]
+      std: [0.2470588235294118, 0.2435294117647059, 0.2615686274509804] # [x / 255 for x in [63.0, 62.1, 66.7]]
+
+test_trfms: 
+  - ToTensor: {}
+  - Normalize:
+      mean: [0.4913725490196078, 0.4823529411764706, 0.4466666666666667]
+      std: [0.2470588235294118, 0.2435294117647059, 0.2615686274509804]
+
+optimizer:
+  name: Adam
+  kwargs:
+    lr: 0.001
+    weight_decay: 0.0001
+
+backbone:
+  name: resnet18
+  kwargs:
+    num_classes: *total_cls_num
+    args: 
+      dataset: *dataset
+
+buffer:
+  name: OnlineBuffer
+  kwargs:
+    buffer_size: 5000
+    batch_size: 64
+    input_size: [3, *image_size, *image_size]
+    # strategy: herding     # random, equal_random, reservoir, herding
+
+classifier:
+  name: OCM
+  kwargs:
+    num_class: *total_cls_num
+    task_num: *task_num
+    init_cls_num: *init_cls_num 
+    inc_cls_num: *inc_cls_num
+    feat_dim: 512
+    image_size: *image_size

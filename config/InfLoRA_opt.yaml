@@ -1,0 +1,71 @@
+dataset: &dataset cifar100
+init_cls_num: &init_cls_num 10
+inc_cls_num: &inc_cls_num 10
+total_cls_num: &total_cls_num 100
+task_num: &task_num 10
+image_size: &image_size 224
+
+dataset: *dataset
+init_cls_num: *init_cls_num
+inc_cls_num: *inc_cls_num
+total_cls_num: *total_cls_num
+task_num: *task_num
+
+epoch: 20
+val_per_epoch: 20
+
+batch_size: 128 # 128
+
+setting: task-agnostic 
+
+testing_times: 5
+
+train_trfms:
+  - RandomResizedCrop:
+      size: *image_size
+  - RandomHorizontalFlip: {}
+  - ToTensor: {}
+  - Normalize:
+      mean: [0., 0., 0.]
+      std: [1., 1., 1.]
+
+test_trfms: 
+  - Resize:
+      size: *image_size
+  - ToTensor: {}
+  - Normalize:
+      mean: [0., 0., 0.]
+      std: [1., 1., 1.]
+
+optimizer:
+  name: Adam
+  kwargs:
+    lr: 0.0005
+    weight_decay: 0
+    betas: [0.9, 0.999]
+
+lr_scheduler:
+  name: CosineSchedule
+  kwargs:
+    K: 20
+
+backbone:
+  name: vit_pt_imnet
+  kwargs:
+    pretrained: True
+    model_name : vit_base_patch16_224_in21k
+    attn_layer: MultiHeadAttention_LoRA
+    lora_rank: 10
+
+classifier:
+  name: InfLoRA_OPT
+  kwargs:
+    use_ca: False
+    dataset: *dataset
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    task_num: *task_num
+    lame: 1.0
+    lamb: 0.95
+    embd_dim: 768
+    

@@ -1,0 +1,42 @@
+image_size: 32
+  
+# data
+init_cls_num: 20 # 10
+inc_cls_num: 20 # 10
+task_num: 5 # 10
+
+epoch: 100 # 100
+n_gpu: 1
+val_per_epoch: 10
+
+batch_size: 128
+
+optimizer:
+  name: SGD
+  kwargs:
+    lr: 0.1
+
+lr_scheduler:
+  name: StepLR
+  kwargs:
+    gamma: 0.5
+    step_size: 30
+
+backbone:
+  name: resnet34 # resnet18
+  kwargs:
+    num_classes: 100
+    args: 
+      dataset: cifar100
+
+classifier:
+  name: LWF
+  kwargs:
+    num_class: 100
+    feat_dim: 512
+    init_cls_num: 20 #10
+    inc_cls_num: 20 #10
+    dist: 0.5
+    lamda: 10
+    K: 2
+    lw_mr: 1

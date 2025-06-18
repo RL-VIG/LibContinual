@@ -1,0 +1,54 @@
+includes:
+  - headers/data.yaml
+  - headers/device.yaml
+  - headers/model.yaml
+  # - headers/optimizer.yaml
+  - backbones/resnet12.yaml
+
+image_size: 32
+
+# data
+init_cls_num: 10
+inc_cls_num: 10
+task_num: 10
+
+epoch: 10 #160
+device_ids: 0
+n_gpu: 1
+val_per_epoch: 5
+
+
+batch_size: 128
+
+
+optimizer:
+  name: Adam
+  kwargs:
+    lr: 0.001
+    betas: [0.9, 0.999]
+    weight_decay: 0
+
+lr_scheduler:
+  name: MultiStepLR
+  kwargs:
+    gamma: 0.1
+    milestones: [80, 120]
+
+backbone:
+  name: vit_pt_imnet
+  kwargs:
+    num_classes: 100
+    pretrained: true
+    model_name : vit_base_patch16_224
+
+classifier:
+  name: DualPrompt
+  kwargs:
+    num_class: 100
+    feat_dim: 768
+    task_num: 10
+    init_cls_num: 10
+    inc_cls_num: 10
+    g_prompt_length: 6
+    e_prompt_length: 20
+

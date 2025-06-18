@@ -1,0 +1,77 @@
+
+dataset: &dataset binary_cifar100
+data_root: /home/lvqiexuan/temp_data/binary_cifar100
+
+total_cls_num: &total_cls_num 100
+init_cls_num: &init_cls_num 10
+inc_cls_num: &inc_cls_num 10
+task_num: &task_num 10
+image_size: &image_size 32
+
+init_cls_num: *init_cls_num
+inc_cls_num: *inc_cls_num
+task_num: *task_num
+
+epoch: 1 # normally 250, 1 for online setting
+stage2_epoch: 1 # normally 250, 1 for online setting
+val_per_epoch: 50
+batch_size: 10 # normally 128, 10 for online setting
+
+testing_times: 1
+
+seed: 1993
+
+num_workers: 0
+
+train_trfms:
+  - RandomHorizontalFlip: {}
+  - RandomCrop: 
+      size : *image_size
+      padding : 4
+  - ToTensor: {}
+  - Normalize:
+      mean: [0.5071, 0.4866, 0.4409]
+      std: [0.2673, 0.2564, 0.2762]
+
+test_trfms: 
+  - ToTensor: {}
+  - Normalize:
+      mean: [0.5071, 0.4866, 0.4409]
+      std: [0.2673, 0.2564, 0.2762]
+
+optimizer:
+  name: SGD
+  kwargs:
+    lr: 0.1
+    momentum: 0.9
+    weight_decay: 2e-4
+
+lr_scheduler:
+  name: MultiStepLR
+  kwargs:
+    gamma: 0.1
+    milestones: [100, 150, 200]
+
+# done
+backbone:
+  name: cifar_resnet32_V2 # cifar_resnet32_V2 ， resnet32 for dataset cifar100, see original paper
+  kwargs:
+    num_classes: *total_cls_num
+    args: 
+      dataset: *dataset
+
+buffer:
+  name: LinearSpiltBuffer
+  kwargs:
+    buffer_size: 2000
+    batch_size: 128
+    strategy: balance_random      # random, equal_random, reservoir, herding 
+    val_ratio: 0.1
+
+classifier:
+  name: bic
+  kwargs:
+    num_class: *total_cls_num
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    task_num: *task_num

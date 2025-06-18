@@ -1,0 +1,73 @@
+
+dataset: &dataset cifar100
+init_cls_num: &init_cls_num 50
+inc_cls_num: &inc_cls_num 5 # 10 5
+total_cls_num: &total_cls_num 100
+task_num: &task_num 11 # 6 11
+image_size: &image_size 32
+
+init_cls_num: *init_cls_num
+inc_cls_num: *inc_cls_num
+task_num: *task_num
+
+epoch: 160
+val_per_epoch: 160
+train_batch_size: 128
+test_batch_size: 100
+
+seed: 2
+
+train_trfms:
+  - RandomCrop : 
+      size : *image_size
+      padding : 4
+  - RandomHorizontalFlip : {}
+  - ToTensor: {}
+  - Normalize:
+      mean: [0.5071, 0.4866, 0.4409]
+      std: [0.2009, 0.1984, 0.2023]
+
+test_trfms: 
+  - ToTensor: {}
+  - Normalize:
+      mean: [0.5071, 0.4866, 0.4409]
+      std: [0.2009, 0.1984, 0.2023]
+
+optimizer:
+  name: SGD
+  kwargs:
+    lr: 0.1
+    momentum: 0.9
+    weight_decay: 5e-4
+
+lr_scheduler:
+  name: MultiStepLR
+  kwargs:
+    gamma: 0.1
+    milestones: [80, 120]
+
+backbone:
+  name: resnet32_V2
+  kwargs:
+    num_classes: 100
+    args: 
+      dataset: cifar100
+
+buffer:
+  name: LinearBuffer
+  kwargs:
+    buffer_size: 2000
+    batch_size: 128
+    strategy: herding     # random, equal_random, reservoir, herding
+
+classifier:
+  name: LUCIR
+  kwargs:
+    num_class: *total_cls_num
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    feat_dim: 64
+    dist: 0.5
+    lamda: 5
+    K: 2
+    lw_mr: 1

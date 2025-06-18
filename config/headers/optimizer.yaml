@@ -1,0 +1,11 @@
+# optimizer info
+optimizer:
+  name: SGD
+  kwargs:
+    lr: 0.1
+  
+# lr_scheduler info
+lr_scheduler: # By Default, No LR Scheduler is used
+  name: Constant
+
+warmup: 3

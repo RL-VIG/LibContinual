@@ -1,0 +1,78 @@
+init_cls_num: &init_cls_num 10
+inc_cls_num: &inc_cls_num 10
+total_cls_num: &total_cls_num 200
+task_num: &task_num 20
+image_size: &image_size 224
+
+task_num: *task_num
+init_cls_num: *init_cls_num
+inc_cls_num: *inc_cls_num
+total_cls_num: *total_cls_num
+epoch: 1
+val_per_epoch: 1
+
+train_batch_size: 128
+test_batch_size: 64
+
+testing_times: 1
+
+dataset: 'imagenet-r'
+data_root: /home/lvqiexuan/temp_data/imagenet-r
+
+setting: task-agnostic 
+
+train_trfms:
+  - RandomResizedCrop :
+      size: *image_size
+      scale: [0.9, 1.0]
+      interpolation: BICUBIC
+  - _convert_to_rgb: {}
+  - ToTensor: {}
+  - Normalize:
+      mean: [0.48145466, 0.4578275, 0.40821073]
+      std: [0.26862954, 0.26130258, 0.27577711]
+
+test_trfms: 
+  - RandomResizedCrop :
+      size: *image_size
+      scale: [0.9, 1.0]
+      interpolation: BICUBIC
+  - _convert_to_rgb: {}
+  - ToTensor: {}
+  - Normalize:
+      mean: [0.48145466, 0.4578275, 0.40821073]
+      std: [0.26862954, 0.26130258, 0.27577711]
+
+optimizer:
+  name: AdamW
+  kwargs:
+    lr: 1e-3
+    weight_decay: 0.
+
+lr_scheduler:
+  name: CosineAnnealingWarmUp
+  kwargs:
+    T_max: 0 # Will be replaced in trainter.py with epoch * len(dataloader)
+    warmup_length: 30
+
+backbone:
+  name: clip
+  kwargs:
+    model_name : ViT-B/16
+    pretrained : True
+    block_layer: ResidualAttentionBlock_MoE_MLP
+    experts_num: 2
+    step: 1
+    top_k : 2
+    act_layer: QuickGELU
+    norm_layer: LayerNorm
+
+classifier:
+  name: MOE_ADAPTER4CL
+  kwargs:
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    task_num: *task_num
+    embd_dim: 768
+    prompt_template : "a bad photo of a {}."
+    label_smoothing: 0.

@@ -1,0 +1,59 @@
+
+dataset: &dataset cifar100
+init_cls_num: &init_cls_num 20
+inc_cls_num: &inc_cls_num 20
+total_cls_num: &total_cls_num 100
+task_num: &task_num 5
+image_size: &image_size 32
+
+# Image size
+dataset: cifar
+init_cls_num: *init_cls_num
+inc_cls_num: *inc_cls_num
+task_num: *task_num
+image_size: *image_size
+
+# Training setting
+init_epoch: 1 #250
+epoch: 1 #250
+val_per_epoch: 250
+batch_size: 128
+
+# Optimizer settings
+optimizer:
+  name: SGD
+  kwargs:
+    lr: 0.1
+    weight_decay: 2e-4
+    momentum: 0.9
+
+# Learning rate scheduler settings
+lr_scheduler:
+  name: MultiStepLR
+  kwargs:
+    gamma: 0.1
+    milestones: [100, 150, 200]
+
+# Backbone architecture settings
+backbone:
+  name: resnet18
+  kwargs:
+    num_classes: *total_cls_num
+    args:
+      dataset: *dataset
+
+# Buffer settings
+buffer:
+  name: LinearHerdingBuffer
+  kwargs:
+    buffer_size: 2000
+    batch_size: 128
+#    strategy: herding     # random, equal_random, reservoir, herding
+
+# Classifier settings
+classifier:
+  name: WA
+  kwargs:
+    num_class: *total_cls_num
+    feat_dim: 512 # 64
+    init_cls_num: *init_cls_num

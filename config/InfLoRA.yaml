@@ -1,0 +1,64 @@
+save_path : ""
+
+image_size: 224
+save_path: ./
+init_cls_num: 10
+inc_cls_num: 10
+task_num: 10
+val_per_epoch: 20
+
+
+epoch: 20
+n_gpu: 1
+seed: 2
+
+shuffle: false
+
+batch_size: 128
+
+
+optimizer:
+  name: Adam
+  kwargs:
+    lr: 0.0005
+    weight_decay: 0
+    betas: [0.9, 0.999]
+
+
+
+
+lr_scheduler:
+  name: CosineSchedule
+  kwargs:
+    K: 20
+
+backbone:
+  name: SiNet_vit
+  kwargs:
+    total_sessions: 10
+    rank: 10
+    init_cls: 10
+    embd_dim: 768
+
+
+buffer:
+  name: LinearBuffer
+  kwargs:
+    buffer_size: 0
+    batch_size: 128
+    strategy: herding     # random, equal_random, reservoir, herding
+
+classifier:
+  name: InfLoRA
+  kwargs:
+    feat_dim: 64
+    num_class: 100
+    inc_cls_num: 10
+    # device: 0
+    lame: 1.0
+    lamb: 0.95
+    total_sessions: 10
+
+
+
+

@@ -1,0 +1,78 @@
+
+dataset: &dataset cifar100
+init_cls_num: &init_cls_num 50 # 50  50
+inc_cls_num: &inc_cls_num 10 # 5   10
+total_cls_num: &total_cls_num 100 
+task_num: &task_num 6 # 11  6
+image_size: &image_size 32
+
+image_size: *image_size
+# data
+init_cls_num: *init_cls_num  
+inc_cls_num: *inc_cls_num   
+task_num: *task_num  
+batch_size: 128 # 128
+epoch: 100 # 100
+
+val_per_epoch: 100
+seed: 2
+
+testing_times: 10 # 10
+
+train_trfms:
+  - RandomCrop: 
+      size: [*image_size, *image_size]
+      padding: 4
+  - RandomHorizontalFlip: 
+      p: 0.5
+  - ColorJitter: 
+      brightness: 0.24705882352941178
+  - ToTensor: {}
+  - Normalize:
+      mean: [0.5071, 0.4866, 0.4409] # don't change
+      std: [0.2675, 0.2565, 0.2761] # don't change
+      #mean: [0.5071, 0.4867, 0.4408]
+      #std: [0.2675, 0.2565, 0.2761]
+
+
+test_trfms: 
+  - ToTensor: {}
+  - Normalize:
+      mean: [0.5071, 0.4866, 0.4409] # don't change
+      std: [0.2675, 0.2565, 0.2761] # don't change
+      #mean: [0.5071, 0.4867, 0.4408]
+      #std: [0.2675, 0.2565, 0.2761]
+
+optimizer:
+  name: Adam
+  kwargs:
+    lr: 0.001
+    #betas: [0.9, 0.999]
+    weight_decay: 2e-4
+    #eps: 1e-8
+
+lr_scheduler:
+  name: CosineAnnealingLR
+  kwargs:
+    T_max: 32
+
+backbone:
+  name: resnet18_cbam
+  kwargs:
+    num_classes: *total_cls_num
+    args:
+      dataset: *dataset
+
+classifier:
+  name: PRAKA
+  kwargs:
+    num_class: *total_cls_num
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    feat_dim: 512
+
+    log_root: log
+    total_nc: *total_cls_num
+    protoAug_weight: 15.0
+    kd_weight: 15.0
+    temp: 0.1

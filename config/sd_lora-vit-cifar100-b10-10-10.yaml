@@ -1,0 +1,73 @@
+dataset: &dataset cifar100
+init_cls_num: &init_cls_num 10
+inc_cls_num: &inc_cls_num 10
+total_cls_num: &total_cls_num 100
+task_num: &task_num 10
+image_size: &image_size 224
+epoch: &epoch 20
+
+dataset: *dataset
+init_cls_num: *init_cls_num
+inc_cls_num: *inc_cls_num
+total_cls_num: *total_cls_num
+task_num: *task_num
+
+epoch: *epoch
+val_per_epoch: *epoch
+
+batch_size: 128
+
+seed: 42
+
+setting: task-agnostic 
+
+testing_times: 1
+
+train_trfms:
+  - RandomResizedCrop:
+      size: *image_size
+      scale : [0.05, 1.0]
+      ratio : [0.75, 1.33333]
+  - RandomHorizontalFlip: 
+      p : 0.5
+  - ToTensor: {}
+
+test_trfms: 
+  - Resize:
+      size: *image_size
+      interpolation : BICUBIC
+  - CenterCrop: 
+      size: *image_size
+  - ToTensor: {}
+
+optimizer:
+  name: SGD
+  kwargs:
+    lr: 8e-3
+    momentum: 0.9
+
+lr_scheduler:
+  name: Constant
+
+# vit_base_patch16_224.augreg2_in21k_ft_in1k
+# vit_base_patch16_224
+backbone:
+  name: vit_pt_imnet
+  kwargs:
+    pretrained: True
+    model_name : vit_base_patch16_224.augreg2_in21k_ft_in1k
+    attn_layer: MultiHeadAttention_SDLoRA
+    lora_rank: 10
+
+classifier:
+  name: SD_LoRA
+  kwargs:
+    dataset: *dataset
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    task_num: *task_num
+    embd_dim: 768
+    init_mag : 1.0
+    rank_reduction: [False, 4, 8, 8, 6]
+    knowledge_dist: [False, 9e-4]
+    

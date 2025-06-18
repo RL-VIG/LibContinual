@@ -1,0 +1,71 @@
+includes:
+  - headers/data.yaml
+  - headers/device.yaml
+  # - headers/model.yaml
+  # - headers/optimizer.yaml
+  # - backbones/resnet12.yaml
+
+warmup: 0
+
+dataset: 5-datasets # [cifar100, binary_cifar100, ...]
+data_root: /data/cyy/processed_data2/5-dataset/
+class_order: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+              10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+              20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
+              30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
+              40, 41, 42, 43, 44, 45, 46, 47, 48, 49]
+testing_times: 1
+
+save_path: ./
+# data
+init_cls_num: 10
+inc_cls_num: 10
+task_num: 5
+
+
+batch_size: 128
+
+init_epoch: 1  #100
+epoch: 1  #100
+ 
+device_ids: 2
+n_gpu: 1
+val_per_epoch: 1
+
+
+optimizer:
+  name: SGD
+  kwargs:
+    lr: 0.1
+    momentum: 0.9
+    weight_decay: 0.0005
+
+lr_scheduler:
+  name: CosineAnnealingLR
+  kwargs:
+    T_max: 100
+
+
+backbone:
+  name: cifar_resnet32
+  kwargs:
+    num_classes: 100
+    args: 
+      dataset: cifar100
+
+
+buffer:
+  name: LinearHerdingBuffer
+  kwargs:
+    buffer_size: 2000
+    batch_size: 64
+    # strategy: herding     # random, equal_random, reservoir, herding
+
+classifier:
+  name: ICarl
+  kwargs:
+    num_class: 50
+    feat_dim: 64
+    init_cls_num: 10
+    inc_cls_num: 10
+    task_num: 5

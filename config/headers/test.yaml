@@ -1,0 +1,11 @@
+# Testing Settings
+testing_times: 10 # Take average of 10 testings 
+setting: task-agnostic # Task ID is not provided during inference
+# or task-aware, provide Task ID during inference
+
+testing_per_task: True # Test data comes in per task (Each batch of test data will belongs to same task)
+# False, each batch of test data is not assure to be in same task
+# Not yet Implemented
+
+eval_with_test: True # Use Test data for in-epoch validation, If False
+# Another eval dateset will seperated from train dataset for in-epoch validation

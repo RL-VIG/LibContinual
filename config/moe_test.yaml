@@ -1,0 +1,68 @@
+dataset: &dataset cifar100
+init_cls_num: &init_cls_num 10
+inc_cls_num: &inc_cls_num 10
+task_num: &task_num 10
+epoch: &epoch 1 # 5
+image_size: &image_size 224
+
+dataset: *dataset
+task_num: *task_num
+init_cls_num: *init_cls_num
+inc_cls_num: *inc_cls_num
+epoch: *epoch
+val_per_epoch: *epoch
+
+batch_size: 64 # 128
+testing_times: 1
+
+setting: task-agnostic
+
+optimizer:
+  name: AdamW
+  kwargs:
+    lr: 1e-3
+    weight_decay: 0.
+
+#optimizer:
+#  name: Adam
+#  kwargs:
+#    lr: 0.0005
+#    weight_decay: 0.0
+#    betas: [0.9, 0.999]
+
+lr_scheduler:
+  name: CosineAnnealingWarmUp
+  kwargs:
+    T_max: 0 # Will be replaced in trainter.py with epoch * len(dataloader)
+    warmup_length: 30
+
+#lr_scheduler:
+#  name: CosineSchedule
+#  kwargs:
+#    K: *epoch
+
+backbone:
+  name: vit_pt_imnet
+  kwargs:
+    pretrained: True
+    model_name: vit_base_patch16_224_in21k
+    attn_layer: MultiHeadAttention_MoEMaskedLoRA
+    block_layer: ResidualAttentionBiBlock
+    lora_rank: 10
+
+classifier:
+  name: MoE_Test2
+  kwargs:
+    dataset: *dataset
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    task_num: *task_num
+    lame: 1.0
+    lamb: 0.95
+    embd_dim: 768
+    use_ca: False
+
+
+
+
+
