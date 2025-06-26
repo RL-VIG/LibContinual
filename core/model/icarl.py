@@ -168,6 +168,7 @@ class ICarl(nn.Module):
 
     def after_task(self, task_idx, buffer, train_loader, test_loaders):
         # freeze old network as KD teacher
+        
         self.old_network = copy.deepcopy(self.network)
         self.old_network.eval()
         
@@ -181,6 +182,8 @@ class ICarl(nn.Module):
         buffer.update(self.network, train_loader, val_transform, 
                       self.cur_task_id, self.accu_cls_num, self.cur_cls_indexes,
                       self.device)
+
+        assert buffer.labels != 0
         
         # compute class mean vector via samples in buffer
         self.class_means = self.calc_class_mean(buffer,
@@ -254,6 +257,8 @@ class ICarl(nn.Module):
                                   shuffle=False,
                                   num_workers=train_loader.num_workers, 
                                   pin_memory=train_loader.pin_memory)
+
+        
         # compute features for all training samples
         extracted_features = []
         extracted_targets = []
@@ -266,6 +271,7 @@ class ICarl(nn.Module):
                 # normalize
                 extracted_features.append(feats / feats.norm(dim=1).view(-1, 1))
                 extracted_targets.extend(labels)
+
         extracted_features = torch.cat(extracted_features).cpu()
         extracted_targets = torch.stack(extracted_targets).cpu()
 

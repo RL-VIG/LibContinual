@@ -260,8 +260,14 @@ class Trainer(object):
         method_name = self.config["classifier"]["name"]
         testing_times = self.config['testing_times']
 
-        avg_acc_list = np.zeros((self.task_num))
-        best_avg_acc_list = np.zeros((self.task_num))
+        # 记录每个 task 的 average last accuracy
+        batch_last_acc_list = np.zeros((self.task_num))
+        task_last_acc_list = np.zeros((self.task_num))
+
+        # 记录每个 task 的 best last accuracy
+        best_batch_last_acc_list = np.zeros((self.task_num))
+        best_task_last_acc_list = np.zeros((self.task_num))
+
         acc_table = np.zeros((self.task_num, self.task_num)) # A numpy array with shape [task_num, task_num], where [i, j] is acc of model on task j after learning task i
         bwt_list, frgt_list = [], []
 
@@ -307,8 +313,11 @@ class Trainer(object):
             if self.rank == 0:
                 print(f"================Task {task_idx} Training!================")
                 print(f"The training samples number : {len(dataloader.dataset)}")
+            
+            # Reset Best Record
+            best_batch_last_acc, best_task_last_acc = 0., 0.
+            best_bwt, best_frgt = float('-inf'), float('inf')
 
-            best_avg_acc, best_bwt, best_frgt = 0., float('-inf'), float('inf')
             for epoch_idx in range(self.init_epoch if task_idx == 0 else self.inc_epoch):
                 if self.rank == 0:
                     print("================Train on train set================")
@@ -336,24 +345,27 @@ class Trainer(object):
                         print(f"================Validation on test set================")
 
                     # Disable validation for some method
-                    #if method_name in ['TRGP', 'RanPAC', 'MInfLoRA', 'MInfLoRA2', 'MInfLoRA3', 'PRAKA', 'TRGP_CLIP'] or 'MInfLoRA' in method_name:
                     if method_name in ['TRGP', 'RanPAC', 'MInfLoRA2', 'MInfLoRA3', 'PRAKA', 'TRGP_CLIP']:
                         if self.rank == 0:
                             print(f" * Disabled validation for this method")
                     else:
                         test_acc = self._validate(task_idx)
 
-                        avg_acc, per_task_acc = test_acc['avg_acc'], test_acc['per_task_acc']
-                        best_avg_acc = max(avg_acc, best_avg_acc)
+                        batch_last_acc, per_task_acc = test_acc['avg_acc'], test_acc['per_task_acc']
+                        best_batch_last_acc = max(batch_last_acc, best_batch_last_acc)
+
+                        task_last_acc = np.mean(per_task_acc)
+                        best_task_last_acc = max(task_last_acc, best_task_last_acc)
 
                         frgt, bwt = compute_frgt(acc_table, per_task_acc, task_idx), compute_bwt(acc_table, per_task_acc, task_idx)
                         best_frgt, best_bwt = min(frgt, best_frgt), max(bwt, best_bwt)
 
                         if self.rank == 0:
-                            print(f" * [Batch] Last Average Acc (Best Last Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
-                            print(f" * Forgetting (Best Forgetting) : {frgt:.3f} ({best_frgt:.3f})")
-                            print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
-                            print(f" * Per-Task Acc : {per_task_acc}")
+                            print(f" * [Batch] Last Average Acc: {batch_last_acc:.2f} (Best: {best_batch_last_acc:.2f})")
+                            print(f" * [Task] Last Average Acc: {task_last_acc:.2f} (Best: {best_task_last_acc:.2f})")
+                            print(f" * Forgetting: {frgt:.3f} (Best: {best_frgt:.3f})")
+                            print(f" * Backward Transfer: {bwt:.2f} (Best: {best_bwt:.2f})")
+                            print(f" * Per-Task Acc: {per_task_acc}")
             
                 if self.config['lr_scheduler']['name'] == "PatienceSchedule":
                     self.scheduler.step(train_meter.avg('loss'))
@@ -397,18 +409,22 @@ class Trainer(object):
 
                         test_acc = self._validate(task_idx)
 
-                        avg_acc, per_task_acc = test_acc['avg_acc'], test_acc['per_task_acc']
-                        best_avg_acc = max(avg_acc, best_avg_acc)
+                        batch_last_acc, per_task_acc = test_acc['avg_acc'], test_acc['per_task_acc']
+                        best_batch_last_acc = max(batch_last_acc, best_batch_last_acc)
+
+                        task_last_acc = np.mean(per_task_acc)
+                        best_task_last_acc = max(task_last_acc, best_task_last_acc)
 
                         frgt, bwt = compute_frgt(acc_table, per_task_acc, task_idx), compute_bwt(acc_table, per_task_acc, task_idx)
                         best_frgt, best_bwt = min(frgt, best_frgt), max(bwt, best_bwt)
 
                         if self.rank == 0:
-                            print(f" * [Batch] Last Average Acc (Best Last Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
-                            print(f" * Forgetting (Best Forgetting) : {frgt:.3f} ({best_frgt:.3f})")
-                            print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
-                            print(f" * Per-Task Acc : {per_task_acc}")
-            
+                            print(f" * [Batch] Last Average Acc: {batch_last_acc:.2f} (Best: {best_batch_last_acc:.2f})")
+                            print(f" * [Task] Last Average Acc: {task_last_acc:.2f} (Best: {best_task_last_acc:.2f})")
+                            print(f" * Forgetting: {frgt:.3f} (Best: {best_frgt:.3f})")
+                            print(f" * Backward Transfer: {bwt:.2f} (Best: {best_bwt:.2f})")
+                            print(f" * Per-Task Acc: {per_task_acc}")
+
                     #bias_scheduler.step()
 
             for test_idx in range(testing_times):
@@ -416,28 +432,37 @@ class Trainer(object):
                     print(f"================Test {test_idx+1}/{testing_times} of Task {task_idx}!================")
 
                 test_acc = self._validate(task_idx)
-                avg_acc, per_task_acc = test_acc['avg_acc'], test_acc['per_task_acc']
-                best_avg_acc = max(avg_acc, best_avg_acc)
+
+                batch_last_acc, per_task_acc = test_acc['avg_acc'], test_acc['per_task_acc']
+                best_batch_last_acc = max(batch_last_acc, best_batch_last_acc)
+
+                task_last_acc = np.mean(per_task_acc)
+                best_task_last_acc = max(task_last_acc, best_task_last_acc)
 
                 frgt, bwt = compute_frgt(acc_table, per_task_acc, task_idx), compute_bwt(acc_table, per_task_acc, task_idx)
                 best_frgt, best_bwt = min(frgt, best_frgt), max(bwt, best_bwt)
 
                 if self.rank == 0:
-                    print(f" * [Batch] Last Average Acc (Best Last Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
-                    print(f" * Forgetting (Best Forgetting) : {frgt:.3f} ({best_frgt:.3f})")
-                    print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
-                    print(f" * Per-Task Acc : {per_task_acc}")
+                    print(f" * [Batch] Last Average Acc: {batch_last_acc:.2f} (Best: {best_batch_last_acc:.2f})")
+                    print(f" * [Task] Last Average Acc: {task_last_acc:.2f} (Best: {best_task_last_acc:.2f})")
+                    print(f" * Forgetting: {frgt:.3f} (Best: {best_frgt:.3f})")
+                    print(f" * Backward Transfer: {bwt:.2f} (Best: {best_bwt:.2f})")
+                    print(f" * Per-Task Acc: {per_task_acc}")
 
-                avg_acc_list[task_idx] += avg_acc
+                batch_last_acc_list[task_idx] += batch_last_acc # avg_acc_list[task_idx] += avg_acc
+                task_last_acc_list[task_idx] += task_last_acc
                 acc_table[task_idx][:task_idx + 1] += np.array(per_task_acc)
 
-            # Take mean of testing_times
-            best_avg_acc_list[task_idx] = best_avg_acc
-            avg_acc_list[task_idx] /= testing_times 
-            acc_table[task_idx] /= testing_times 
+            best_batch_last_acc_list[task_idx] = best_batch_last_acc
+            best_task_last_acc_list[task_idx] = best_task_last_acc
 
-            #avg_acc = np.mean(acc_table[task_idx][:task_idx + 1])
-            avg_acc = avg_acc_list[task_idx]
+            # Take mean of testing_times
+            batch_last_acc_list[task_idx] /= testing_times
+            task_last_acc_list[task_idx] /= testing_times
+            acc_table[task_idx] /= testing_times
+
+            batch_last_acc = batch_last_acc_list[task_idx]
+            task_last_acc = task_last_acc_list[task_idx]
 
             frgt, bwt = compute_frgt(acc_table, acc_table[task_idx], task_idx), compute_bwt(acc_table, acc_table[task_idx], task_idx)
             best_frgt, best_bwt = min(frgt, best_frgt), max(bwt, best_bwt)
@@ -447,13 +472,15 @@ class Trainer(object):
                 
             if self.rank == 0:
                 print(f"================Result of Task {task_idx} Testing!================")
-                print(f" * [Batch] Last Average Acc (Best Last Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
-                print(f" * Forgetting (Best Forgetting) : {frgt:.3f} ({best_frgt:.3f})")
-                print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
-                print(f" * Per-Task Acc : {acc_table[task_idx][:task_idx + 1]}")
+                print(f" * [Batch] Last Average Acc: {batch_last_acc:.2f} (Best: {best_batch_last_acc:.2f})")
+                print(f" * [Task] Last Average Acc: {task_last_acc:.2f} (Best: {best_task_last_acc:.2f})")
+                print(f" * Forgetting: {frgt:.3f} (Best: {best_frgt:.3f})")
+                print(f" * Backward Transfer: {bwt:.2f} (Best: {best_bwt:.2f})")
+                print(f" * Per-Task Acc: {acc_table[task_idx][:task_idx + 1]}")
 
-        batch_ovr_avg_acc = np.mean(avg_acc_list)
-        best_batch_ovr_avg_acc = np.mean(best_avg_acc_list)
+        batch_ovr_avg_acc = np.mean(batch_last_acc_list) #batch_ovr_avg_acc = np.mean(avg_acc_list)
+        best_batch_ovr_avg_acc = np.mean(best_batch_last_acc_list) # best_batch_ovr_avg_acc = np.mean(best_avg_acc_list)
+         
         task_ovr_avg_acc = np.sum(np.sum(acc_table[:task_idx + 1], axis = 1) / np.arange(1, task_idx + 2)) / (task_idx + 1)
         
         ovr_bwt = np.mean(bwt_list) if len(bwt_list) > 0 else float('-inf')
@@ -461,10 +488,11 @@ class Trainer(object):
 
         if self.rank == 0:
             print(f"================Overall Result of {self.task_num} Tasks!================")
-            print(f" * [Batch] Last Average Acc (Best Last Average Acc) : {avg_acc:.2f} ({best_avg_acc:.2f})")
-            print(f" * Forgetting (Best Forgetting) : {frgt:.3f} ({best_frgt:.3f})")
-            print(f" * Backward Transfer (Best Backward Transfer) : {bwt:.2f} ({best_bwt:.2f})")
-            print(f" * [Batch] Overall Avg Acc : {batch_ovr_avg_acc:.2f} ({best_batch_ovr_avg_acc:.2f})")
+            print(f" * [Batch] Last Average Acc: {batch_last_acc:.2f} (Best: {best_batch_last_acc:.2f})")
+            print(f" * [Task] Last Average Acc: {task_last_acc:.2f} (Best: {best_task_last_acc:.2f})")
+            print(f" * Forgetting: {frgt:.3f} (Best: {best_frgt:.3f})")
+            print(f" * Backward Transfer: {bwt:.2f} (Best: {best_bwt:.2f})")
+            print(f" * [Batch] Overall Avg Acc : {batch_ovr_avg_acc:.2f} (Best: {best_batch_ovr_avg_acc:.2f})")
             print(f" * [Task] Overall Avg Acc : {task_ovr_avg_acc:.2f}")
             print(f" * Overall Frgt : {ovr_frgt:.3f}")
             print(f" * Overall BwT : {ovr_bwt:.2f}")

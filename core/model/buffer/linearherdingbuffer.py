@@ -58,6 +58,11 @@ class LinearHerdingBuffer:
         # subsample previous categories in the buffer
         samples_per_class = self.buffer_size // total_cls_num
 
+        assert samples_per_class > 0, (
+            f"Invalid buffer size ({self.buffer_size}) "
+            f"for total classes ({total_cls_num}): samples_per_class must be at least 1."
+        )
+
         if task_idx > 0:
             buffer_X, buffer_Y = self.get_all_data()
             self.clear()
