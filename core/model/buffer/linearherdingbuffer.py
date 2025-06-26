@@ -55,7 +55,7 @@ class LinearHerdingBuffer:
 
         
     def reduce_old_data(self, task_idx:int, total_cls_num:int) -> None:
-        # subsample previous categories in the bufferZ
+        # subsample previous categories in the buffer
         samples_per_class = self.buffer_size // total_cls_num
 
         assert samples_per_class > 0, (

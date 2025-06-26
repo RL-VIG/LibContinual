@@ -18,7 +18,6 @@ from torchvision import transforms
 from .backbone.transformer import MultiHeadAttention_MultiMaskedLoRA
 
 Epsilon = 0.5
-Epsilon2 = 0.01
 
 class TopK:
 
