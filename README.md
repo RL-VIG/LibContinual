@@ -53,7 +53,7 @@ Complete tutorials can be found at [`./docs`](https://libcontinual.readthedocs.i
 ## Datasets
 - CIFAR-10 is avaliable at [Google Drive](https://drive.google.com/drive/folders/1sl2aW1sRpEfQJuJZwajXO2QhR06gQYZx?usp=drive_link) <br>
 - CIFAR-100 is available at [Google Drive](https://drive.google.com/drive/folders/1EL46LQ3ww-F1NVTwFDPIg-nO198cUqWm?usp=sharing)  <br>
-- CUB200, ImageNet-R, Tiny-Imagenet are available at [Google Drive](https://drive.google.com/drive/folders/16afRW2952coWJSbiH7cZT1b8pRibA8nH?usp=sharing)  <br>
+- CUB200, ImageNet-R, Tiny-Imagenet, 5-Dataset are available at [Google Drive](https://drive.google.com/drive/folders/16afRW2952coWJSbiH7cZT1b8pRibA8nH?usp=sharing)  <br>
 
 After the dataset is downloaded, please extract the compressed file to the specified path.
 ```
