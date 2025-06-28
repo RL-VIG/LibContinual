@@ -5,7 +5,7 @@ includes:
   # - headers/optimizer.yaml
   # - backbones/resnet12.yaml
 
-data_root: /home/lvqiexuan/temp_data/cifar100
+data_root: /data/lqx/cifar100
 #data_root: ~/datasets/cifar100
 image_size: 32
 testing_times: 1
@@ -53,7 +53,7 @@ backbone:
 buffer:
   name: LinearHerdingBuffer
   kwargs:
-    buffer_size: 45600
+    buffer_size: 1
     batch_size: 64
     # strategy: herding     # random, equal_random, reservoir, herding
 
