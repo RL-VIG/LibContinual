@@ -52,16 +52,16 @@ class LinearHerdingBuffer:
             
         self.add_data(new_images, new_labels)
 
-
-        
     def reduce_old_data(self, task_idx:int, total_cls_num:int) -> None:
         # subsample previous categories in the buffer
         samples_per_class = self.buffer_size // total_cls_num
 
-        assert samples_per_class > 0, (
-            f"Invalid buffer size ({self.buffer_size}) "
-            f"for total classes ({total_cls_num}): samples_per_class must be at least 1."
-        )
+        if samples_per_class == 0:
+            print(
+                f"Warning: Buffer size ({self.buffer_size}) is too small for total classes ({total_cls_num}). ",
+                f"Samples per class will be set to 1, to avoid empty buffer."
+            )
+            samples_per_class = 1
 
         if task_idx > 0:
             buffer_X, buffer_Y = self.get_all_data()
@@ -112,6 +112,13 @@ class LinearHerdingBuffer:
         
         # how many sample per class do we want
         samples_per_class = self.buffer_size // total_cls_num
+        if samples_per_class == 0:
+            print(
+                f"Warning: Buffer size ({self.buffer_size}) is too small for total classes ({total_cls_num}). ",
+                f"Samples per class will be set to 1, to avoid empty buffer."
+            )
+            samples_per_class = 1
+
     
         # compute feature for all training sample for all train samples
         extracted_features = []

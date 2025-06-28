@@ -1,0 +1,67 @@
+includes:
+  - headers/data.yaml
+  - headers/device.yaml
+  # - headers/model.yaml
+  # - headers/optimizer.yaml
+  # - backbones/resnet12.yaml
+
+data_root: /data/lqx/cifar100
+#data_root: ~/datasets/cifar100
+image_size: 32
+testing_times: 1
+
+warmup: 3
+
+
+save_path: ./
+# data
+init_cls_num: 10
+inc_cls_num: 10
+task_num: 10
+
+
+batch_size: 128
+
+init_epoch: 1  #100
+epoch: 1  #100
+ 
+n_gpu: 1
+val_per_epoch: 10
+
+
+optimizer:
+  name: SGD
+  kwargs:
+    lr: 0.05
+    momentum: 0.9
+    weight_decay: 0.0005
+
+lr_scheduler:
+  name: MultiStepLR
+  kwargs:
+    gamma: 0.2
+    milestones: [49, 63]
+
+backbone:
+  name: cifar_resnet32
+  kwargs:
+    num_classes: 100
+    args: 
+      dataset: cifar100
+
+
+buffer:
+  name: LinearHerdingBuffer
+  kwargs:
+    buffer_size: 1
+    batch_size: 64
+    # strategy: herding     # random, equal_random, reservoir, herding
+
+classifier:
+  name: ICarl
+  kwargs:
+    num_class: 100
+    feat_dim: 64
+    init_cls_num: 10
+    inc_cls_num: 10
+    task_num: 10

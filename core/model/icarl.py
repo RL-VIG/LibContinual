@@ -182,8 +182,6 @@ class ICarl(nn.Module):
         buffer.update(self.network, train_loader, val_transform, 
                       self.cur_task_id, self.accu_cls_num, self.cur_cls_indexes,
                       self.device)
-
-        assert buffer.labels != 0
         
         # compute class mean vector via samples in buffer
         self.class_means = self.calc_class_mean(buffer,
