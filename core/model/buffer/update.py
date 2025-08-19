@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import copy
+from collections import Counter
 from torch.utils.data import DataLoader
 
 def random_update(datasets, buffer):
@@ -25,8 +26,6 @@ def herding_update(datasets, buffer, feature_extractor, device):
     labels = np.array(datasets.labels + buffer.labels)
 
     for cls in range(buffer.total_classes):
-        if cls % 20 == 0 or cls == buffer.total_classes-1:
-            print("Construct examplars for class {}".format(cls))
         cls_images_idx = np.where(labels == cls)
         cls_images, cls_labels = images[cls_images_idx], labels[cls_images_idx]
 
@@ -34,11 +33,16 @@ def herding_update(datasets, buffer, feature_extractor, device):
         selected_images.extend(cls_selected_images)
         selected_labels.extend(cls_selected_labels)
 
+    label_counter = Counter(buffer.labels)
+    print("\nBuffer composition per class:")
+    for cls in sorted(label_counter.keys()):
+        print(f"  Class {cls:3d} : {label_counter[cls]} samples")
 
     buffer.images, buffer.labels = selected_images, selected_labels
 
 def construct_examplar(datasets, images, labels, feature_extractor, per_classes, device):
     if len(images) <= per_classes:
+        print(labels[0], len(images), per_classes)
         return images, labels
     
     datasets.images, datasets.labels = images, labels

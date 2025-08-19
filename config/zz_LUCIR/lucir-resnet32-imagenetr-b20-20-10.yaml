@@ -1,37 +1,24 @@
 
-dataset: &dataset cifar100
-init_cls_num: &init_cls_num 50
-inc_cls_num: &inc_cls_num 5 # 10 5
-total_cls_num: &total_cls_num 100
-task_num: &task_num 11 # 6 11
-image_size: &image_size 32
+dataset: &dataset imagenet-r
+data_root: /data/Dataset/imagenet-r
+
+init_cls_num: &init_cls_num 20
+inc_cls_num: &inc_cls_num 20
+total_cls_num: &total_cls_num 200
+task_num: &task_num 10
+image_size: &image_size 224
 
 init_cls_num: *init_cls_num
 inc_cls_num: *inc_cls_num
 task_num: *task_num
 
-epoch: 160
+epoch: 1
 val_per_epoch: 160
-train_batch_size: 128
-test_batch_size: 100
+batch_size: 10
+
+testing_times: 1
 
 seed: 2
-
-train_trfms:
-  - RandomCrop : 
-      size : *image_size
-      padding : 4
-  - RandomHorizontalFlip : {}
-  - ToTensor: {}
-  - Normalize:
-      mean: [0.5071, 0.4866, 0.4409]
-      std: [0.2009, 0.1984, 0.2023]
-
-test_trfms: 
-  - ToTensor: {}
-  - Normalize:
-      mean: [0.5071, 0.4866, 0.4409]
-      std: [0.2009, 0.1984, 0.2023]
 
 optimizer:
   name: SGD
@@ -49,9 +36,9 @@ lr_scheduler:
 backbone:
   name: resnet32_V2
   kwargs:
-    num_classes: 100
+    num_classes: *total_cls_num
     args: 
-      dataset: cifar100
+      dataset: *dataset
 
 buffer:
   name: LinearBuffer
@@ -66,7 +53,7 @@ classifier:
     num_class: *total_cls_num
     init_cls_num: *init_cls_num
     inc_cls_num: *inc_cls_num
-    feat_dim: 64
+    feat_dim: 153664
     dist: 0.5
     lamda: 5
     K: 2

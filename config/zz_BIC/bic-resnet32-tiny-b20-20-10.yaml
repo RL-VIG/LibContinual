@@ -1,0 +1,59 @@
+dataset: &dataset tiny-imagenet
+data_root: /data/Dataset/
+
+total_cls_num: &total_cls_num 200
+init_cls_num: &init_cls_num 20
+inc_cls_num: &inc_cls_num 20
+task_num: &task_num 10
+
+init_cls_num: *init_cls_num
+inc_cls_num: *inc_cls_num
+task_num: *task_num
+
+epoch: 1 #250
+stage2_epoch: 1 #250
+val_per_epoch: 50
+batch_size: 10 #128
+
+testing_times: 1
+
+seed: 0
+
+num_workers: 0
+
+optimizer:
+  name: SGD
+  kwargs:
+    lr: 0.1
+    momentum: 0.9
+    weight_decay: 2e-4
+
+lr_scheduler:
+  name: MultiStepLR
+  kwargs:
+    gamma: 0.1
+    milestones: [100, 150, 200]
+
+# done
+backbone:
+  name: cifar_resnet32_V2 # cifar_resnet32_V2 ， resnet32 for dataset cifar100, see original paper
+  kwargs:
+    num_classes: *total_cls_num
+    args: 
+      dataset: *dataset
+
+buffer:
+  name: LinearSpiltBuffer
+  kwargs:
+    buffer_size: 2000
+    batch_size: 128
+    strategy: balance_random      # random, equal_random, reservoir, herding 
+    val_ratio: 0.1
+
+classifier:
+  name: bic
+  kwargs:
+    num_class: *total_cls_num
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    task_num: *task_num

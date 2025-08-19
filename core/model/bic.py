@@ -23,43 +23,37 @@ from core.model.backbone.resnet import BiasLayer
 from collections import Counter
 
 # Spilt images and labels into train_dataset and test_dataset, it is assured that each label's count are balanced in both output dataset
-def balance_spilt(images, labels, test_size, random_state=None):
+def classwise_spilt(images, labels, test_size, random_state=None):
 
     images, labels = np.array(images), np.array(labels)
-
     classes = np.unique(labels)
-    expected_class_count = len(labels) // len(classes)
-
-    for label, count in Counter(labels).items():
-        assert count == expected_class_count, f'Label {label} has only {count}, expected to be {expected_class_count}'
-    
-    train_count = int(expected_class_count * (1 - test_size))
-    test_count = int(expected_class_count * test_size)
-    assert train_count + test_count == int(expected_class_count)
 
     selected_train_images, selected_train_labels = [], []
     selected_val_images, selected_val_labels = [], []
 
     for class_id in classes:
-        idx, = np.where(np.array(labels) == class_id)
+        idx = np.where(labels == class_id)[0]
 
-        if random_state:
-            np.random.seed(random_state)
+        if random_state is not None:
+            rng = np.random.RandomState(random_state + int(class_id))  # ensure different seed per class
+            rng.shuffle(idx)
+        else:
             np.random.shuffle(idx)
 
-        cls_images, cls_labels = images[idx], labels[idx]
+        cls_images = images[idx]
+        cls_labels = labels[idx]
 
-        selected_train_images.extend(cls_images[:train_count])
-        selected_train_labels.extend(cls_labels[:train_count])
+        split_idx = int(len(idx) * (1 - test_size))
+        if split_idx == 0 and len(idx) > 1:
+            print(f"[WARNING] Class {class_id} has only {len(idx)} samples, forced 1 into val set.")
+            split_idx = 1
 
-        selected_val_images.extend(cls_images[train_count:])
-        selected_val_labels.extend(cls_labels[train_count:])
+        selected_train_images.extend(cls_images[:split_idx])
+        selected_train_labels.extend(cls_labels[:split_idx])
 
-        assert len(cls_images[:train_count]) == train_count
-        assert len(cls_labels[:train_count]) == train_count
-        assert len(cls_images[train_count:]) == test_count
-        assert len(cls_labels[train_count:]) == test_count
-        
+        selected_val_images.extend(cls_images[split_idx:])
+        selected_val_labels.extend(cls_labels[split_idx:])
+
     return selected_train_images, selected_val_images, selected_train_labels, selected_val_labels
 
 # Simply spilt the dataset by slicing, the balance of label is not assured
@@ -109,6 +103,8 @@ class bic(nn.Module):
 
         self.previous_model = None
         self.criterion = nn.CrossEntropyLoss()
+
+        self.cls_count = {}
  
     def before_task(self, task_idx, buffer, train_loader, test_loaders):
         
@@ -246,10 +242,108 @@ class bic(nn.Module):
 
         return self.model.parameters()
 
+    def spilt_and_update(self, dataloader, buffer, task_idx, config):
+
+        val_ratio = 0.1
+        buffer_size = config['buffer']['kwargs']['buffer_size']
+
+        train_dataset, val_dataset = deepcopy(dataloader.dataset), deepcopy(dataloader.dataset)
+
+        # Save classes count for classwise buffering
+        self.cls_count.update(Counter(train_dataset.labels))
+
+        # Train_loader
+        images_train, images_val, labels_train, labels_val = classwise_spilt(
+            train_dataset.images,
+            train_dataset.labels,
+            test_size=val_ratio
+        )
+
+        train_dataset.images = images_train + buffer.train_images
+        train_dataset.labels = labels_train + buffer.train_labels
+
+        train_dataloader = DataLoader(
+            train_dataset,
+            shuffle=True,  
+            batch_size=config['batch_size'],
+            num_workers=config['num_workers'],
+            drop_last=True)
+
+        val_dataloader = None
+
+        # Val_loader
+        if task_idx > 0:
+
+            selected_images_val, selected_labels_val = buffer.val_images.copy(), buffer.val_labels.copy()
+            
+            for cls_label in np.unique(labels_val):
+                cls_idx, = np.where(np.array(labels_val) == cls_label)
+                cls_images, cls_labels = np.array(images_val)[cls_idx], np.array(labels_val)[cls_idx]
+
+                selected_images_val.extend(cls_images)
+                selected_labels_val.extend(cls_labels)
+
+            val_dataset.images = selected_images_val
+            val_dataset.labels = selected_labels_val
+
+            val_dataloader = DataLoader(
+                val_dataset,
+                shuffle=True,  
+                batch_size=100,
+                num_workers=config['num_workers'],
+                drop_last=False)
+
+        # Update Buffer
+        buffer.train_images.extend(images_train)
+        buffer.train_labels.extend(labels_train)
+        buffer.val_images.extend(images_val)
+        buffer.val_labels.extend(labels_val)
+        buffer.total_classes += config['init_cls_num'] if task_idx == 0 else config['inc_cls_num']
+
+        preserved_images_train, preserved_labels_train = [], []
+        preserved_images_val, preserved_labels_val = [], []
+
+        total_cls_counts = sum(self.cls_count.values())
+
+        for cls in range(buffer.total_classes):
+            train_cls_idx = np.where(np.array(buffer.train_labels) == cls)
+            train_cls_images = np.array(buffer.train_images)[train_cls_idx]
+            train_cls_labels = np.array(buffer.train_labels)[train_cls_idx]
+
+            val_cls_idx = np.where(np.array(buffer.val_labels) == cls)
+            val_cls_images = np.array(buffer.val_images)[val_cls_idx]
+            val_cls_labels = np.array(buffer.val_labels)[val_cls_idx]
+
+            preserved_val = int(self.cls_count[cls] * buffer_size / total_cls_counts * val_ratio)
+            preserved_train = int(self.cls_count[cls] * buffer_size / total_cls_counts * (1 - val_ratio))
+            if preserved_val == 0 and preserved_train > 1:
+                preserved_val = 1
+                preserved_train -= 1
+
+            print(
+                f"[Class {cls}] total: {self.cls_count[cls]} | "
+                f"buffer_train: {len(train_cls_labels)}, keep: {preserved_train} | "
+                f"buffer_val: {len(val_cls_labels)}, keep: {preserved_val}"
+            )
+
+            preserved_images_train.extend(train_cls_images[:preserved_train])
+            preserved_labels_train.extend(train_cls_labels[:preserved_train])
+            preserved_images_val.extend(val_cls_images[:preserved_val])
+            preserved_labels_val.extend(val_cls_labels[:preserved_val])
+
+        buffer.train_images = preserved_images_train
+        buffer.train_labels = preserved_labels_train
+        buffer.val_images = preserved_images_val
+        buffer.val_labels = preserved_labels_val
+        print(f'Buffer Usage : {len(buffer.train_labels) + len(buffer.val_labels)}/{buffer_size}')
+        
+        return train_dataloader, val_dataloader
+
+    '''
     # split_and_update1 （比例，且多）: 将新的训练数据分成 9:1, 按照未更新的 buffer 中的 val data 的数量加入 val data
     # split_and_update2 （比例，但少）: 将新的训练数据分成 9:1, 按照更新后的 buffer 中的 val data 的数量加入 val data
     # split_and_update4 （非比例，且少）: 根据未更新的 buffer 中的 val data 的数量分割新的训练数据，然后安排
-    
+
     @staticmethod
     def spilt_and_update1(dataloader, buffer, task_idx, config):
 
@@ -800,3 +894,4 @@ class bic(nn.Module):
                 drop_last=False)
 
         return train_dataloader, val_dataloader
+    '''

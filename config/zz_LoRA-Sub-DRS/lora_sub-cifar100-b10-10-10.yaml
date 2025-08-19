@@ -1,0 +1,73 @@
+# lora_sub-cifar100-b10-10-10
+
+dataset: &dataset cifar100
+init_cls_num: &init_cls_num 10
+inc_cls_num: &inc_cls_num 10
+total_cls_num: &total_cls_num 100
+task_num: &task_num 10
+image_size: &image_size 224
+
+dataset: *dataset
+init_cls_num: *init_cls_num
+inc_cls_num: *inc_cls_num
+total_cls_num: *total_cls_num
+task_num: *task_num
+
+epoch: 20
+val_per_epoch: 20
+
+batch_size: 128
+
+setting: task-agnostic 
+
+testing_times: 1
+
+train_trfms:
+  - RandomResizedCrop:
+      size: *image_size
+      scale: [0.08, 1.0]
+      ratio: [0.75, 1.3333]
+  - RandomHorizontalFlip: {}
+  - ToTensor: {}
+  - Normalize:
+      mean: [0., 0., 0.]
+      std: [1., 1., 1.]
+
+test_trfms: 
+  - Resize:
+      size: *image_size
+  - ToTensor: {}
+  - Normalize:
+      mean: [0., 0., 0.]
+      std: [1., 1., 1.]
+
+optimizer:
+  name: Adam
+  kwargs:
+    lr: 0.0005
+    weight_decay: 0
+    betas: [0.9, 0.999]
+
+lr_scheduler:
+  name: CosineSchedule
+  kwargs:
+    K: 20
+
+backbone:
+  name: vit_pt_imnet
+  kwargs:
+    pretrained: True
+    model_name : vit_base_patch16_224_in21k
+    attn_layer: MultiHeadAttention_LoRA_Sub
+    lora_rank: 10
+
+classifier:
+  name: LoRAsub_DRS
+  kwargs:
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    task_num: *task_num
+    embd_dim: 768
+    fc_lrate: 0.002
+    margin_inter: 1.0
+    lambada: 0.05

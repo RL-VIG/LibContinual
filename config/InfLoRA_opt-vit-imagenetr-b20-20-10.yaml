@@ -1,6 +1,7 @@
 
 dataset: &dataset "imagenet-r"
 data_root: "/home/lvqiexuan/temp_data/imagenet-r/"
+
 init_cls_num: &init_cls_num 20
 inc_cls_num: &inc_cls_num 20
 task_num: &task_num 10
