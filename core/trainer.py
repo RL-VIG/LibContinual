@@ -9,6 +9,7 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 
 from pprint import pprint
+from contextlib import redirect_stdout
 from time import time
 from tqdm import tqdm
 from core.data import get_dataloader
@@ -40,7 +41,11 @@ class Trainer(object):
         self.logger = self._init_logger(config)           
         self.device = self._init_device(config)
 
-        pprint(config)
+        #pprint(config)
+        # Write config into log file only
+        with redirect_stdout(self.logger.file):
+            pprint(config)
+        
         
         self.init_cls_num, self.inc_cls_num, self.task_num = self._init_data(config)
         self.model = self._init_model(config) 
@@ -78,13 +83,12 @@ class Trainer(object):
         '''
 
         save_path = config['save_path']
-        log_path = os.path.join(save_path, "log")
-        if not os.path.isdir(log_path):
-            os.mkdir(log_path)
-        log_prefix = config['classifier']['name'] + "-" + config['backbone']['name'] + "-" + f"epoch{config['epoch']}" #mode
-        log_prefix = log_prefix.replace("/", "-")
-        log_file = os.path.join(log_path, "{}-{}.log".format(log_prefix, fmt_date_str()))
 
+        log_path = os.path.join(save_path, "log", config['classifier']['name'])
+        os.makedirs(log_path, exist_ok=True)
+        
+        log_prefix = f"{config['dataset']}..{config['backbone']['name']}--ep{config['epoch']}--s{config['seed']}__{datetime.now().strftime('%Y-%m-%d_%H-%M')}"
+        log_file = os.path.join(log_path, f"{log_prefix}.log")
         logger = Logger(log_file)
 
         # hack sys.stdout
@@ -296,12 +300,19 @@ class Trainer(object):
                 self.optimizer = optim.SGD(model.get_parameters(self.config), lr = 0.1, momentum = 0.9, weight_decay = w_decay)
                 self.scheduler = MultiStepLR(self.optimizer, milestones = [100, 150, 200], gamma = 0.1)
 
-                dataloader, val_bias_dataloader = bic.spilt_and_update11(dataloader, self.buffer, task_idx, self.config)
+                dataloader, val_bias_dataloader = self.model.spilt_and_update(dataloader, self.buffer, task_idx, self.config)
 
             elif isinstance(self.buffer, (LinearBuffer, LinearHerdingBuffer)) and self.buffer.buffer_size > 0 and task_idx > 0:
                 datasets = dataloader.dataset
-                datasets.images.extend(self.buffer.images)
-                datasets.labels.extend(self.buffer.labels)
+                if isinstance(datasets.images, list):
+                    datasets.images.extend(self.buffer.images)
+                    datasets.labels.extend(self.buffer.labels)
+                elif isinstance(datasets.images, np.ndarray):
+                    datasets.images = np.concatenate((datasets.images, self.buffer.images), axis=0)
+                    datasets.labels = np.concatenate((datasets.labels, self.buffer.labels), axis=0)
+                else:
+                    assert 0
+
                 dataloader = DataLoader(
                     datasets,
                     shuffle = True,
@@ -309,6 +320,12 @@ class Trainer(object):
                     drop_last = False,
                     num_workers = self.config['num_workers']
                 )
+            
+            if method_name == "LoRAsub_DRS":
+                print('Replacing Optim & Scheduler')
+                self.optimizer = self.model.get_optimizer(self.config['optimizer']['kwargs']['lr'], self.config['optimizer']['kwargs']['weight_decay'])
+                self.scheduler = CosineSchedule(self.optimizer, K=self.config['epoch'])
+
 
             if self.rank == 0:
                 print(f"================Task {task_idx} Training!================")
@@ -345,7 +362,7 @@ class Trainer(object):
                         print(f"================Validation on test set================")
 
                     # Disable validation for some method
-                    if method_name in ['TRGP', 'RanPAC', 'MInfLoRA2', 'MInfLoRA3', 'PRAKA', 'TRGP_CLIP']:
+                    if method_name in ['TRGP', 'RanPAC', 'MInfLoRA2', 'MInfLoRA3', 'PRAKA', 'TRGP_CLIP', 'LoRAsub_DRS']:
                         if self.rank == 0:
                             print(f" * Disabled validation for this method")
                     else:

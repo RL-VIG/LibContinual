@@ -30,3 +30,4 @@ from .gpm import GPM
 from .api import API
 from .dap import DAP
 from .sd_lora import SD_LoRA
+from .lora_sub import LoRAsub_DRS

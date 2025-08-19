@@ -1,43 +1,31 @@
+dataset: &dataset 5-datasets
+data_root: /data/Dataset/5-dataset
+class_order: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
+              10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+              20, 21, 22, 23, 24, 25, 26, 27, 28, 29,
+              30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
+              40, 41, 42, 43, 44, 45, 46, 47, 48, 49]
 
-dataset: &dataset binary_cifar100
-data_root: /home/lvqiexuan/temp_data/binary_cifar100
-
-total_cls_num: &total_cls_num 100
+total_cls_num: &total_cls_num 50
 init_cls_num: &init_cls_num 10
 inc_cls_num: &inc_cls_num 10
-task_num: &task_num 10
+task_num: &task_num 5
 image_size: &image_size 32
 
 init_cls_num: *init_cls_num
 inc_cls_num: *inc_cls_num
 task_num: *task_num
 
-epoch: 1 # normally 250, 1 for online setting
-stage2_epoch: 1 # normally 250, 1 for online setting
+epoch: 250
+stage2_epoch: 250
 val_per_epoch: 50
-batch_size: 10 # normally 128, 10 for online setting
+batch_size: 128
 
 testing_times: 1
 
-seed: 1993
+seed: 0
 
 num_workers: 0
-
-train_trfms:
-  - RandomHorizontalFlip: {}
-  - RandomCrop: 
-      size : *image_size
-      padding : 4
-  - ToTensor: {}
-  - Normalize:
-      mean: [0.5071, 0.4866, 0.4409]
-      std: [0.2673, 0.2564, 0.2762]
-
-test_trfms: 
-  - ToTensor: {}
-  - Normalize:
-      mean: [0.5071, 0.4866, 0.4409]
-      std: [0.2673, 0.2564, 0.2762]
 
 optimizer:
   name: SGD
@@ -63,7 +51,7 @@ backbone:
 buffer:
   name: LinearSpiltBuffer
   kwargs:
-    buffer_size: 300
+    buffer_size: 1000
     batch_size: 128
     strategy: balance_random      # random, equal_random, reservoir, herding 
     val_ratio: 0.1

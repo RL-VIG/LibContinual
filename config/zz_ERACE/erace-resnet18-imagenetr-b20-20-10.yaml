@@ -1,0 +1,41 @@
+
+dataset: &dataset imagenet-r
+data_root: /data/Dataset/imagenet-r
+
+total_cls_num: &total_cls_num 200
+init_cls_num: &init_cls_num 20
+inc_cls_num: &inc_cls_num 20
+task_num: &task_num 10
+image_size: &image_size 224
+
+epoch: 1
+seed: 2
+
+batch_size: 10
+testing_times: 1
+
+optimizer:
+  name: SGD
+  kwargs:
+    lr: 0.1
+
+buffer:
+  name: ERBuffer
+  kwargs:
+    capacity: 20000 # num_classes * M
+
+backbone: 
+  name: resnet18_AML
+  kwargs:
+    dataset: *dataset
+    num_classes: *total_cls_num
+    input_size: [3, *image_size, *image_size]
+
+classifier:
+  name: ERACE
+  kwargs:
+    num_classes: *total_cls_num
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    task_free: True
+    use_augs: False

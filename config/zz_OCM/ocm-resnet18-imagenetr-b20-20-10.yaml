@@ -1,0 +1,55 @@
+dataset: &dataset imagenet-r
+data_root: /data/Dataset/imagenet-r
+
+total_cls_num: &total_cls_num 200 
+init_cls_num: &init_cls_num 20
+inc_cls_num: &inc_cls_num 20
+task_num: &task_num 10
+image_size: &image_size 224
+
+image_size: *image_size
+warmup: 0
+
+task_num: *task_num
+init_cls_num: *init_cls_num 
+inc_cls_num: *inc_cls_num
+
+batch_size: 10
+epoch: 1
+val_per_epoch: 1
+
+testing_times: 1
+seed: 1993
+
+optimizer:
+  name: Adam
+  kwargs:
+    lr: 0.001
+    weight_decay: 0.0001
+
+backbone:
+  name: resnet18
+  kwargs:
+    num_classes: *total_cls_num
+    args: 
+      dataset: *dataset
+      init_cls_num: *init_cls_num 
+      inc_cls_num: *inc_cls_num
+
+buffer:
+  name: OnlineBuffer
+  kwargs:
+    buffer_size: 2000 # M * 200
+    batch_size: 64
+    input_size: [3, *image_size, *image_size]
+    # strategy: herding     # random, equal_random, reservoir, herding
+
+classifier:
+  name: OCM
+  kwargs:
+    num_class: *total_cls_num
+    task_num: *task_num
+    init_cls_num: *init_cls_num 
+    inc_cls_num: *inc_cls_num
+    feat_dim: 512
+    image_size: *image_size

@@ -355,6 +355,94 @@ class MultiHeadAttention_SDLoRA(MultiHeadAttention):
 
         return x
 
+class MultiHeadAttention_LoRA_Sub(MultiHeadAttention):
+
+    '''
+    Attention module with lora, apply to k, v
+    '''
+
+    def __init__(self, dim, num_heads=8, qkv_bias=True, qk_scale=None, attn_drop=0., proj_drop=0., lora_rank=10, lora_bias=False):
+        super().__init__(dim, num_heads, qkv_bias, qk_scale, attn_drop, proj_drop)
+
+        self.lora_rank = lora_rank
+        
+        self.lora_A_k = nn.Linear(self.dim, self.lora_rank, bias=lora_bias)
+        self.lora_B_k = nn.Linear(self.lora_rank, self.dim, bias=lora_bias)
+        self.lora_A_v = nn.Linear(self.dim, self.lora_rank, bias=lora_bias)
+        self.lora_B_v = nn.Linear(self.lora_rank, self.dim, bias=lora_bias)        
+        self.apply_lora = False
+
+        self.cur_matrix = torch.zeros(self.dim ,self.dim)
+        self.n_cur_matrix = 0
+
+        self.register_buffer("prev_k_weight", torch.zeros(self.dim, self.dim))
+        self.register_buffer("prev_v_weight", torch.zeros(self.dim, self.dim))
+
+    def init_param(self):
+
+        nn.init.kaiming_uniform_(self.lora_A_k.weight, a=math.sqrt(5))
+        nn.init.kaiming_uniform_(self.lora_A_v.weight, a=math.sqrt(5))
+        nn.init.zeros_(self.lora_B_k.weight)
+        nn.init.zeros_(self.lora_B_v.weight)
+
+        self.apply_lora = True
+
+    def save_weight(self):
+
+        self.prev_k_weight += self.lora_B_k.weight @ self.lora_A_k.weight
+        self.prev_v_weight += self.lora_B_v.weight @ self.lora_A_v.weight
+        self.apply_lora = False
+
+    def reset_input_matrix(self):
+        self.cur_matrix.zero_()
+        self.n_cur_matrix = 0
+
+    def forward(self, x, attn_mask=None, register_hook=False, prompt=None, get_input_matrix = False):
+    
+        B, N, C = x.shape
+
+        q_weight, k_weight, v_weight = self.qkv.weight.chunk(3, dim=0)
+
+        if get_input_matrix:
+            # Only in before_task getting input matrix
+            self.cur_matrix = (self.cur_matrix * self.n_cur_matrix + torch.bmm(x.detach().permute(0, 2, 1), x.detach()).sum(dim=0).cpu())/(self.n_cur_matrix + x.shape[0] * x.shape[1])
+            self.n_cur_matrix += x.shape[0]*x.shape[1]
+
+            k_weight = k_weight - self.prev_k_weight
+            v_weight = v_weight - self.prev_v_weight
+
+        elif self.apply_lora:
+            # Only in training
+            k_weight = k_weight + self.prev_k_weight + self.lora_B_k.weight @ self.lora_A_k.weight
+            v_weight = v_weight + self.prev_v_weight + self.lora_B_v.weight @ self.lora_A_v.weight
+        else:
+            # Only in testing
+            k_weight = k_weight + self.prev_k_weight
+            v_weight = v_weight + self.prev_v_weight
+
+        qkv = F.linear(x, torch.cat([q_weight, k_weight, v_weight], dim=0), self.qkv.bias.data).reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+        
+        q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
+
+        attn = (q @ k.transpose(-2, -1)) * self.scale
+
+        if attn_mask is not None:
+            attn += attn_mask.unsqueeze(0) # For head axis broadcasting
+
+        attn = attn.softmax(dim=-1)
+        attn = self.attn_drop(attn)
+                
+        if register_hook:
+            self.save_attention_map(attn)
+            attn.register_hook(self.save_attn_gradients)        
+
+        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        x = self.proj(x)
+        x = self.proj_drop(x)
+
+        return x
+
+
 # MInfLoRA
 class MultiHeadAttention_MaskedLoRA(MultiHeadAttention_LoRA):
 
@@ -1129,6 +1217,8 @@ class ResidualAttentionBlock(nn.Module):
         elif attn_layer == MultiHeadAttention_LoRA:
             self.attn = attn_layer(d_model, n_head, qkv_bias, qk_scale, attn_drop, proj_drop, lora_rank, lora_bias)
         elif attn_layer == MultiHeadAttention_SDLoRA:
+            self.attn = attn_layer(d_model, n_head, qkv_bias, qk_scale, attn_drop, proj_drop, lora_rank, lora_bias)
+        elif attn_layer == MultiHeadAttention_LoRA_Sub:
             self.attn = attn_layer(d_model, n_head, qkv_bias, qk_scale, attn_drop, proj_drop, lora_rank, lora_bias)
         elif attn_layer == MultiHeadAttention_MaskedLoRA:
             self.attn = attn_layer(d_model, n_head, qkv_bias, qk_scale, attn_drop, proj_drop, lora_rank, lora_bias)

@@ -41,7 +41,7 @@ class Model(nn.Module):
     def __init__(self, backbone, num_classes):
         super().__init__()
         self.backbone = backbone
-        self.classifier = distLinear(160, num_classes)
+        self.classifier = distLinear(backbone.out_dim, num_classes)
 
     def return_hidden(self, data):
         return self.backbone(data)

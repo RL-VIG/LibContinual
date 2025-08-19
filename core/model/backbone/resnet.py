@@ -12,7 +12,7 @@ import torch.nn.functional as F
 
 from torch.nn.parameter import Parameter
 
-__all__ = ['resnet18', 'resnet34', 'resnet50', 'cifar_resnet20', 'cifar_resnet32', 'cifar_resnet32_V2', 'resnet32_V2', 'resnet18_AML']
+__all__ = ['resnet18', 'resnet34', 'resnet50', 'cifar_resnet20', 'cifar_resnet32', 'cifar_resnet32_V2', 'resnet32_V2', 'resnet18_AML', 'CosineLinear', 'SplitCosineLinear']
 
 def conv3x3(in_planes, out_planes, stride=1, groups=1, dilation=1):
     """3x3 convolution with padding"""
@@ -130,7 +130,7 @@ class ResNet(nn.Module):
         self.base_width = width_per_group
         
         assert args is not None, "you should pass args to resnet"
-        if 'cifar' in args["dataset"]:
+        if 'cifar' in args["dataset"] or '5-datasets' in args["dataset"]:
             self.conv1 = nn.Sequential(nn.Conv2d(3, self.inplanes, kernel_size=3, stride=1, padding=1, bias=False),
                                        nn.BatchNorm2d(self.inplanes), nn.ReLU(inplace=True))
         elif 'imagenet' in args["dataset"]:
@@ -645,7 +645,8 @@ class ResNet_BIC(nn.Module):
         self.relu = nn.ReLU(inplace=True)
         self.avgpool = nn.AvgPool2d(8)
         
-        self.feat_dim = 64 # final feature's dim
+        self.feat_dim = 256 # final feature's dim
+        #self.feat_dim = 3136 # ImageNet-R
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -728,6 +729,11 @@ class ResNet_AML(nn.Module):
 
         self.activation = nn.ReLU()
 
+        with torch.no_grad():
+            dummy = torch.zeros(1, *self.input_size)
+            out = self.forward(dummy)
+            self.out_dim = out.view(1, -1).shape[1]
+
     def _make_layer(self, block, planes, num_blocks, stride):
         strides = [stride] + [1] * (num_blocks - 1)
         layers = []
@@ -767,4 +773,6 @@ def resnet32_V2(pretrained=False, **kwargs):
     return model
 
 def resnet18_AML(pretrained=False, **kwargs):
-    return ResNet_AML(BasicBlock_AML, [2, 2, 2, 2], kwargs['num_classes'])
+    if 'input_size' not in kwargs.keys():
+        kwargs['input_size'] = [3, 32, 32]
+    return ResNet_AML(BasicBlock_AML, [2, 2, 2, 2], kwargs['num_classes'], input_size = kwargs['input_size'])

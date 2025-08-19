@@ -25,7 +25,6 @@ class ERBuffer(nn.Module):
     def __len__(self):
         return self.current_index
 
-
     def add_buffer(self, name, dtype, size):
         """ used to add extra containers (e.g. for logit storage) """
 

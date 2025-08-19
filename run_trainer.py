@@ -4,6 +4,7 @@ sys.dont_write_bytecode = True
 
 import os
 import re
+import glob
 import time
 import torch
 import argparse
@@ -21,11 +22,16 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', type=str, default=None, help='Name of config file')
+    parser.add_argument('--seed', type=int, default=-1, help='Seed')
+    parser.add_argument('--device', type=int, default=-1, help='Device')
     args = parser.parse_args()
 
     if args.config:
         args.config = args.config + '.yaml' if not args.config.endswith('.yaml') else args.config
-        config = Config(f'./config/{args.config}').get_config_dict()
+        config_files = glob.glob(f'./config/**/{args.config}', recursive=True)
+        assert len(config_files) == 1, "Config files conflict"
+        config_path = config_files[0]
+        config = Config(config_path).get_config_dict()
     else:
         config = Config("./config/InfLoRA.yaml").get_config_dict()    
 
@@ -58,14 +64,21 @@ if __name__ == "__main__":
             gpu_utilization.sort(key=lambda x: x[1])
             config["device_ids"] = [str(gpu[0]) for gpu in gpu_utilization[:config["n_gpu"]]]
 
-            print(f'Selected GPUs: {config["device_ids"]}')
-
         except Exception as e:
             config["device_ids"] = range(config["n_gpu"])
             print(f"Error while querying GPUs: {e}, using default device {config['device_ids']}")
 
+    if args.seed > -1:
+        print(f'Seed : {config["seed"]} -> {args.seed}')
+        config['seed'] = args.seed
+
+    if args.device > -1:
+        config['device_ids'] = args.device
+
     if not isinstance(config['device_ids'], list):
         config['device_ids'] = [config['device_ids']]
+
+    print(f'Selected GPUs: {config["device_ids"]}')
 
     if config["n_gpu"] > 1:
         mp.spawn(main, nprocs=config["n_gpu"], args=(config,))
