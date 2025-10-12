@@ -1,0 +1,76 @@
+dataset: &dataset cifar100
+init_cls_num: &init_cls_num 10
+inc_cls_num: &inc_cls_num 10
+total_cls_num: &total_cls_num 100
+task_num: &task_num 10
+image_size: &image_size 224
+
+image_size: *image_size
+init_cls_num: *init_cls_num
+inc_cls_num: *inc_cls_num
+task_num: *task_num
+
+epoch: 20
+testing_times: 1
+val_per_epoch: 10
+
+train_trfms:
+  - RandomResizedCrop: 
+      size: *image_size
+  - RandomHorizontalFlip: {}
+  - ToTensor: {}
+  - Normalize:
+      mean: [0., 0., 0.]
+      std: [1., 1., 1.]
+
+test_trfms: 
+  - Resize: 
+      size: *image_size
+  - ToTensor: {}
+  - Normalize:
+      mean: [0., 0., 0.]
+      std: [1., 1., 1.]
+
+optimizer:
+  name: AdamW
+  kwargs:
+    lr: 0.00001
+    betas: [0.9, 0.999]
+    weight_decay: 0.0005
+
+lr_scheduler:
+  name: CosineSchedulerIter 
+  kwargs:
+    base_value: [0.0025]
+    final_value: [0.0025]
+    n_epochs: 10
+
+backbone:
+  name: vit_pt_imnet
+  kwargs:
+    num_classes: *total_cls_num
+    pretrained: true
+    model_name : vit_base_patch16_224
+
+classifier:
+  name: VQPrompt
+  kwargs:
+    num_class: *total_cls_num
+    task_num: *task_num
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    feat_dim: 768
+    prompt_length: 8.0
+    pool_size: 10.0
+    temperature: 1.0
+    crct_epochs: 10
+    n_centroids: 1
+    adaptive_pred: True
+    ca_lr: 0.0001
+    ca_weight_decay: 0.0005
+    ca_batch_size_ratio: 4
+
+    epoch: 20
+    val_per_epoch: 20
+
+    batch_size: 64
