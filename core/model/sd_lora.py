@@ -137,6 +137,7 @@ class SD_LoRA(nn.Module):
 
         print(f"Current task : {task_idx}, Parameters to be updated: {len(unfrezeed_params)}")
 
+    @torch.no_grad()
     def after_task(self, task_idx, buffer, train_loader, test_loaders):
 
         self._known_classes += self.init_cls_num if task_idx == 0 else self.inc_cls_num

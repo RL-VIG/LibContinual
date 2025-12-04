@@ -6,6 +6,7 @@ Code Reference:
 * https://github.com/openai/CLIP
 '''
 
+import os
 import math
 import torch
 import numpy as np
@@ -442,6 +443,87 @@ class MultiHeadAttention_LoRA_Sub(MultiHeadAttention):
 
         return x
 
+class MultiHeadAttention_CL_LoRA(MultiHeadAttention_LoRA):
+
+    '''
+    Attention module with lora, apply to q, v
+    '''
+
+    def __init__(self, dim, num_heads=8, qkv_bias=True, qk_scale=None, attn_drop=0., proj_drop=0., lora_rank=10, lora_bias=False):
+        super().__init__(dim, num_heads, qkv_bias, qk_scale, attn_drop, proj_drop, lora_rank, lora_bias)
+        
+        del self.lora_A_k
+        del self.lora_B_k
+        self.lora_A_q = nn.Linear(self.dim, self.lora_rank, bias=lora_bias)
+        self.lora_B_q = nn.Linear(self.lora_rank, self.dim, bias=lora_bias)
+
+    def init_param(self):
+    
+        q1, _ = torch.linalg.qr(torch.rand(self.dim, self.lora_rank))
+        q2, _ = torch.linalg.qr(torch.rand(self.dim, self.lora_rank))
+        with torch.no_grad():
+            self.lora_A_q.weight.copy_(q1.T)
+            self.lora_A_v.weight.copy_(q2.T)
+
+        scaling_factor = 1.  # You can adjust this value if needed
+        self.lora_A_q.weight.data *= scaling_factor
+        self.lora_A_v.weight.data *= scaling_factor
+
+        nn.init.zeros_(self.lora_B_q.weight)
+        nn.init.zeros_(self.lora_B_v.weight)
+
+    def forward(
+        self, 
+        x,
+        adapt=None,
+        prompt=None,
+        rank_prompt=None,
+        block_weight=None,
+        attn_mask=None, 
+        register_hook=False):
+    
+        # custom_adapt including the lora and lora scale weight
+        # since this method has many set of weights during training/inference, keep changing the module weight is quite exhausting
+        # lets just pass in as argument
+
+        B, N, C = x.shape
+
+        q_weight, k_weight, v_weight = self.qkv.weight.chunk(3, dim=0)
+
+        qkv = F.linear(x, torch.cat([q_weight, k_weight, v_weight], dim=0), self.qkv.bias.data)
+        
+        if adapt is not None:
+            if block_weight is not None:
+                block_weight = block_weight
+            else:
+                block_weight = torch.ones(3).to(x.device)
+            qq = block_weight[0] * adapt[0](x)
+            vv = block_weight[2] * adapt[2](x)
+
+        qkv[:, :, : self.dim] += qq
+        qkv[:, :, -self.dim :] += vv
+
+        qkv = qkv.reshape(B, N, 3, self.num_heads, C // self.num_heads).permute(2, 0, 3, 1, 4)
+
+        q, k, v = qkv[0], qkv[1], qkv[2]   # make torchscript happy (cannot use tensor as tuple)
+
+        attn = (q @ k.transpose(-2, -1)) * self.scale
+
+        if attn_mask is not None:
+            attn += attn_mask.unsqueeze(0) # For head axis broadcasting
+
+        attn = attn.softmax(dim=-1)
+        attn = self.attn_drop(attn)
+                
+        if register_hook:
+            self.save_attention_map(attn)
+            attn.register_hook(self.save_attn_gradients)        
+
+        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        x = self.proj(x)
+        x = self.proj_drop(x)
+
+        return x
 
 # MInfLoRA
 class MultiHeadAttention_MaskedLoRA(MultiHeadAttention_LoRA):
@@ -1204,6 +1286,7 @@ class ResidualAttentionBlock(nn.Module):
                  attn_layer = MultiHeadAttention,
                  act_layer = nn.GELU,
                  norm_layer = nn.LayerNorm,
+                 norm_layer_eps = 1e-5,
                  attn_mask: torch.Tensor = None,
                  text_or_image=None,
                  # For attn_layer = MultiHeadAttention_LoRA
@@ -1224,12 +1307,14 @@ class ResidualAttentionBlock(nn.Module):
             self.attn = attn_layer(d_model, n_head, qkv_bias, qk_scale, attn_drop, proj_drop, lora_rank, lora_bias)
         elif attn_layer == MultiHeadAttention_MultiMaskedLoRA:
             self.attn = attn_layer(d_model, n_head, qkv_bias, qk_scale, attn_drop, proj_drop, lora_rank, lora_bias)
+        elif attn_layer == MultiHeadAttention_CL_LoRA:
+            self.attn = attn_layer(d_model, n_head, qkv_bias, qk_scale, attn_drop, proj_drop, lora_rank, lora_bias)
         else:
             assert 0, f'{attn_layer} not Implemented'
-            
-        self.ln_1 = norm_layer(d_model)
+        
+        self.ln_1 = norm_layer(d_model, eps=norm_layer_eps)
         self.mlp = Mlp(d_model, int(d_model * mlp_ratio), act_layer=act_layer)
-        self.ln_2 = norm_layer(d_model)
+        self.ln_2 = norm_layer(d_model, eps=norm_layer_eps)
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.attn_mask = attn_mask
         self.text_or_image = text_or_image
@@ -1244,7 +1329,7 @@ class ResidualAttentionBlock(nn.Module):
         return attn
 
     def forward(self, x: torch.Tensor, **kwargs):
-        
+
         x = x + self.drop_path(self.attention(self.ln_1(x), **kwargs)) # [Seq, Batch, Dim]
         x = x + self.drop_path(self.mlp(self.ln_2(x)))
 
@@ -1290,7 +1375,6 @@ class ResidualAttentionBlock_MLP(ResidualAttentionBlock):
 
         self.lora_feature = None # Temporary save the output of adapter, for method : DMNSP
     
-
     def attention(self, x: torch.Tensor, **kwargs):
         self.attn_mask = self.attn_mask.to(x) if self.attn_mask is not None else None
     
@@ -1958,6 +2042,45 @@ class Transformer_Proj(Transformer):
 
         return x_proj
 
+class Transformer_CL_LoRA(Transformer):
+    def __init__(self, 
+                 width: int, 
+                 layers: int, 
+                 heads: int, 
+                 block_layer = ResidualAttentionBlock,
+                 attn_layer = MultiHeadAttention, 
+                 act_layer = nn.GELU,
+                 norm_layer = nn.LayerNorm,
+                 attn_mask: torch.Tensor = None, 
+                 text_or_image=None,
+                 **kwargs
+    ):
+        super().__init__(width, layers, heads, block_layer, attn_layer, act_layer, norm_layer, attn_mask, text_or_image, **kwargs)
+
+    def forward(self, x, adapt, prompt, rank_prompt, block_weight, **kwargs):
+
+        for idx, blk in enumerate(self.blocks):
+
+            if idx >= 6:
+                x = blk(
+                    x,
+                    adapt = adapt[idx],
+                    prompt = prompt,
+                    rank_prompt = rank_prompt,
+                    block_weight = block_weight[:, idx - 6],
+                    **kwargs
+                )
+            else:
+                x = blk(
+                    x,
+                    adapt = adapt[idx],
+                    prompt = prompt,
+                    rank_prompt = rank_prompt,
+                    block_weight = None,
+                    **kwargs
+                )
+
+        return x
 
 # ViT from CLIP
 class VisualTransformer(nn.Module):
@@ -2071,9 +2194,10 @@ class VisionTransformer(nn.Module):
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
         self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim))
         self.pos_drop = nn.Dropout(p=drop_rate)
-
         if transformer_layer == 'Transformer_Proj':
             self.transformer = Transformer_Proj(embed_dim, depth, num_heads, text_or_image='image', attn_layer=attn_layer, norm_layer=norm_layer, **kwargs)
+        elif transformer_layer == 'Transformer_CL_LoRA':
+            self.transformer = Transformer_CL_LoRA(embed_dim, depth, num_heads, text_or_image='image', attn_layer=attn_layer, norm_layer=norm_layer, **kwargs)
         else:
             self.transformer = Transformer(embed_dim, depth, num_heads, text_or_image='image', attn_layer=attn_layer, norm_layer=norm_layer, **kwargs)
         self.norm = partial(nn.LayerNorm, eps=1e-6)(embed_dim)
@@ -2169,8 +2293,401 @@ class VisionTransformer(nn.Module):
                 x = x.permute(1, 0, 2)
 
         x = self.norm(x)
-        
         return x, prompt_loss
+
+    @torch.jit.ignore()
+    def load_pretrained(self, checkpoint_path, prefix=''):
+        _load_weights(self, checkpoint_path, prefix)
+
+class VisionTransformer_CL_LoRA(VisionTransformer):
+    """ Vision Transformer
+    A PyTorch impl of : `An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale`  -
+        https://arxiv.org/abs/2010.11929
+    """
+
+    class Adapter_lora(nn.Module):
+        def __init__(self,
+                    config=None,
+                    d_model=None,
+                    bottleneck=None,
+                    dropout=0.0,
+                    init_option="bert",
+                    adapter_scalar="1.0",
+                    adapter_layernorm_option="in"):
+            super().__init__()
+
+            self.n_embd = config.d_model if d_model is None else d_model
+            self.down_size = config.attn_bn if bottleneck is None else bottleneck
+
+            self.lora_A = nn.Linear(self.down_size, self.n_embd, bias=False)
+            self.lora_B = nn.Linear(self.n_embd, self.down_size, bias=False)
+
+            random_matrix = torch.rand(self.n_embd, self.down_size)
+            q, r = torch.linalg.qr(random_matrix)
+            with torch.no_grad():
+                self.lora_B.weight.copy_(q.T)
+            scaling_factor = 1.  # You can adjust this value if needed
+            self.lora_B.weight.data *= scaling_factor
+
+            if init_option == "bert":
+                raise NotImplementedError
+            elif init_option == "lora":
+                with torch.no_grad():
+                    nn.init.zeros_(self.lora_A.weight)
+            else:
+                raise NotImplementedError
+
+        def forward(self, x):
+            inter_x = self.lora_B(x)
+            out = self.lora_A(inter_x)
+            return out
+
+    def __init__(self, 
+                 img_size=224, 
+                 patch_size=16, 
+                 in_chans=3, 
+                 num_classes=1000, 
+                 embed_dim=768, 
+                 depth=12,
+                 num_heads=12, 
+                 attn_layer=MultiHeadAttention, 
+                 mlp_ratio=4., 
+                 qkv_bias=True, 
+                 qk_scale=None, 
+                 representation_size=None,
+                 drop_rate=0., 
+                 attn_drop_rate=0., 
+                 drop_path_rate=0., 
+                 norm_layer=nn.LayerNorm, 
+                 ckpt_layer=0,
+                 transformer_layer=Transformer,
+                 **kwargs):
+        """
+        Args:
+            img_size (int, tuple): input image size
+            patch_size (int, tuple): patch size
+            in_chans (int): number of input channels
+            num_classes (int): number of classes for classification head
+            embed_dim (int): embedding dimension
+            depth (int): depth of transformer
+            num_heads (int): number of attention heads
+            mlp_ratio (int): ratio of mlp hidden dim to embedding dim
+            qkv_bias (bool): enable bias for qkv if True
+            qk_scale (float): override default qk scale of head_dim ** -0.5 if set
+            representation_size (Optional[int]): enable and set representation layer (pre-logits) to this value if set
+            drop_rate (float): dropout rate
+            attn_drop_rate (float): attention dropout rate
+            drop_path_rate (float): stochastic depth rate
+            norm_layer: (nn.Module): normalization layer
+        """
+        super().__init__(
+            img_size=img_size,
+            patch_size=patch_size,
+            in_chans=in_chans,
+            num_classes=num_classes,
+            embed_dim=embed_dim,
+            depth=depth,
+            num_heads=num_heads,
+            attn_layer=attn_layer,
+            mlp_ratio=mlp_ratio,
+            qkv_bias=qkv_bias,
+            qk_scale=qk_scale,
+            representation_size=representation_size,
+            drop_rate=drop_rate,
+            attn_drop_rate=attn_drop_rate,
+            drop_path_rate=drop_path_rate,
+            norm_layer=norm_layer,
+            ckpt_layer=ckpt_layer,
+            transformer_layer=transformer_layer,
+            **kwargs
+        )
+
+
+        cfg_dict = {
+            'use_distillation': True, 
+            'use_block_weight': True, 
+            'msa_adapt': True, 
+            'msa': [1, 0, 1], 
+            'specfic_pos': [6, 7, 8, 9, 10, 11], 
+            'general_pos': [0, 1, 2, 3, 4, 5], 
+            'ffn_adapt': True, 
+            'ffn_option': 'parallel', 
+            'ffn_adapter_layernorm_option': 'none',
+            'ffn_adapter_init_option': 'lora', 
+            'ffn_adapter_scalar': '0.1', 
+            'ffn_num': kwargs['lora_rank'], 
+            'd_model': 768, 
+            'vpt_on': False, 
+            'vpt_num': 0, 
+            '_device': 'cuda:0'
+        }
+        
+        from types import SimpleNamespace
+
+        self.tuning_config = SimpleNamespace(**cfg_dict)
+        self.config = self.tuning_config
+
+        self._device = self.tuning_config._device
+        self.msa_adapt = self.tuning_config.msa_adapt
+        self.use_distillation = self.tuning_config.use_distillation
+        self.use_block_weight = self.tuning_config.use_block_weight
+
+        self.general_pos = self.tuning_config.general_pos
+        self.specfic_pos = self.tuning_config.specfic_pos
+        self.adapt_pos = self.general_pos + self.specfic_pos
+        self.adapt_pos = sorted(self.adapt_pos)
+
+        if self.msa_adapt:
+            self.msa = self.tuning_config.msa
+
+        if self.use_distillation:
+            self.old_adapter_list = nn.ModuleList()
+
+        if self.use_block_weight:
+            self.block_weight_list = []
+            self.block_weight = nn.Parameter(torch.randn(3, len(self.specfic_pos)))
+            nn.init.uniform_(self.block_weight, .5, 1.5)
+
+        self.adapter_list = []
+        self.adapter_pos_list = []
+        self.cur_adapter = nn.ModuleList()
+        self.get_new_adapter_initial_msa()
+
+    def forward(self, x, test = False, register_blk=-1, prompt=None, prompt_flag='', q=None, train=False, task_id=-1, cls_features=None, **kwargs):
+
+        if not test:
+            output = self.forward_train(x)
+            output = output[:, 0]
+            return output, None # [bs, 768]
+
+        else:
+            features = self.forward_test(x)
+            output = torch.Tensor().to(features[0].device)
+            for x in features:
+                cls = x[:, 0, :]
+                output = torch.cat((
+                    output,
+                    cls
+                ), dim=1)
+            return output, None # [bs, task_id * 768]
+
+    def forward_train(self, x):
+
+        B = x.shape[0]
+        x = self.patch_embed(x)
+
+        cls_tokens = self.cls_token.expand(B, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
+        x = torch.cat((cls_tokens, x), dim=1)
+
+        x = x + self.pos_embed[:,:x.size(1),:]
+        x = self.pos_drop(x)
+
+        x = x.permute(1, 0, 2)
+        
+        x = self.transformer(
+            x, 
+            adapt = self.cur_adapter, 
+            prompt = None, 
+            rank_prompt = None,
+            block_weight=self.block_weight)
+        x = x.permute(1, 0, 2)
+        x = self.norm(x)
+
+        return x
+
+    def forward_test(self, x, use_init_ptm=False):
+        import copy
+        B = x.shape[0]
+        x = self.patch_embed(x)
+
+        cls_tokens = self.cls_token.expand(B, -1, -1)
+        x = torch.cat((cls_tokens, x), dim=1)
+        x = x + self.pos_embed
+        x_init = self.pos_drop(x)
+
+        features = []
+        assert self.config.ffn_adapt
+        assert self.adapt_pos == [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+        assert self.general_pos == [0, 1, 2, 3, 4, 5]
+        assert self.use_block_weight
+
+        # len(self.adapter_list) == cur_task_id
+
+        for i in range(len(self.adapter_list)):
+            x = copy.deepcopy(x_init)
+
+            x = x.permute(1, 0, 2)
+            for idx, blk in enumerate(self.transformer.blocks):
+
+                if idx >= 6:
+                    x = blk(x, adapt = self.adapter_list[i][idx - 6], prompt = None, rank_prompt = None,
+                            block_weight=self.block_weight_list[i][:, idx - 6])
+                else:
+                    x = blk(x, adapt = self.cur_adapter[idx], prompt = None, rank_prompt = None, block_weight=None)
+            x = x.permute(1, 0, 2)
+
+            x = self.norm(x)
+            features.append(x)
+
+        x = copy.deepcopy(x_init)
+        x = x.permute(1, 0, 2)
+        for idx, blk in enumerate(self.transformer.blocks):
+
+            if idx >= 6:
+                x = blk(x, adapt = self.cur_adapter[idx], prompt = None, rank_prompt = None, 
+                    block_weight=self.block_weight[:, idx - 6])
+            else:
+                x = blk(x, adapt = self.cur_adapter[idx], prompt = None, rank_prompt = None, block_weight=None)
+        x = x.permute(1, 0, 2)
+
+
+        x = self.norm(x)
+        features.append(x)
+
+        return features
+
+    def forward_proto(self, x, adapt_index):
+        assert adapt_index > -1
+        assert self.config.ffn_adapt
+        assert self.use_block_weight
+
+        B = x.shape[0]
+        x = self.patch_embed(x)
+
+        cls_tokens = self.cls_token.expand(B, -1, -1)
+        x = torch.cat((cls_tokens, x), dim=1)
+        x = x + self.pos_embed
+        x = self.pos_drop(x)
+
+
+        if adapt_index < len(self.adapter_list):
+            
+            x = x.permute(1, 0, 2)
+            for idx, blk in enumerate(self.transformer.blocks):
+
+                if idx >= 6:
+                    x = blk(x, adapt = self.adapter_list[adapt_index][idx - 6], prompt = None, rank_prompt = None,
+                            block_weight=self.block_weight_list[adapt_index][:, idx - 6])
+                else:
+                    x = blk(x, adapt = self.cur_adapter[idx], prompt = None, rank_prompt = None, block_weight=None)
+            x = x.permute(1, 0, 2)
+
+        else:
+            
+            x = x.permute(1, 0, 2)
+            for idx, blk in enumerate(self.transformer.blocks):
+
+                if idx >= 6:
+                    x = blk(x, adapt = self.cur_adapter[idx], prompt = None, rank_prompt = None,
+                            block_weight=self.block_weight[:, idx - 6])
+                else:
+                    x = blk(x, adapt = self.cur_adapter[idx], prompt = None, rank_prompt = None, block_weight=None)
+            x = x.permute(1, 0, 2)
+
+        x = self.norm(x)
+        x = x[:, 0, :]
+
+        return x
+
+    def forward_general_cls(self, x, t_idx):
+        import copy
+        B = x.shape[0]
+        x = self.patch_embed(x)
+
+        cls_tokens = self.cls_token.expand(B, -1, -1)
+        x = torch.cat((cls_tokens, x), dim=1)
+        x = x + self.pos_embed
+        x = self.pos_drop(x)
+
+        x_teacher = copy.deepcopy(x)
+
+        for j in range(6): # [0, ..., 5]
+            x = self.transformer.blocks[j](x, adapt = self.cur_adapter[j])
+            x_teacher = self.transformer.blocks[j](x_teacher, adapt = self.old_adapter_list[t_idx-1][j])
+
+        x = self.norm(x)
+        output_new = x[:, 0, :]
+
+        x_teacher = self.norm(x_teacher)
+        output_teacher= x_teacher[:, 0, :]
+
+        return output_new, output_teacher
+
+    def get_new_adapter_initial_msa(self):
+
+        config = self.config
+        if config.ffn_adapt:
+            for i in range(len(self.adapt_pos)):
+                temp_adapter = nn.ModuleList()
+                for j in self.msa:
+                    if j ==1:
+                        adapter = VisionTransformer_CL_LoRA.Adapter_lora(self.config, dropout=0.0, bottleneck=config.ffn_num,
+                                                init_option=config.ffn_adapter_init_option,
+                                                adapter_scalar=config.ffn_adapter_scalar,
+                                                adapter_layernorm_option=config.ffn_adapter_layernorm_option,
+                                                ).to(self._device)
+                    else:
+                        adapter = nn.Identity()
+                    temp_adapter.append(adapter)
+
+                self.cur_adapter.append(temp_adapter)
+            self.cur_adapter.requires_grad_(True)
+
+        else:
+            print("====Not use adapter===")
+
+    def add_adapter_to_list(self):
+        temp_adapter = []
+        import copy
+        for i in range(len(self.specfic_pos)):
+            temp_pos = self.adapt_pos.index(self.specfic_pos[i])
+            temp_adapter.append(copy.deepcopy(self.cur_adapter[temp_pos].requires_grad_(False)))
+        self.adapter_list.append(temp_adapter)
+
+        if self.use_block_weight:
+            self.block_weight_old = copy.deepcopy(self.block_weight)
+            self.block_weight_list.append(self.block_weight_old.requires_grad_(False))
+            self.block_weight = nn.Parameter(torch.randn(3, len(self.specfic_pos)))
+            nn.init.uniform_(self.block_weight, .5, 1.5)
+
+        self.adapter_pos_list.append(self.adapt_pos)
+
+        if self.use_distillation:
+            self.old_adapter_list.append(copy.deepcopy(self.cur_adapter).requires_grad_(False))
+        if self.msa_adapt:
+            self.get_new_adapter_msa()
+
+    def get_new_adapter_msa(self):
+        config = self.config
+
+        if config.ffn_adapt:
+            for i in range(len(self.specfic_pos)):
+                pos = self.adapt_pos.index(self.specfic_pos[i])
+                temp_adapter = nn.ModuleList()
+                for j in self.msa:
+                    if j == 1:
+                        adapter = VisionTransformer_CL_LoRA.Adapter_lora(self.config, dropout=0.0, bottleneck=config.ffn_num,
+                                               init_option=config.ffn_adapter_init_option,
+                                               adapter_scalar=config.ffn_adapter_scalar,
+                                               adapter_layernorm_option=config.ffn_adapter_layernorm_option,
+                                               ).to(self._device)
+                        adapter.requires_grad_(True)
+                    else:
+                        adapter = nn.Identity()
+                    temp_adapter.append(adapter)
+                self.cur_adapter[pos] = temp_adapter
+
+            if len(self.specfic_pos) < 12:
+                self.cur_adapter.requires_grad_(True)
+
+                for i in self.adapt_pos:
+                    if i in self.general_pos:
+                        pos = self.adapt_pos.index(i)
+                        for j in range(len(self.msa)):
+                            if self.msa[j] == 1:
+                                self.cur_adapter[pos][j].lora_B.requires_grad_(False)
+        else:
+            print("====Not use adapter===")
 
     @torch.jit.ignore()
     def load_pretrained(self, checkpoint_path, prefix=''):

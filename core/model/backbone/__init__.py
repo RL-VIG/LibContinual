@@ -1,6 +1,7 @@
 from .resnet import *
 from .vit import vit_pt_imnet
 from .vit import vit_pt_imnet_in21k_adapter
+from .vit import vit_cl_lora
 from .vit_dap import vit_pt_imnet_dap
 
 from .SiNet import SiNet_vit
