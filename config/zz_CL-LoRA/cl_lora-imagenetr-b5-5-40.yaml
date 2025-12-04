@@ -1,0 +1,76 @@
+
+
+dataset: &dataset imagenet-r
+data_root: /data/lqx/imagenet-r
+
+init_cls_num: &init_cls_num 5
+inc_cls_num: &inc_cls_num 5
+total_cls_num: &total_cls_num 200
+task_num: &task_num 40
+image_size: &image_size 224
+epoch: &epoch 20
+
+dataset: *dataset
+init_cls_num: *init_cls_num
+inc_cls_num: *inc_cls_num
+total_cls_num: *total_cls_num
+task_num: *task_num
+
+epoch: *epoch
+val_per_epoch: *epoch
+
+batch_size: 32
+seed: 1993
+
+setting: task-agnostic 
+
+testing_times: 1
+testing_per_task: False
+
+train_trfms:
+  - RandomResizedCrop:
+      size: *image_size
+      scale: [0.05, 1.0]
+      ratio: [0.75, 1.3333]
+  - RandomHorizontalFlip: {}
+  - ToTensor: {}
+
+test_trfms: 
+  - Resize:
+      size: 256
+      interpolation: 3 # BICUBIC
+  - CenterCrop:
+      size: [*image_size, *image_size]
+  - ToTensor: {}
+
+optimizer:
+  name: SGD
+  kwargs:
+    lr: 0.05
+    momentum: 0.9
+    weight_decay: 0.0005
+
+lr_scheduler:
+  name: CosineAnnealingLR
+  kwargs:
+    T_max: *epoch
+    eta_min: 0
+
+backbone:
+  name: vit_cl_lora
+  kwargs:
+    pretrained: True
+    model_name : vit_base_patch16_224
+    attn_layer: MultiHeadAttention_CL_LoRA
+    transformer_layer: Transformer_CL_LoRA
+    lora_rank: 10
+    norm_layer_eps: 1e-6
+
+classifier:
+  name: CL_LoRA
+  kwargs:
+    init_cls_num: *init_cls_num
+    inc_cls_num: *inc_cls_num
+    task_num: *task_num
+    embd_dim: 768
+    

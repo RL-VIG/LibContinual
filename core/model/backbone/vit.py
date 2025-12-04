@@ -16,7 +16,7 @@ from timm.models.registry import register_model
 from timm.models.layers import trunc_normal_, DropPath
 from timm.models.helpers import named_apply, adapt_input_conv
 from .prompt import L2P, CodaPrompt, DualPrompt
-from .transformer import MultiHeadAttention_LoRA, VisionTransformer
+from .transformer import MultiHeadAttention_LoRA, VisionTransformer, VisionTransformer_CL_LoRA
 
 def interpolate_pos_embed(pos_embed_checkpoint, visual_encoder):        
     # interpolate position embedding
@@ -127,7 +127,8 @@ class ViTZoo(nn.Module):
             out = out[:,0,:]
         else:
             out, _ = self.feat(image, **kwargs) 
-            out = out[:,0,:]
+            if len(out.shape) == 3:
+                out = out[:,0,:]    
             
         out = out.view(out.size(0), -1)
 
@@ -135,7 +136,7 @@ class ViTZoo(nn.Module):
             return out, prompt_loss
         else:
             return out
-            
+
 class ViT_in21k_adapter(nn.Module):
     def __init__(self, pretrained=False, **kwargs):
         super(ViT_in21k_adapter, self).__init__()
@@ -202,8 +203,103 @@ class ViT_in21k_adapter(nn.Module):
         else:
             return out
 
+class ViT_CL_LoRA(nn.Module):
+    def __init__(self, pretrained = False, model_name='vit_base_patch16_224', attn_layer='MultiHeadAttention', **kwargs):
+        super().__init__()
+
+        self.task_id = None
+        self.feat_dim = 768
+        
+        self.feat = VisionTransformer_CL_LoRA(img_size=224, patch_size=16, embed_dim=768, depth=12,
+                                    num_heads=12, ckpt_layer=0,
+                                    drop_path_rate=0, attn_layer=attn_layer,
+                                    **kwargs
+                                    )
+
+        if pretrained:
+            print(f'Using pretrained model : {model_name}')
+
+            if model_name == 'vit_base_patch16_224.augreg2_in21k_ft_in1k' and os.path.exists('/home/lvqiexuan/.cache/torch/hub/checkpoints/vit_base_patch16_224.augreg2_in21k_ft_in1k.pt'):
+                # Manually Loading weight
+                load_dict = torch.load('/home/lvqiexuan/.cache/torch/hub/checkpoints/vit_base_patch16_224.augreg2_in21k_ft_in1k.pt')
+            else:
+                load_dict = timm.create_model(model_name, pretrained = pretrained).state_dict()
+            
+            key_mapping = {
+                ".norm1.": ".ln_1.",
+                ".norm2.": ".ln_2.",
+                "blocks.": "transformer.blocks."
+            }
+
+            modified_load_dict = {}
+            for key in load_dict.keys():
+                new_key = key
+                for old_key, mapped_key in key_mapping.items():
+                    if old_key in new_key:
+                        new_key = new_key.replace(old_key, mapped_key)
+
+                modified_load_dict[new_key] = load_dict[key]
+
+            self.feat.load_state_dict(modified_load_dict, strict = False)
+
+        self.prompt = None
+        self.prompt_flag = ''
+
+    # pen: get penultimate features    
+    def forward(self, image, test, text=None, pen=False, train=False, **kwargs):
+
+        if self.prompt_flag == 'l2p':
+
+            with torch.no_grad():
+                self.eval()
+                cls_features = self.feat(image, prompt_flag = self.prompt_flag)
+
+            if train:
+                self.train()
+
+            out, reduce_sim = self.feat(
+                x = image,
+                prompt = self.prompt,
+                cls_features = cls_features,
+                prompt_flag = self.prompt_flag
+            )
+
+            return out, reduce_sim
+
+        elif self.prompt is not None:
+            with torch.no_grad():
+                q, _ = self.feat(image)
+                q = q[:,0,:]
+
+            # q?, train?, task_id?
+            out, prompt_loss = self.feat(image, prompt=self.prompt, q=q, train=train, task_id=self.task_id)
+            out = out[:,0,:]
+        else:
+            out, _ = self.feat(image, test, **kwargs) 
+            if len(out.shape) == 3:
+                out = out[:,0,:]    
+            
+        out = out.view(out.size(0), -1)
+
+        if self.prompt is not None and train:
+            return out, prompt_loss
+        else:
+            return out
+
+    def forward_proto(self, x, adapt_index):
+        return self.feat.forward_proto(x, adapt_index)
+
+    def forward_general_cls(self, x, t_idx):
+        return self.feat.forward_general_cls(x, t_idx)
+
+    def add_adapter_to_list(self):
+        self.feat.add_adapter_to_list()
+
 def vit_pt_imnet(pretrained=False, **kwargs):
     return ViTZoo(pretrained, **kwargs)
 
 def vit_pt_imnet_in21k_adapter(pretrained=False, **kwargs):
     return ViT_in21k_adapter(pretrained, **kwargs)
+
+def vit_cl_lora(pretrained=False, **kwargs):
+    return ViT_CL_LoRA(pretrained, **kwargs)
