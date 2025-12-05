@@ -1,6 +1,7 @@
 import os
 import sys
 import torch
+import math
 
 import numpy as np
 import core.model as arch
@@ -21,7 +22,7 @@ from core.utils import Logger, fmt_date_str
 from torch.optim.lr_scheduler import MultiStepLR, LambdaLR
 from copy import deepcopy
 
-from core.scheduler import CosineSchedule, PatienceSchedule, CosineAnnealingWarmUp
+from core.scheduler import CosineSchedule, PatienceSchedule, CosineAnnealingWarmUp , CosineSchedulerIter
 
 class Trainer(object):
     """
@@ -176,7 +177,12 @@ class Trainer(object):
             T_max = len(self.train_loader.get_loader(self.task_idx))
             T_max *= init_epoch if self.task_idx == 0 else config['epoch']
             scheduler = CosineAnnealingWarmUp(optimizer, config['lr_scheduler']['kwargs']['warmup_length'], T_max)
-        else:
+        elif config['lr_scheduler']['name'] == "CosineSchedulerIter":
+            scheduler = CosineSchedulerIter(config['lr_scheduler']['kwargs']['base_value'],
+                config['lr_scheduler']['kwargs']['final_value'],optimizer,0,
+                config['lr_scheduler']['kwargs']['n_epochs'],last_epoch=-1,warmup_epochs=0,
+                start_warmup_value=0,freeze_iters=0)
+        else:  
             scheduler = get_instance(torch.optim.lr_scheduler, "lr_scheduler", config, optimizer=optimizer)
 
         return init_epoch, config['epoch'], optimizer, scheduler
@@ -402,8 +408,11 @@ class Trainer(object):
                         break
                 else:
                     self.scheduler.step()
+                    
+            if hasattr(model, 'after_task') and self.config['classifier']['name'] == 'VQPrompt':
+                model.after_task(task_idx, self.train_loader)
 
-            if hasattr(model, 'after_task'):
+            elif hasattr(model, 'after_task'):
                 model.after_task(task_idx, self.buffer, self.train_loader.get_loader(task_idx), self.test_loader.get_loader(task_idx))
 
             # Update Buffer

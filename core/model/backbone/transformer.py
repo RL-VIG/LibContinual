@@ -13,10 +13,12 @@ import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 
+from typing import Tuple
 from functools import partial
 from collections import Counter
 from timm.models.vision_transformer import PatchEmbed
 from timm.models.layers import trunc_normal_, DropPath
+from timm.models.helpers import named_apply, adapt_input_conv
 from scipy.special import softmax
 
 from .petl.adapter import Adapter, MaskedAdapter
@@ -2259,6 +2261,41 @@ class VisionTransformer(nn.Module):
                 return x, reduce_sim
             else:
                 return x[:, 0]
+        elif prompt_flag == 'qt':
+            cls_tokens = self.cls_token.expand(B, -1, -1)  # stole cls_tokens impl from Phil Wang, thanks
+            x = torch.cat((cls_tokens, x), dim=1)
+    
+            x = x + self.pos_embed[:,:x.size(1),:]
+            x = self.pos_drop(x)
+
+            prompt_loss = torch.zeros((1,), requires_grad=True).cuda()
+            for i,blk in enumerate(self.blocks):
+
+                if prompt is not None:
+                    if train:
+                        p_list, loss, x = prompt.forward(q, i, x, train=True, task_id=task_id)
+                        # prompt.e_layers is a list of layers to insert prompt
+                        # if i is not in prompt.e_layers, p_list=None
+                        prompt_loss += loss
+                    else:
+                        p_list, _, x = prompt.forward(q, i, x, train=False, task_id=task_id)
+                    # if p_list is not None and i == 1:
+                    #     print(x[0,0,0:10])
+                    #     print(p_list[0][0,0,0:10])
+                    #     print(apple)
+                    # if p_list is not None:
+                    #     x = torch.concat((x[:,0,:].unsqueeze(1),p_list[0],p_list[1],x[:,1:,:]), dim=1)
+                    #     p_list = None
+                else:
+                    p_list = None
+
+                x = blk(x, register_blk==i, prompt=p_list)
+                # if i == 11: x = x.detach()
+
+            out = self.norm(x)
+            
+            # return x, prompt_loss
+            return out, prompt_loss, x
 
         else:
 
@@ -2711,6 +2748,39 @@ def _load_weights(model: VisionTransformer, checkpoint_path: str, prefix: str = 
                 w = w.transpose([1, 0])
         return torch.from_numpy(w)
 
+    # https://github.com/huggingface/pytorch-image-models/blob/main/timm/models/vision_transformer.py
+    def resize_pos_embed(
+        posemb: torch.Tensor,
+        posemb_new: torch.Tensor,
+        num_prefix_tokens: int = 1,
+        gs_new: Tuple[int, int] = (),
+        interpolation: str = 'bicubic',
+        antialias: bool = False,
+    ) -> torch.Tensor:
+        """ Rescale the grid of position embeddings when loading from state_dict.
+
+        *DEPRECATED* This function is being deprecated in favour of resample_abs_pos_embed
+
+        Adapted from:
+            https://github.com/google-research/vision_transformer/blob/00883dd691c63a6830751563748663526e811cee/vit_jax/checkpoint.py#L224
+        """
+        ntok_new = posemb_new.shape[1]
+        if num_prefix_tokens:
+            posemb_prefix, posemb_grid = posemb[:, :num_prefix_tokens], posemb[0, num_prefix_tokens:]
+            ntok_new -= num_prefix_tokens
+        else:
+            posemb_prefix, posemb_grid = posemb[:, :0], posemb[0]
+        gs_old = int(math.sqrt(len(posemb_grid)))
+        if not len(gs_new):  # backwards compatibility
+            gs_new = [int(math.sqrt(ntok_new))] * 2
+        assert len(gs_new) >= 2
+        print(f'Resized position embedding: {posemb.shape} ({[gs_old, gs_old]}) to {posemb_new.shape} ({gs_new}).')
+        posemb_grid = posemb_grid.reshape(1, gs_old, gs_old, -1).permute(0, 3, 1, 2)
+        posemb_grid = F.interpolate(posemb_grid, size=gs_new, mode=interpolation, antialias=antialias, align_corners=False)
+        posemb_grid = posemb_grid.permute(0, 2, 3, 1).reshape(1, gs_new[0] * gs_new[1], -1)
+        posemb = torch.cat([posemb_prefix, posemb_grid], dim=1)
+        return posemb
+    
     w = np.load(checkpoint_path)
     if not prefix and 'opt/target/embedding/kernel' in w:
         prefix = 'opt/target/'
