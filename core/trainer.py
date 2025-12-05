@@ -327,11 +327,13 @@ class Trainer(object):
                     num_workers = self.config['num_workers']
                 )
             
-            if method_name == "LoRAsub_DRS":
+            if method_name in ["LoRAsub_DRS"]:
                 print('Replacing Optim & Scheduler')
                 self.optimizer = self.model.get_optimizer(self.config['optimizer']['kwargs']['lr'], self.config['optimizer']['kwargs']['weight_decay'])
                 self.scheduler = CosineSchedule(self.optimizer, K=self.config['epoch'])
 
+            if method_name == 'CL_LoRA':
+                self.model.set_optim(self.optimizer)
 
             if self.rank == 0:
                 print(f"================Task {task_idx} Training!================")
@@ -368,7 +370,15 @@ class Trainer(object):
                         print(f"================Validation on test set================")
 
                     # Disable validation for some method
-                    if method_name in ['TRGP', 'RanPAC', 'MInfLoRA2', 'MInfLoRA3', 'PRAKA', 'TRGP_CLIP', 'LoRAsub_DRS']:
+                    if method_name in ['TRGP', 
+                                       'RanPAC', 
+                                       'MInfLoRA2', 
+                                       'MInfLoRA3', 
+                                       'PRAKA', 
+                                       'TRGP_CLIP', 
+                                       'LoRAsub_DRS',
+                                       'CL_LoRA'
+                        ]:
                         if self.rank == 0:
                             print(f" * Disabled validation for this method")
                     else:
@@ -582,8 +592,9 @@ class Trainer(object):
         total = len(dataloader)
         init_seed(self.config['seed'] + epoch_idx, self.config['deterministic']) # Ensure Reproducibility
         for b, batch in tqdm(enumerate(dataloader), total=total, disable=(self.rank != 0)):
-
+            
             batch['batch_id'] = b
+
             # These method's LR is updated every iterations, not epochs
             if self.config['classifier']['name'] in ['MOE_ADAPTER4CL', 'DMNSP', 'DMNSP_CIL']:
                 self.scheduler.step(total * epoch_idx + b)
@@ -616,42 +627,103 @@ class Trainer(object):
         dataloaders = self.test_loader.get_loader(task_idx)
 
         model = self.model.module if self.distribute else self.model
-
         model.eval()
+
         if self.config["classifier"]["name"] == 'bic':
             for layer in model.bias_layers:
                 layer.eval()
 
         per_task_acc = []
-        correct_task, correct_all = 0, 0
-        count_task, count_all = 0, 0
+        count_all, correct_all = 0, 0
 
-        with torch.no_grad():
-            for t, dataloader in enumerate(dataloaders):
-                correct_task, count_task = 0, 0
+        if self.config['testing_per_task']:
 
-                for batch in tqdm(dataloader, desc = f"Testing on Task {t} data", disable=self.rank != 0):  # Disable tqdm for non-master processes
-                    
+            count_task, correct_task = 0, 0
+
+            with torch.no_grad():
+                for t, dataloader in enumerate(dataloaders):
+                    correct_task, count_task = 0, 0
+
+                    for b, batch in tqdm(enumerate(dataloader), total=len(dataloader), desc = f"Testing on Task {t} data", disable=self.rank != 0):  # Disable tqdm for non-master processes
+                        
+                        if self.config['setting'] == 'task-aware':
+                            output, acc = model.inference(batch, task_id=t)
+                        elif self.config['setting'] == 'task-agnostic':
+                            output, acc = model.inference(batch)
+                        
+                        correct_task += int(acc * batch['label'].shape[0])
+                        count_task += batch['label'].shape[0]
+
+                    correct_all += correct_task
+                    count_all += count_task
+
+                    if self.distribute:
+                        pass
+
+                    per_task_acc.append(round(correct_task * 100 / count_task, 2))
+
+            if self.distribute:
+                pass
+
+        else:
+
+            datasets = [dl.dataset for dl in dataloaders]
+
+            all_images = np.concatenate([ds.images for ds in datasets], axis=0)
+            all_labels = np.concatenate([ds.labels for ds in datasets], axis=0)
+
+            merged_dataset = copy.deepcopy(datasets[0])
+            merged_dataset.images = all_images
+            merged_dataset.labels = all_labels
+
+            merged_loader = DataLoader(
+                    merged_dataset,
+                    shuffle = True,
+                    batch_size = self.config['batch_size'],
+                    drop_last = False,
+                    num_workers = self.config['num_workers'],
+                    pin_memory=False
+                )
+
+            class_boundaries = []
+            start_cls = 0
+            for t in range(task_idx + 1):
+                n_cls = self.init_cls_num if t == 0 else self.inc_cls_num
+                class_boundaries.append((start_cls, start_cls + n_cls))
+                start_cls += n_cls
+
+            correct_by_task = np.zeros(task_idx + 1, dtype=int)
+            count_by_task = np.zeros(task_idx + 1, dtype=int)
+
+            # 4. 推理
+            with torch.no_grad():
+                for b, batch in tqdm(enumerate(merged_loader), total=len(merged_loader), desc=f"Testing merged tasks <= {task_idx}", disable=self.rank != 0):
+
                     if self.config['setting'] == 'task-aware':
-                        output, acc = model.inference(batch, task_id=t)
+                        print('Mostly methods dont support this, set testing_per_task to False')
+                        raise NotImplementedError
+                        output, acc = model.inference(batch, task_id=None)
                     elif self.config['setting'] == 'task-agnostic':
                         output, acc = model.inference(batch)
-                    
-                    correct_task += int(acc * batch['label'].shape[0])
-                    count_task += batch['label'].shape[0]
+                    preds = output.cpu().numpy()
 
-                correct_all += correct_task
-                count_all += count_task
+                    labels = batch['label'].cpu().numpy()
+                    correct_all += np.sum(preds == labels)
 
-                if self.distribute:
-                    pass
+                    count_all += len(labels)
 
-                per_task_acc.append(round(correct_task * 100 / count_task, 2))
+                    # 统计每个 task 的正确率
+                    for t, (start, end) in enumerate(class_boundaries):
+                        mask = (labels >= start) & (labels < end)
+                        if np.any(mask):
+                            correct_by_task[t] += np.sum(preds[mask] == labels[mask])
+                            count_by_task[t] += np.sum(mask)
 
-        if self.distribute:
-            pass
+            per_task_acc = [round(c * 100 / n, 2) if n > 0 else 0 for c, n in zip(correct_by_task, count_by_task)]
 
         avg_acc = round(correct_all * 100 / count_all, 2)
 
-        return {"avg_acc": avg_acc, 
-                "per_task_acc": per_task_acc}
+        return {
+            "avg_acc": avg_acc,
+            "per_task_acc": per_task_acc
+        }

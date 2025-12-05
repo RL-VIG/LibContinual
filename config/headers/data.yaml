@@ -1,6 +1,6 @@
 save_path: ''
 dataset: cifar100 # [cifar100, binary_cifar100, ...]
-data_root: /home/lvqiexuan/temp_data/cifar100
+data_root: /data/lqx/cifar100
 image_size: 32
 pin_memory: False
 augment: True
