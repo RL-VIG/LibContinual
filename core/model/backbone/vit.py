@@ -168,36 +168,6 @@ class ViTZoo(nn.Module):
         else:
             return out
 
-    def forward_fc(self, x):
-        out = self.last(x)
-        return out
-
-    def orth_loss(self, features, cls_mean):
-        reg = 0.1
-        if cls_mean:
-            # orth loss of this batch
-            sample_mean = []
-            for k, v in cls_mean.items():
-                if isinstance(v, list):
-                    sample_mean.extend(v)
-                else:
-                    sample_mean.append(v)
-            sample_mean = torch.stack(sample_mean, dim=0).to(
-                features.device, non_blocking=True
-            )
-            M = torch.cat([sample_mean, features], dim=0)
-            sim = torch.matmul(M, M.t()) / 0.8
-            loss = torch.nn.functional.cross_entropy(
-                sim, torch.arange(0, sim.shape[0]).long().to(features.device)
-            )
-            return reg * loss
-        else:
-            sim = torch.matmul(features, features.t()) / 0.8
-            loss = torch.nn.functional.cross_entropy(
-                sim, torch.arange(0, sim.shape[0]).long().to(features.device)
-            )
-            return reg * loss
-
 
 class ViT_in21k_adapter(nn.Module):
     def __init__(self, pretrained=False, **kwargs):
@@ -273,10 +243,43 @@ class ViT_in21k_adapter(nn.Module):
         else:
             return out
 
+class ViTVQPrompt(ViTZoo):
+
+    def forward_fc(self, x):
+        out = self.last(x)
+        return out
+
+    def orth_loss(self, features, cls_mean):
+        reg = 0.1
+        if cls_mean:
+            # orth loss of this batch
+            sample_mean = []
+            for k, v in cls_mean.items():
+                if isinstance(v, list):
+                    sample_mean.extend(v)
+                else:
+                    sample_mean.append(v)
+            sample_mean = torch.stack(sample_mean, dim=0).to(
+                features.device, non_blocking=True
+            )
+            M = torch.cat([sample_mean, features], dim=0)
+            sim = torch.matmul(M, M.t()) / 0.8
+            loss = torch.nn.functional.cross_entropy(
+                sim, torch.arange(0, sim.shape[0]).long().to(features.device)
+            )
+            return reg * loss
+        else:
+            sim = torch.matmul(features, features.t()) / 0.8
+            loss = torch.nn.functional.cross_entropy(
+                sim, torch.arange(0, sim.shape[0]).long().to(features.device)
+            )
+            return reg * loss
 
 def vit_pt_imnet(pretrained=False, **kwargs):
     return ViTZoo(pretrained, **kwargs)
 
-
 def vit_pt_imnet_in21k_adapter(pretrained=False, **kwargs):
     return ViT_in21k_adapter(pretrained, **kwargs)
+
+def vit_vqprompt(pretrained=False, **kwargs):
+    return ViTVQPrompt(pretrained, **kwargs)

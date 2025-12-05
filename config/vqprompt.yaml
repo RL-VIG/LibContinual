@@ -46,7 +46,7 @@ lr_scheduler:
     n_epochs: 10
 
 backbone:
-  name: vit_pt_imnet
+  name: vit_vqprompt
   kwargs:
     num_classes: *total_cls_num
     pretrained: true
