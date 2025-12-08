@@ -1,7 +1,7 @@
-"""
+'''
 Code Reference:
 Adapted from https://github.com/GT-RIPL/CODA-Prompt
-"""
+'''
 
 import os
 import timm
@@ -15,11 +15,10 @@ from timm.models.vision_transformer import _cfg, PatchEmbed
 from timm.models.registry import register_model
 from timm.models.layers import trunc_normal_, DropPath
 from timm.models.helpers import named_apply, adapt_input_conv
-from .prompt import L2P, CodaPrompt, DualPrompt, VQPrompt
+from .prompt import L2P, CodaPrompt, DualPrompt
 from .transformer import MultiHeadAttention_LoRA, VisionTransformer, VisionTransformer_CL_LoRA
 
-
-def interpolate_pos_embed(pos_embed_checkpoint, visual_encoder):
+def interpolate_pos_embed(pos_embed_checkpoint, visual_encoder):        
     # interpolate position embedding
     embedding_size = pos_embed_checkpoint.shape[-1]
     num_patches = visual_encoder.patch_embed.num_patches
@@ -27,75 +26,50 @@ def interpolate_pos_embed(pos_embed_checkpoint, visual_encoder):
     # height (== width) for the checkpoint position embedding
     orig_size = int((pos_embed_checkpoint.shape[-2] - num_extra_tokens) ** 0.5)
     # height (== width) for the new position embedding
-    new_size = int(num_patches**0.5)
+    new_size = int(num_patches ** 0.5)
 
-    if orig_size != new_size:
+    if orig_size!=new_size:
         # class_token and dist_token are kept unchanged
         extra_tokens = pos_embed_checkpoint[:, :num_extra_tokens]
         # only the position tokens are interpolated
         pos_tokens = pos_embed_checkpoint[:, num_extra_tokens:]
-        pos_tokens = pos_tokens.reshape(
-            -1, orig_size, orig_size, embedding_size
-        ).permute(0, 3, 1, 2)
+        pos_tokens = pos_tokens.reshape(-1, orig_size, orig_size, embedding_size).permute(0, 3, 1, 2)
         pos_tokens = torch.nn.functional.interpolate(
-            pos_tokens, size=(new_size, new_size), mode="bicubic", align_corners=False
-        )
+            pos_tokens, size=(new_size, new_size), mode='bicubic', align_corners=False)
         pos_tokens = pos_tokens.permute(0, 2, 3, 1).flatten(1, 2)
         new_pos_embed = torch.cat((extra_tokens, pos_tokens), dim=1)
-        print("reshape position embedding from %d to %d" % (orig_size**2, new_size**2))
-
-        return new_pos_embed
+        print('reshape position embedding from %d to %d'%(orig_size ** 2,new_size ** 2))
+        
+        return new_pos_embed    
     else:
         return pos_embed_checkpoint
-
-
+        
 class ViTZoo(nn.Module):
-    def __init__(
-        self,
-        pretrained=False,
-        model_name="vit_base_patch16_224",
-        attn_layer="MultiHeadAttention",
-        **kwargs,
-    ):
+    def __init__(self, pretrained = False, model_name='vit_base_patch16_224', attn_layer='MultiHeadAttention', **kwargs):
         super(ViTZoo, self).__init__()
-
+        
         self.task_id = None
         self.feat_dim = 768
 
-        self.feat = VisionTransformer(
-            img_size=224,
-            patch_size=16,
-            embed_dim=768,
-            depth=12,
-            num_heads=12,
-            ckpt_layer=0,
-            drop_path_rate=0,
-            attn_layer=attn_layer,
-            **kwargs,
-        )
+        self.feat = VisionTransformer(img_size=224, patch_size=16, embed_dim=768, depth=12,
+                                    num_heads=12, ckpt_layer=0,
+                                    drop_path_rate=0, attn_layer=attn_layer,
+                                    **kwargs
+                                    )
 
         if pretrained:
-            print(f"Using pretrained model : {model_name}")
+            print(f'Using pretrained model : {model_name}')
 
-            if (
-                model_name == "vit_base_patch16_224.augreg2_in21k_ft_in1k"
-                and os.path.exists(
-                    "your path to vit_base_patch16_224_augreg2_in21k_ft_in1k.bin"
-                )
-            ):
+            if model_name == 'vit_base_patch16_224.augreg2_in21k_ft_in1k' and os.path.exists('/home/lvqiexuan/.cache/torch/hub/checkpoints/vit_base_patch16_224.augreg2_in21k_ft_in1k.pt'):
                 # Manually Loading weight
-                load_dict = torch.load(
-                    "your path to vit_base_patch16_224_augreg2_in21k_ft_in1k.bin"
-                )
+                load_dict = torch.load('/home/lvqiexuan/.cache/torch/hub/checkpoints/vit_base_patch16_224.augreg2_in21k_ft_in1k.pt')
             else:
-                load_dict = timm.create_model(
-                    model_name, pretrained=pretrained
-                ).state_dict()
-
+                load_dict = timm.create_model(model_name, pretrained = pretrained).state_dict()
+            
             key_mapping = {
                 ".norm1.": ".ln_1.",
                 ".norm2.": ".ln_2.",
-                "blocks.": "transformer.blocks.",
+                "blocks.": "transformer.blocks."
             }
 
             modified_load_dict = {}
@@ -107,42 +81,38 @@ class ViTZoo(nn.Module):
 
                 modified_load_dict[new_key] = load_dict[key]
 
-            self.feat.load_state_dict(modified_load_dict, strict=False)
+            self.feat.load_state_dict(modified_load_dict, strict = False)
 
         self.prompt = None
-        self.prompt_flag = ""
-
+        self.prompt_flag = ''
+        
     def create_prompt(self, prompt_flag, **kwargs):
         self.prompt_flag = prompt_flag
 
-        if self.prompt_flag == "l2p":
+        if self.prompt_flag == 'l2p':
             self.prompt = L2P(**kwargs)
-        elif self.prompt_flag == "dual":
+        elif self.prompt_flag == 'dual':
             self.prompt = DualPrompt(768, **kwargs)
-        elif self.prompt_flag == "coda":
+        elif self.prompt_flag == 'coda':
             self.prompt = CodaPrompt(768, **kwargs)
-        elif self.prompt_flag == "qt":
-            self.prompt = VQPrompt(768, **kwargs)
-        else:
-            self.prompt = None
-
-    # pen: get penultimate features
+           
+    # pen: get penultimate features    
     def forward(self, image, text=None, pen=False, train=False, **kwargs):
 
-        if self.prompt_flag == "l2p":
+        if self.prompt_flag == 'l2p':
 
             with torch.no_grad():
                 self.eval()
-                cls_features = self.feat(image, prompt_flag=self.prompt_flag)
+                cls_features = self.feat(image, prompt_flag = self.prompt_flag)
 
             if train:
                 self.train()
 
             out, reduce_sim = self.feat(
-                x=image,
-                prompt=self.prompt,
-                cls_features=cls_features,
-                prompt_flag=self.prompt_flag,
+                x = image,
+                prompt = self.prompt,
+                cls_features = cls_features,
+                prompt_flag = self.prompt_flag
             )
 
             return out, reduce_sim
@@ -150,13 +120,11 @@ class ViTZoo(nn.Module):
         elif self.prompt is not None:
             with torch.no_grad():
                 q, _ = self.feat(image)
-                q = q[:, 0, :]
+                q = q[:,0,:]
 
             # q?, train?, task_id?
-            out, prompt_loss = self.feat(
-                image, prompt=self.prompt, q=q, train=train, task_id=self.task_id
-            )
-            out = out[:, 0, :]
+            out, prompt_loss = self.feat(image, prompt=self.prompt, q=q, train=train, task_id=self.task_id)
+            out = out[:,0,:]
         else:
             out, _ = self.feat(image, **kwargs) 
             if len(out.shape) == 3:
@@ -195,46 +163,38 @@ class ViT_in21k_adapter(nn.Module):
                 vpt_num=0,
             )
 
-            zoo_model = vision_transformer_adapter.vit_base_patch16_224_in21k_adapter(
-                num_classes=0,
-                global_pool=False,
-                drop_path_rate=0.0,
-                tuning_config=tuning_config,
-            )
-            zoo_model.out_dim = 768
+            zoo_model = vision_transformer_adapter.vit_base_patch16_224_in21k_adapter(num_classes=0,
+                    global_pool=False, drop_path_rate=0.0, tuning_config=tuning_config)
+            zoo_model.out_dim=768
             zoo_model.eval()
 
         self.prompt = None
-
+        
         # feature encoder changes if transformer vs resnet
         self.feat = zoo_model
-
+        
     def create_prompt(self, prompt_flag, **kwargs):
         self.prompt_flag = prompt_flag
         # self.prompt_param = prompt_param
         # create prompting module
-        if self.prompt_flag == "l2p":
+        if self.prompt_flag == 'l2p':
             self.prompt = L2P(768, **kwargs)
-        elif self.prompt_flag == "dual":
+        elif self.prompt_flag == 'dual':
             self.prompt = DualPrompt(768, **kwargs)
-        elif self.prompt_flag == "coda":
+        elif self.prompt_flag == 'coda':
             self.prompt = CodaPrompt(768, **kwargs)
-
-    # pen: get penultimate features
+        
+    # pen: get penultimate features    
     def forward(self, x, pen=False, train=False):
         if self.prompt is not None:
             with torch.no_grad():
                 q, _ = self.feat(x)
-                q = q[:, 0, :]
-            out, prompt_loss = self.feat(
-                x, prompt=self.prompt, q=q, train=train, task_id=self.task_id
-            )
-            out = out[:, 0, :]
+                q = q[:,0,:]
+            out, prompt_loss = self.feat(x, prompt=self.prompt, q=q, train=train, task_id=self.task_id)
+            out = out[:,0,:]
         else:
-            out = self.feat(
-                x
-            )  # This implementation of adapter vit doesn't return prompt loss
-
+            out = self.feat(x) # This implementation of adapter vit doesn't return prompt loss
+            
         out = out.view(out.size(0), -1)
         # if not pen:
         #     out = self.last(out)
@@ -243,38 +203,6 @@ class ViT_in21k_adapter(nn.Module):
         else:
             return out
 
-class ViTVQPrompt(ViTZoo):
-
-    def forward_fc(self, x):
-        out = self.last(x)
-        return out
-
-    def orth_loss(self, features, cls_mean):
-        reg = 0.1
-        if cls_mean:
-            # orth loss of this batch
-            sample_mean = []
-            for k, v in cls_mean.items():
-                if isinstance(v, list):
-                    sample_mean.extend(v)
-                else:
-                    sample_mean.append(v)
-            sample_mean = torch.stack(sample_mean, dim=0).to(
-                features.device, non_blocking=True
-            )
-            M = torch.cat([sample_mean, features], dim=0)
-            sim = torch.matmul(M, M.t()) / 0.8
-            loss = torch.nn.functional.cross_entropy(
-                sim, torch.arange(0, sim.shape[0]).long().to(features.device)
-            )
-            return reg * loss
-        else:
-            sim = torch.matmul(features, features.t()) / 0.8
-            loss = torch.nn.functional.cross_entropy(
-                sim, torch.arange(0, sim.shape[0]).long().to(features.device)
-            )
-            return reg * loss
-          
 class ViT_CL_LoRA(nn.Module):
     def __init__(self, pretrained = False, model_name='vit_base_patch16_224', attn_layer='MultiHeadAttention', **kwargs):
         super().__init__()
@@ -373,8 +301,5 @@ def vit_pt_imnet(pretrained=False, **kwargs):
 def vit_pt_imnet_in21k_adapter(pretrained=False, **kwargs):
     return ViT_in21k_adapter(pretrained, **kwargs)
 
-def vit_vqprompt(pretrained=False, **kwargs):
-    return ViTVQPrompt(pretrained, **kwargs)
-  
 def vit_cl_lora(pretrained=False, **kwargs):
     return ViT_CL_LoRA(pretrained, **kwargs)
