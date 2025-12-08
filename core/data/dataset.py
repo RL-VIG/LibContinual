@@ -24,19 +24,7 @@ class ContinualDatasets:
         self.num_workers = num_workers
         self.config = config
         self.dataset = dataset
-        
-        self.class_mask = []
-        class_order = sorted(list(self.cls_map.keys()))
 
-        p = 0
-        while p < len(class_order):
-
-            inc = self.init_cls_num if p == 0 else self.inc_cls_num
-
-            self.class_mask.append(class_order[p:p+inc])
-
-            p += inc
-        
         if self.dataset == 'binary_cifar100':
             datasets.CIFAR100(self.data_root, download = True)
 
