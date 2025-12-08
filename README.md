@@ -39,6 +39,7 @@ LibContinual is an open-source continual learning toolbox based on PyTorch. The 
 + [RAPF (ECCV 2024)](https://github.com/RL-VIG/LibContinual/tree/master/reproduce/rapf): Class-Incremental Learning with CLIP: Adaptive Representation Adjustment and Parameter Fusion.
 + [SD_LoRA (ICLR 2025)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/sd_lora/README.md): Scalable Decoupled Low-Rank Adaptation for Class Incremental Learning
 + [LoRA_Sub_DRS (CVPR 2025)](https://github.com/RL-VIG/LibContinual/blob/master/reproduce/lora_sub_drs/README.md): LoRA Subtraction for Drift-Resistant Space in Exemplar-Free Continual Learning
++ [CL-LoRA (CVPR 2025)](https://github.com/RL-VIG/LibContinual/tree/master/reproduce/cl_lora/README.md): Continual Low-Rank Adaptation for Rehearsal-Free Class-Incremental Learning
 
 <!-- ## Quick Installation
 
