@@ -2,8 +2,8 @@ diffdist==0.1
 numpy==1.21.6
 Pillow==10.2.0
 scikit_learn==1.0.2
-torch==1.12.1
-torchvision==0.13.1
+torch==2.0.1
+torchvision==0.15.2
 pandas==1.3.5
 tqdm==4.64.1
 timm==0.6.7
